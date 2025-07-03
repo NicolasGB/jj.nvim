@@ -25,6 +25,31 @@ local function close_terminal_buffer()
 	end
 end
 
+--- Handle Enter key press on jj status buffer
+local function handle_status_enter()
+	local line = vim.api.nvim_get_current_line()
+	-- jj status format: "M filename" or "A filename" or "D filename" etc.
+	-- Match lines that start with status letter followed by space and filename
+	local pattern = "^[MADR?!] (.+)$"
+	local filepath = line:match(pattern)
+
+	if not filepath or filepath == "" then
+		return
+	end
+
+	local stat = vim.loop.fs_stat(filepath)
+	if not stat then
+		utils.notify("File not found: " .. filepath, vim.log.levels.ERROR)
+		return
+	end
+
+	-- Go to the previous window (split above)
+	vim.cmd("wincmd p")
+
+	-- Open the file in that window, replacing current buffer
+	vim.cmd("edit " .. vim.fn.fnameescape(filepath))
+end
+
 --- Run a command and show it's output in a terminal buffer
 --- If a previous command already existed it smartly reuses the buffer cleaning the previous output
 ---@param cmd string
@@ -125,6 +150,13 @@ local function run(cmd)
 		vim.keymap.set({ "n", "v" }, "a", function() end, { buffer = state.buf, noremap = true, silent = true })
 		vim.keymap.set({ "n", "v" }, "q", close_terminal_buffer, { buffer = state.buf, noremap = true, silent = true })
 		vim.keymap.set({ "n" }, "<ESC>", close_terminal_buffer, { buffer = state.buf, noremap = true, silent = true })
+
+		-- Add Enter key mapping for status buffers to open files
+		local cmd_parts = vim.split(cmd, " ")
+		if cmd_parts[2] == "st" or cmd_parts[2] == "status" then
+			vim.keymap.set({ "n" }, "<CR>", handle_status_enter, { buffer = state.buf, noremap = true, silent = true })
+		end
+
 		vim.b[state.buf].jj_keymaps_set = true
 	end
 
