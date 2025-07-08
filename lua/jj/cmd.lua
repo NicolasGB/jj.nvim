@@ -124,7 +124,7 @@ local function handle_status_restore()
 					"Reverted rename: " .. file_info.new_path .. " -> " .. file_info.old_path,
 					vim.log.levels.INFO
 				)
-				vim.cmd("J st")
+				M.status()
 			end
 		end
 	else
@@ -134,7 +134,7 @@ local function handle_status_restore()
 		local _, success = utils.execute_command(restore_cmd, "Failed to restore")
 		if success then
 			utils.notify("Restored: " .. file_info.old_path, vim.log.levels.INFO)
-			vim.cmd("J st")
+			M.status()
 		end
 	end
 end
