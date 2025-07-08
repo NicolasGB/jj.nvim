@@ -68,6 +68,50 @@ local function handle_status_enter()
 	vim.cmd("edit " .. vim.fn.fnameescape(filepath))
 end
 
+--- Handle 'X' key press on jj status buffer to restore file
+local function handle_status_restore()
+	local line = vim.api.nvim_get_current_line()
+
+	local filepath
+
+	-- Handle renamed files: "R old_path => new_path" or "R {old_path => new_path}"
+	local rename_pattern = "^R .* => ([^}]+)}"
+	local renamed_file = line:match(rename_pattern)
+
+	if renamed_file then
+		-- For renamed files, we need to construct the full path
+		local dir_pattern = "^R (.*)/{.*}$"
+		local dir_path = line:match(dir_pattern)
+		if dir_path then
+			filepath = dir_path .. "/" .. renamed_file
+		else
+			filepath = renamed_file
+		end
+	else
+		-- jj status format: "M filename" or "A filename"
+		-- Match lines that start with status letter followed by space and filename
+		local pattern = "^[MA?!] (.+)$"
+		filepath = line:match(pattern)
+	end
+
+	if not filepath or filepath == "" then
+		return
+	end
+
+	-- Run jj restore command on the file
+	local cmd = "jj restore " .. vim.fn.shellescape(filepath)
+	vim.fn.system(cmd)
+	
+	-- Check if the command was successful
+	if vim.v.shell_error == 0 then
+		utils.notify("Restored: " .. filepath, vim.log.levels.INFO)
+		-- Refresh the status buffer using :J st
+		vim.cmd("J st")
+	else
+		utils.notify("Failed to restore: " .. filepath, vim.log.levels.ERROR)
+	end
+end
+
 --- Run a command and show it's output in a terminal buffer
 --- If a previous command already existed it smartly reuses the buffer cleaning the previous output
 ---@param cmd string
@@ -173,6 +217,7 @@ local function run(cmd)
 		local cmd_parts = vim.split(cmd, " ")
 		if cmd_parts[2] == "st" or cmd_parts[2] == "status" then
 			vim.keymap.set({ "n" }, "<CR>", handle_status_enter, { buffer = state.buf, noremap = true, silent = true })
+			vim.keymap.set({ "n" }, "X", handle_status_restore, { buffer = state.buf, noremap = true, silent = true })
 		end
 
 		vim.b[state.buf].jj_keymaps_set = true
