@@ -1,5 +1,4 @@
---- @class jj.cmd
-local M = {}
+--- @class jj.cmd local M = {}
 
 local utils = require("jj.utils")
 
@@ -25,31 +24,76 @@ local function close_terminal_buffer()
 	end
 end
 
---- Handle Enter key press on jj status buffer
-local function handle_status_enter()
+local function parse_filepath_from_status_line()
 	local line = vim.api.nvim_get_current_line()
 
 	local filepath
 
-	-- Handle renamed files: "R old_path => new_path" or "R {old_path => new_path}"
-	local rename_pattern = "^R .* => ([^}]+)}"
-	local renamed_file = line:match(rename_pattern)
+	-- Handle renamed files: "R path/{old_name => new_name}" or "R old_path => new_path"
+	local rename_pattern_curly = "^R (.*)/{.* => ([^}]+)}"
+	local dir_path, renamed_file = line:match(rename_pattern_curly)
 
-	if renamed_file then
-		-- For renamed files, we need to construct the full path
-		local dir_pattern = "^R (.*)/{.*}$"
-		local dir_path = line:match(dir_pattern)
-		if dir_path then
-			filepath = dir_path .. "/" .. renamed_file
-		else
-			filepath = renamed_file
-		end
+	if dir_path and renamed_file then
+		-- For renamed files with curly braces: "R lua/jj/{picker.lua => picker_2.lua}"
+		filepath = dir_path .. "/" .. renamed_file
 	else
+		-- Try simple rename pattern: "R old_path => new_path"
+		local rename_pattern_simple = "^R .* => (.+)$"
+		filepath = line:match(rename_pattern_simple)
+	end
+
+	if not filepath then
 		-- jj status format: "M filename" or "A filename"
 		-- Match lines that start with status letter followed by space and filename
 		local pattern = "^[MA?!] (.+)$"
 		filepath = line:match(pattern)
 	end
+
+	return filepath
+end
+
+local function parse_rename_info_from_status_line()
+	local line = vim.api.nvim_get_current_line()
+
+	-- Handle renamed files: "R path/{old_name => new_name}" or "R old_path => new_path"
+	local rename_pattern_curly = "^R (.*)/{(.*) => ([^}]+)}"
+	local dir_path, old_name, new_name = line:match(rename_pattern_curly)
+
+	if dir_path and old_name and new_name then
+		-- For renamed files with curly braces: "R lua/jj/{picker.lua => picker_2.lua}"
+		return {
+			old_path = dir_path .. "/" .. old_name,
+			new_path = dir_path .. "/" .. new_name,
+			is_rename = true,
+		}
+	else
+		-- Try simple rename pattern: "R old_path => new_path"
+		local rename_pattern_simple = "^R (.*) => (.+)$"
+		local old_path, new_path = line:match(rename_pattern_simple)
+		if old_path and new_path then
+			return {
+				old_path = old_path,
+				new_path = new_path,
+				is_rename = true,
+			}
+		end
+	end
+
+	-- Not a rename, just get the regular filepath
+	local filepath = parse_filepath_from_status_line()
+	if filepath then
+		return {
+			old_path = filepath,
+			new_path = filepath,
+			is_rename = false,
+		}
+	end
+
+	return nil
+end
+
+local function handle_status_enter()
+	local filepath = parse_filepath_from_status_line()
 
 	if not filepath or filepath == "" then
 		return
@@ -68,47 +112,38 @@ local function handle_status_enter()
 	vim.cmd("edit " .. vim.fn.fnameescape(filepath))
 end
 
---- Handle 'X' key press on jj status buffer to restore file
 local function handle_status_restore()
-	local line = vim.api.nvim_get_current_line()
+	local file_info = parse_rename_info_from_status_line()
 
-	local filepath
-
-	-- Handle renamed files: "R old_path => new_path" or "R {old_path => new_path}"
-	local rename_pattern = "^R .* => ([^}]+)}"
-	local renamed_file = line:match(rename_pattern)
-
-	if renamed_file then
-		-- For renamed files, we need to construct the full path
-		local dir_pattern = "^R (.*)/{.*}$"
-		local dir_path = line:match(dir_pattern)
-		if dir_path then
-			filepath = dir_path .. "/" .. renamed_file
-		else
-			filepath = renamed_file
-		end
-	else
-		-- jj status format: "M filename" or "A filename"
-		-- Match lines that start with status letter followed by space and filename
-		local pattern = "^[MA?!] (.+)$"
-		filepath = line:match(pattern)
-	end
-
-	if not filepath or filepath == "" then
+	if not file_info then
 		return
 	end
 
-	-- Run jj restore command on the file
-	local cmd = "jj restore " .. vim.fn.shellescape(filepath)
-	vim.fn.system(cmd)
-	
-	-- Check if the command was successful
-	if vim.v.shell_error == 0 then
-		utils.notify("Restored: " .. filepath, vim.log.levels.INFO)
-		-- Refresh the status buffer using :J st
-		vim.cmd("J st")
+	if file_info.is_rename then
+		-- For renamed files, remove the new file and restore the old one from parent revision
+		local rm_cmd = "rm " .. vim.fn.shellescape(file_info.new_path)
+		local restore_cmd = "jj restore --from @- " .. vim.fn.shellescape(file_info.old_path)
+
+		local _, rm_success = utils.execute_command(rm_cmd, "Failed to remove renamed file")
+		if rm_success then
+			local _, restore_success = utils.execute_command(restore_cmd, "Failed to restore original file")
+			if restore_success then
+				utils.notify(
+					"Reverted rename: " .. file_info.new_path .. " -> " .. file_info.old_path,
+					vim.log.levels.INFO
+				)
+				vim.cmd("J st")
+			end
+		end
 	else
-		utils.notify("Failed to restore: " .. filepath, vim.log.levels.ERROR)
+		-- For non-renamed files, use regular restore
+		local restore_cmd = "jj restore " .. vim.fn.shellescape(file_info.old_path)
+
+		local _, success = utils.execute_command(restore_cmd, "Failed to restore")
+		if success then
+			utils.notify("Restored: " .. file_info.old_path, vim.log.levels.INFO)
+			vim.cmd("J st")
+		end
 	end
 end
 
