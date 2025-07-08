@@ -68,7 +68,7 @@ local function parse_file_info_from_status_line()
 	if not filepath then
 		-- jj status format: "M filename" or "A filename"
 		-- Match lines that start with status letter followed by space and filename
-		local pattern = "^[MA?!] (.+)$"
+		local pattern = "^[MAD?!] (.+)$"
 		filepath = line:match(pattern)
 	end
 
