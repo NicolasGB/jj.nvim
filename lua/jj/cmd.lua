@@ -139,6 +139,60 @@ local function handle_status_restore()
 	end
 end
 
+--- Extract revision ID from a jujutsu log line
+--- @param line string The log line to parse
+--- @return string|nil The revision ID if found, nil otherwise
+local function get_rev_from_log_line(line)
+	-- Define jujutsu symbols with their UTF-8 byte sequences
+	local jj_symbols = {
+		diamond = "\226\151\134", -- ◆
+		circle = "\226\151\139", -- ○
+	}
+
+	local revset
+
+	-- Try each symbol pattern
+	for _, symbol in pairs(jj_symbols) do
+		-- Pattern: Lines starting with symbol
+		revset = line:match("^%s*" .. symbol .. "%s+(%w+)")
+		if revset then
+			return revset
+		end
+
+		-- Pattern: Lines with │ followed by symbol (this are the branches)
+		revset = line:match("^│%s*" .. symbol .. "%s+(%w+)")
+		if revset then
+			return revset
+		end
+	end
+
+	-- Pattern for simple ASCII symbols
+	revset = line:match("^%s*[@]%s+(%w+)")
+	if revset then
+		return revset
+	end
+
+	return nil
+end
+
+--- Handle keypress enter on `jj log` buffer to edit a previous revision
+local function handle_log_enter()
+	local line = vim.api.nvim_get_current_line()
+
+	local revset = get_rev_from_log_line(line)
+
+	if revset then
+		-- If we found a revision, edit it
+		local cmd = string.format("jj edit %s", revset)
+		local _, success = utils.execute_command(cmd, "Error editing change")
+		if not success then
+			return
+		end
+		-- Close the terminal buffer
+		close_terminal_buffer()
+	end
+end
+
 --- Run a command and show it's output in a terminal buffer
 --- If a previous command already existed it smartly reuses the buffer cleaning the previous output
 ---@param cmd string
@@ -245,6 +299,8 @@ local function run(cmd)
 		if cmd_parts[2] == "st" or cmd_parts[2] == "status" then
 			vim.keymap.set({ "n" }, "<CR>", handle_status_enter, { buffer = state.buf, noremap = true, silent = true })
 			vim.keymap.set({ "n" }, "X", handle_status_restore, { buffer = state.buf, noremap = true, silent = true })
+		elseif cmd_parts[2] == "log" then
+			vim.keymap.set({ "n" }, "<CR>", handle_log_enter, { buffer = state.buf, noremap = true, silent = true })
 		end
 
 		vim.b[state.buf].jj_keymaps_set = true

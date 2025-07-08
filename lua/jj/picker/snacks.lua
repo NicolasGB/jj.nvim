@@ -75,7 +75,7 @@ local function format_jj_log(item, picker)
 	end
 
 	if item.commit_id then
-		ret[#ret + 1] = { a(item.commit_id, 4, { truncate = true }), "SnacksPickerGitCommit" }
+		ret[#ret + 1] = { a(item.commit_id, 10, { truncate = true }), "SnacksPickerGitCommit" }
 		if #item.commit_id >= 4 then
 			ret[#ret + 1] = { " " }
 		end
