@@ -101,6 +101,9 @@ The plugin provides a `:J` command that accepts jj subcommands:
 ```lua
 {
   "nicolasgb/jj.nvim",
+  dependencies = {
+    "folke/snacks.nvim", -- Optional only if you use picker's
+  },
   config = function()
     require("jj").setup({})
     local cmd = require "jj.cmd"

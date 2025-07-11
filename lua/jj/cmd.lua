@@ -176,6 +176,7 @@ local function get_rev_from_log_line(line)
 	}
 
 	local revset
+	--TODO: handle x on conflicts
 
 	-- Try each symbol pattern
 	for _, symbol in pairs(jj_symbols) do
@@ -403,7 +404,7 @@ local function handle_log_diff()
 	local revset = get_rev_from_log_line(line)
 
 	if revset then
-		local cmd = string.format("jj diff -r %s", revset)
+		local cmd = string.format("jj show %s", revset)
 		run_floating(cmd)
 	else
 		utils.notify("No valid revision found in the log line", vim.log.levels.ERROR)
