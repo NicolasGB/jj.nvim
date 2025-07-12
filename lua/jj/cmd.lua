@@ -803,6 +803,32 @@ function M.diff(opts)
 	run(cmd)
 end
 
+--- Jujutsu rebase
+function M.rebase()
+	if not utils.ensure_jj() then
+		return
+	end
+
+	-- show log before rebasing
+	M.log({})
+	vim.ui.input({
+		prompt = "Rebase destination: ",
+		default = "trunk()",
+	}, function(input)
+		if input then
+			local cmd = string.format("jj rebase -d '%s'", input)
+			utils.notify(string.format("Beginning rebase on %s", input), vim.log.levels.INFO)
+			local _, success = utils.execute_command(cmd, "Error rebasing")
+			if success then
+				utils.notify("Rebase successful.", vim.log.levels.INFO)
+				M.log({})
+			end
+		else
+			close_terminal_buffer()
+		end
+	end)
+end
+
 --- @param args string|string[] jj command arguments
 function M.j(args)
 	if not utils.ensure_jj() then
@@ -837,6 +863,9 @@ function M.j(args)
 		return
 	elseif subcommand == "new" then
 		M.new({ show_log = true, args = table.concat(remaining_args, " "), with_input = false })
+		return
+	elseif subcommand == "rebase" then
+		M.rebase()
 		return
 	end
 
