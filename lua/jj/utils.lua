@@ -99,12 +99,65 @@ function M.get_jj_root()
 	return nil
 end
 
+--- Get a list of files modified in the current jj repository.
+--- @return string[] A list of modified file paths
+function M.get_modified_files()
+	if not M.ensure_jj() then
+		return {}
+	end
+
+	local handle = io.popen("jj diff --name-only")
+	if not handle then
+		local error_message = "Error, cannot run jj diff" -- TODO modify error message if necessary
+		M.notify(error_message, vim.log.levels.ERROR)
+		return {}
+	end
+	local result = handle:read("*a")
+	handle:close()
+
+	local files = {}
+	-- Split the result into lines and add each file to the table
+	for file in result:gmatch("[^\r\n]+") do
+		table.insert(files, file)
+	end
+
+	return files
+end
+
 ---- Notify function to display messages with a title
 --- @param message string The message to display
 --- @param level? number The log level (default: INFO)
 function M.notify(message, level)
 	level = level or vim.log.levels.INFO
 	vim.notify(message, level, { title = "JJ", timeout = 3000 })
+end
+
+---@param initial_text string[] Lines to initialize the buffer with
+---@param on_done fun(buf: string[])? Optional callback called with user text on buffer write
+function M.open_ephemeral_buffer(initial_text, on_done)
+	-- Create a new unlisted, scratch buffer
+	local buf = vim.api.nvim_create_buf(false, true)
+	vim.api.nvim_buf_set_name(buf, "jujutsu:///DESCRIBE_EDITMSG")
+	vim.api.nvim_buf_set_lines(buf, 0, -1, false, initial_text)
+	vim.api.nvim_set_current_buf(buf)
+
+	-- Configure buffer options
+	vim.bo[buf].buftype    = "acwrite" -- Allow custom write handling
+	vim.bo[buf].bufhidden  = "wipe" -- Automatically wipe buffer when hidden
+	vim.bo[buf].swapfile   = false  -- Disable swapfile
+	vim.bo[buf].modifiable = true   -- Allow editing
+
+	-- Handle :w and :wq commands
+	vim.api.nvim_create_autocmd("BufWriteCmd", {
+		buffer = buf,
+		callback = function()
+			local buf_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+			if on_done then
+				on_done(buf_lines)
+			end
+			vim.bo[buf].modified = false
+		end,
+	})
 end
 
 return M

@@ -614,23 +614,44 @@ function M.describe(description, opts)
 
 	-- Check if a description was provided otherwise require for input
 	if not description then
-		local merged_opts = vim.tbl_deep_extend("force", default_describe_opts, opts or {})
-		if merged_opts.with_status then
-			-- Show the status in a terminal buffer
-			M.status()
+		-- Build initial lines
+		local modified_files = utils.get_modified_files()
+		local text = { "JJ: This commit contains the following changes:" }
+		for _, f in ipairs(modified_files) do
+			table.insert(text, "JJ:     M " .. f)
 		end
+		table.insert(text, "JJ:") -- blank line
+		table.insert(text, "JJ: Lines starting with \"JJ:\" (like this one) will be ignored when finalizing")
 
-		vim.ui.input({
-			prompt = "Description: ",
-			default = "",
-		}, function(input)
-			-- If the user inputed something, execute the describe command
-			if input then
-				execute_describe(input)
+		utils.open_ephemeral_buffer(
+			text,
+			function(buf_lines)
+				local user_lines = {}
+				for _, line in ipairs(buf_lines) do
+					if not line:match("^JJ:") then
+						table.insert(user_lines, line)
+					end
+				end
+				execute_describe(table.concat(user_lines, "\n"))
+				local merged_opts = vim.tbl_deep_extend("force", default_describe_opts, opts or {})
+				if merged_opts.with_status then
+					M.status({ notify = true })
+				end
 			end
-			-- Close the current terminal when finished
-			close_terminal_buffer()
-		end)
+		)
+
+		-- TODO maybe add an option to pick between buffer editing and description input box?
+		-- vim.ui.input({
+		-- 	prompt = "Description: ",
+		-- 	default = "",
+		-- }, function(input)
+		-- 	-- If the user inputed something, execute the describe command
+		-- 	if input then
+		-- 		execute_describe(input)
+		-- 	end
+		-- 	-- Close the current terminal when finished
+		-- 	close_terminal_buffer()
+		-- end)
 	end
 end
 
