@@ -634,14 +634,30 @@ function M.describe(description, opts)
 	end
 end
 
---- Jujutsu status
-function M.status()
+--- Jujutsu status.
+--
+--  it executes `jj st` and either:
+--   1. Shows the output in a notification (if `opts.notify` is true), or
+--   2. Displays it in the buffer by default.
+--
+-- @param opts? table Optional settings:
+-- @field notify boolean If true, show the status in a notification instead of buffer.
+function M.status(opts)
 	if not utils.ensure_jj() then
 		return
 	end
 
 	local cmd = "jj st"
-	run(cmd)
+
+	if opts and opts.notify then
+		local output = utils.execute_command(cmd, "Failed to get status")
+		if output then
+			utils.notify(output, vim.log.levels.INFO)
+		end
+	else
+		-- Default behavior: show in buffer
+		run(cmd)
+	end
 end
 
 --- @class jj.cmd.new_opts
