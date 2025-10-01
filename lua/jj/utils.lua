@@ -337,4 +337,65 @@ function M.open_ephemeral_buffer(initial_text, on_done)
 	)
 end
 
+--- Parse the current line in the jj status buffer to extract file information.
+--- Handles renamed files and regular status lines.
+--- @return table|nil A table with {old_path = string, new_path = string, is_rename = boolean}, or nil if parsing fails
+function M.parse_file_info_from_status_line()
+	local line = vim.api.nvim_get_current_line()
+
+	-- Handle renamed files: "R path/{old_name => new_name}" or "R old_path => new_path"
+	local rename_pattern_curly = "^R (.*)/{(.*) => ([^}]+)}"
+	local dir_path, old_name, new_name = line:match(rename_pattern_curly)
+
+	if dir_path and old_name and new_name then
+		return {
+			old_path = dir_path .. "/" .. old_name,
+			new_path = dir_path .. "/" .. new_name,
+			is_rename = true,
+		}
+	else
+		-- Try simple rename pattern: "R old_path => new_path"
+		local rename_pattern_simple = "^R (.*) => (.+)$"
+		local old_path, new_path = line:match(rename_pattern_simple)
+		if old_path and new_path then
+			return {
+				old_path = old_path,
+				new_path = new_path,
+				is_rename = true,
+			}
+		end
+	end
+
+	-- Not a rename, try regular status patterns
+	local filepath
+	-- Handle renamed files: "R path/{old_name => new_name}" or "R old_path => new_path"
+	local rename_pattern_curly_new = "^R (.*)/{.* => ([^}]+)}"
+	local dir_path_new, renamed_file = line:match(rename_pattern_curly_new)
+
+	if dir_path_new and renamed_file then
+		filepath = dir_path_new .. "/" .. renamed_file
+	else
+		-- Try simple rename pattern: "R old_path => new_path"
+		local rename_pattern_simple_new = "^R .* => (.+)$"
+		filepath = line:match(rename_pattern_simple_new)
+	end
+
+	if not filepath then
+		-- jj status format: "M filename" or "A filename"
+		-- Match lines that start with status letter followed by space and filename
+		local pattern = "^[MAD?!] (.+)$"
+		filepath = line:match(pattern)
+	end
+
+	if filepath then
+		return {
+			old_path = filepath,
+			new_path = filepath,
+			is_rename = false,
+		}
+	end
+
+	return nil
+end
+
 return M

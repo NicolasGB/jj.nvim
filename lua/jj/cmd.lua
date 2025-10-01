@@ -56,66 +56,8 @@ local function hide_floating_window()
 	end
 end
 
-local function parse_file_info_from_status_line()
-	local line = vim.api.nvim_get_current_line()
-
-	-- Handle renamed files: "R path/{old_name => new_name}" or "R old_path => new_path"
-	local rename_pattern_curly = "^R (.*)/{(.*) => ([^}]+)}"
-	local dir_path, old_name, new_name = line:match(rename_pattern_curly)
-
-	if dir_path and old_name and new_name then
-		return {
-			old_path = dir_path .. "/" .. old_name,
-			new_path = dir_path .. "/" .. new_name,
-			is_rename = true,
-		}
-	else
-		-- Try simple rename pattern: "R old_path => new_path"
-		local rename_pattern_simple = "^R (.*) => (.+)$"
-		local old_path, new_path = line:match(rename_pattern_simple)
-		if old_path and new_path then
-			return {
-				old_path = old_path,
-				new_path = new_path,
-				is_rename = true,
-			}
-		end
-	end
-
-	-- Not a rename, try regular status patterns
-	local filepath
-	-- Handle renamed files: "R path/{old_name => new_name}" or "R old_path => new_path"
-	local rename_pattern_curly_new = "^R (.*)/{.* => ([^}]+)}"
-	local dir_path_new, renamed_file = line:match(rename_pattern_curly_new)
-
-	if dir_path_new and renamed_file then
-		filepath = dir_path_new .. "/" .. renamed_file
-	else
-		-- Try simple rename pattern: "R old_path => new_path"
-		local rename_pattern_simple_new = "^R .* => (.+)$"
-		filepath = line:match(rename_pattern_simple_new)
-	end
-
-	if not filepath then
-		-- jj status format: "M filename" or "A filename"
-		-- Match lines that start with status letter followed by space and filename
-		local pattern = "^[MAD?!] (.+)$"
-		filepath = line:match(pattern)
-	end
-
-	if filepath then
-		return {
-			old_path = filepath,
-			new_path = filepath,
-			is_rename = false,
-		}
-	end
-
-	return nil
-end
-
 local function handle_status_enter()
-	local file_info = parse_file_info_from_status_line()
+	local file_info = utils.parse_file_info_from_status_line()
 
 	if not file_info then
 		return
@@ -136,7 +78,7 @@ local function handle_status_enter()
 end
 
 local function handle_status_restore()
-	local file_info = parse_file_info_from_status_line()
+	local file_info = utils.parse_file_info_from_status_line()
 
 	if not file_info then
 		return
@@ -643,10 +585,6 @@ function M.describe(description, opts)
 				-- Join lines and trim leading/trailing whitespace
 				local trimmed_description = table.concat(user_lines, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
 				execute_describe(trimmed_description)
-				local merged_opts = vim.tbl_deep_extend("force", default_describe_opts, opts or {})
-				if merged_opts.with_status then
-					M.status()
-				end
 			end)
 		else
 			local merged_opts = vim.tbl_deep_extend("force", default_describe_opts, opts or {})
@@ -697,9 +635,9 @@ function M.status(opts)
 end
 
 --- @class jj.cmd.new_opts
---- @field show_log boolean Whether or not to display the log command after creating a new
---- @field with_input boolean Whether or not to use nvim input to decide the parent of the new commit
---- @field args string The arguments to append to the new command
+--- @field show_log? boolean Whether or not to display the log command after creating a new
+--- @field with_input? boolean Whether or not to use nvim input to decide the parent of the new commit
+--- @field args? string The arguments to append to the new command
 
 --- Jujutsu new
 ---@param opts jj.cmd.new_opts|nil
@@ -740,6 +678,10 @@ function M.new(opts)
 		end
 
 		execute_new(cmd)
+		-- If the show log is enabled show log
+		if opts and opts.show_log then
+			M.log()
+		end
 	end
 end
 
