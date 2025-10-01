@@ -3,6 +3,11 @@ local M = {}
 
 local utils = require("jj.utils")
 
+-- Config for cmd module
+M.config = {
+	describe_editor = "buffer", -- "buffer" or "input"
+}
+
 local state = {
 	-- The current terminal buffer for jj commands
 	--- @type integer|nil
@@ -587,11 +592,9 @@ local function execute_describe(description)
 		return
 	end
 
-	local cmd = string.format("jj describe -m '%s'", description)
-	local _, success = utils.execute_command(cmd, "Failed to describe")
-	if not success then
-		return
-	else
+	-- Use --stdin to properly handle multi-line descriptions and special characters
+	local _, success = utils.execute_command("jj describe --stdin", "Failed to describe", description)
+	if success then
 		utils.notify("Description set.", vim.log.levels.INFO)
 	end
 end
@@ -613,45 +616,57 @@ function M.describe(description, opts)
 	end
 
 	-- Check if a description was provided otherwise require for input
-	if not description then
-		-- Build initial lines
-		local modified_files = utils.get_modified_files()
-		local text = { "JJ: This commit contains the following changes:" }
-		for _, f in ipairs(modified_files) do
-			table.insert(text, "JJ:     M " .. f)
-		end
-		table.insert(text, "JJ:") -- blank line
-		table.insert(text, "JJ: Lines starting with \"JJ:\" (like this one) will be ignored when finalizing")
+	if description then
+		-- Description provided directly
+		execute_describe(description)
+	else
+		-- Use buffer editor mode
+		if M.config.describe_editor == "buffer" then
+			-- Build initial lines
+			local status_files = utils.get_status_files()
+			local text = { "JJ: This commit contains the following changes:" }
+			for _, item in ipairs(status_files) do
+				table.insert(text, string.format("JJ:     %s %s", item.status, item.file))
+			end
+			table.insert(text, "JJ:") -- blank line
+			table.insert(text, 'JJ: Lines starting with "JJ:" (like this one) will be ignored when finalizing')
+			table.insert(text, "") -- Empty line to separate from user input
+			table.insert(text, "") -- Another empty line where user can start typing
 
-		utils.open_ephemeral_buffer(
-			text,
-			function(buf_lines)
+			utils.open_ephemeral_buffer(text, function(buf_lines)
 				local user_lines = {}
 				for _, line in ipairs(buf_lines) do
 					if not line:match("^JJ:") then
 						table.insert(user_lines, line)
 					end
 				end
-				execute_describe(table.concat(user_lines, "\n"))
+				-- Join lines and trim leading/trailing whitespace
+				local trimmed_description = table.concat(user_lines, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
+				execute_describe(trimmed_description)
 				local merged_opts = vim.tbl_deep_extend("force", default_describe_opts, opts or {})
 				if merged_opts.with_status then
-					M.status({ notify = true })
+					M.status()
 				end
+			end)
+		else
+			local merged_opts = vim.tbl_deep_extend("force", default_describe_opts, opts or {})
+			if merged_opts.with_status then
+				-- Show the status in a terminal buffer
+				M.status()
 			end
-		)
 
-		-- TODO maybe add an option to pick between buffer editing and description input box?
-		-- vim.ui.input({
-		-- 	prompt = "Description: ",
-		-- 	default = "",
-		-- }, function(input)
-		-- 	-- If the user inputed something, execute the describe command
-		-- 	if input then
-		-- 		execute_describe(input)
-		-- 	end
-		-- 	-- Close the current terminal when finished
-		-- 	close_terminal_buffer()
-		-- end)
+			vim.ui.input({
+				prompt = "Description: ",
+				default = "",
+			}, function(input)
+				-- If the user inputed something, execute the describe command
+				if input then
+					execute_describe(input)
+				end
+				-- Close the current terminal when finished
+				close_terminal_buffer()
+			end)
+		end
 	end
 end
 
