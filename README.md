@@ -167,15 +167,14 @@ require("jj").setup({
       }
     })
 
-    -- Use the exposed functions directly from the main module
-    local jj = require("jj")
-    vim.keymap.set("n", "<leader>jd", jj.describe, { desc = "JJ describe" })
-    vim.keymap.set("n", "<leader>jl", jj.log, { desc = "JJ log" })
-    vim.keymap.set("n", "<leader>je", jj.edit, { desc = "JJ edit" })
-    vim.keymap.set("n", "<leader>jn", jj.new, { desc = "JJ new" })
-    vim.keymap.set("n", "<leader>js", jj.status, { desc = "JJ status" })
-    vim.keymap.set("n", "<leader>dj", jj.diff, { desc = "JJ diff" })
-    vim.keymap.set("n", "<leader>sj", jj.squash, { desc = "JJ squash" })
+    local cmd = require("jj.cmd")
+    vim.keymap.set("n", "<leader>jd", cmd.describe, { desc = "JJ describe" })
+    vim.keymap.set("n", "<leader>jl", cmd.log, { desc = "JJ log" })
+    vim.keymap.set("n", "<leader>je", cmd.edit, { desc = "JJ edit" })
+    vim.keymap.set("n", "<leader>jn", cmd.new, { desc = "JJ new" })
+    vim.keymap.set("n", "<leader>js", cmd.status, { desc = "JJ status" })
+    vim.keymap.set("n", "<leader>dj", cmd.diff, { desc = "JJ diff" })
+    vim.keymap.set("n", "<leader>sj", cmd.squash, { desc = "JJ squash" })
 
     -- Pickers
     local picker = require("jj.picker")
@@ -191,7 +190,6 @@ require("jj").setup({
 
     -- This is an alias i use for moving bookmarks its so good
     vim.keymap.set("n", "<leader>jt", function()
-      local cmd = require("jj.cmd")
       cmd.j "tug"
       cmd.log {}
     end, { desc = "JJ tug" })
