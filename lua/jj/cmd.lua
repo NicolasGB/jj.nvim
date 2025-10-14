@@ -824,6 +824,54 @@ function M.rebase()
 	end)
 end
 
+--- Jujutsu create bookmark
+function M.bookmark_create()
+	if not utils.ensure_jj() then
+		return
+	end
+
+	-- show log before rebasing
+	M.log({})
+	vim.ui.input({
+		prompt = "Bookmark name: ",
+	}, function(input)
+		if input then
+			local cmd = string.format("jj b c %s", input)
+			local _, success = utils.execute_command(cmd, "Error creating bookmark")
+			if success then
+				utils.notify(string.format("Bookmark `%s` created successfully for @", input), vim.log.levels.INFO)
+				M.log({})
+			end
+		else
+			close_terminal_buffer()
+		end
+	end)
+end
+
+--- Jujutsu delete bookmark
+function M.bookmark_delete()
+	if not utils.ensure_jj() then
+		return
+	end
+
+	-- show log before rebasing
+	M.log({})
+	vim.ui.input({
+		prompt = "Bookmark name: ",
+	}, function(input)
+		if input then
+			local cmd = string.format("jj b d %s", input)
+			local _, success = utils.execute_command(cmd, "Error deleting bookmark")
+			if success then
+				utils.notify(string.format("Bookmark `%s` deleted successfully.", input), vim.log.levels.INFO)
+				M.log({})
+			end
+		else
+			close_terminal_buffer()
+		end
+	end)
+end
+
 --- @param args string|string[] jj command arguments
 function M.j(args)
 	if not utils.ensure_jj() then
