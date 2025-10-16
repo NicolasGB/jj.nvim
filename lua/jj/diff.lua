@@ -45,15 +45,20 @@ function M.open_revision(rev, path)
 	vim.api.nvim_win_set_buf(0, buf)
 end
 
+---@class jj.diff.diff_opts
+---@field rev string the revision to diff against
+
 --- Open a diff split for a specific revision of the current file
 --- @param split_fun function Split function for the diff
---- @param args table Any passed arguments
-function M.open_diff(split_fun, args)
+--- @param opts? jj.diff.diff_opts Any passed arguments
+function M.open_diff(split_fun, opts)
 	if not utils.ensure_jj() then
 		return
 	end
 
-	local rev = args[1] or "@-"
+	-- Ensure opts is a table to avoid indexing nil
+	opts = opts or {}
+	local rev = opts.rev or "@-"
 	local path = vim.api.nvim_buf_get_name(0)
 
 	vim.cmd.diffthis()
@@ -62,13 +67,16 @@ function M.open_diff(split_fun, args)
 	vim.cmd.diffthis()
 end
 
+-- Open a vertical diff split for a specific revision of the current file
+--- @param opts? jj.diff.diff_opts Any passed arguments
 function M.open_vdiff(opts)
-	M.open_diff(vim.cmd.vsplit, opts.fargs)
+	M.open_diff(vim.cmd.vsplit, opts)
 end
 
+-- Open a horizontal diff split for a specific revision of the current file
+--- @param opts? jj.diff.diff_opts Any passed arguments
 function M.open_hdiff(opts)
-	M.open_diff(vim.cmd.split, opts.fargs)
+	M.open_diff(vim.cmd.split, opts)
 end
 
 return M
-

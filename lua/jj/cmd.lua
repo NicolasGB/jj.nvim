@@ -975,18 +975,28 @@ function M.register_command()
 		desc = "Execute jj commands with subcommand support",
 	})
 
-	vim.api.nvim_create_user_command("Jdiff", diff.open_vdiff, {
-		nargs = "?",
-		desc = "Diff against jj revision",
-	})
-	vim.api.nvim_create_user_command("Jhdiff", diff.open_hdiff, {
-		nargs = "?",
-		desc = "Horizontal diff against jj revision",
-	})
-	vim.api.nvim_create_user_command("Jvdiff", diff.open_vdiff, {
-		nargs = "?",
-		desc = "Vertical diff against jj revision",
-	})
+	-- Unified creation of jj diff commands with optional revision argument
+	local function create_diff_command(name, fn, desc)
+		vim.api.nvim_create_user_command(name, function(opts)
+			local rev = opts.fargs[1]
+			if rev then
+				fn({ rev = rev })
+			else
+				fn()
+			end
+		end, {
+			nargs = "?",
+			desc = desc .. " (optionally pass jj revision)",
+		})
+	end
+
+	-- Commands:
+	-- Jdiff  : vertical diff by default
+	-- Jhdiff : horizontal diff
+	-- Jvdiff : vertical diff (explicit)
+	create_diff_command("Jdiff", diff.open_vdiff, "Vertical diff against jj revision")
+	create_diff_command("Jhdiff", diff.open_hdiff, "Horizontal diff against jj revision")
+	create_diff_command("Jvdiff", diff.open_vdiff, "Vertical diff against jj revision")
 end
 
 return M
