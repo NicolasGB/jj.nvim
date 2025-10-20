@@ -452,6 +452,7 @@ local function run(cmd)
 	end
 
 	-- Set keymaps only if they haven't been set for this buffer
+	-- Set base keymaps only if they haven't been set for this buffer yet
 	if not vim.b[state.buf].jj_keymaps_set then
 		vim.keymap.set({ "n", "v" }, "i", function() end, { buffer = state.buf, noremap = true, silent = true })
 		vim.keymap.set({ "n", "v" }, "c", function() end, { buffer = state.buf, noremap = true, silent = true })
@@ -469,37 +470,51 @@ local function run(cmd)
 			{ buffer = state.buf, noremap = true, silent = true, desc = "Close the terminal buffer" }
 		)
 
-		-- Add Enter key mapping for status buffers to open files
-		local cmd_parts = vim.split(cmd, " ")
-		if cmd_parts[2] == "st" or cmd_parts[2] == "status" then
-			vim.keymap.set(
-				{ "n" },
-				"<CR>",
-				handle_status_enter,
-				{ buffer = state.buf, noremap = true, silent = true, desc = "Open file under cursor" }
-			)
-			vim.keymap.set(
-				{ "n" },
-				"X",
-				handle_status_restore,
-				{ buffer = state.buf, noremap = true, silent = true, desc = "Restore file under cursor" }
-			)
-		elseif cmd_parts[2] == "log" then
-			vim.keymap.set(
-				{ "n" },
-				"<CR>",
-				handle_log_enter,
-				{ buffer = state.buf, noremap = true, silent = true, desc = "Edit change under cursor" }
-			)
-			vim.keymap.set(
-				{ "n" },
-				"d",
-				handle_log_diff,
-				{ buffer = state.buf, noremap = true, silent = true, desc = "Diff change under cursor" }
-			)
-		end
-
 		vim.b[state.buf].jj_keymaps_set = true
+	end
+
+	-- Remove command-specific keymaps from previous runs
+	if vim.b[state.buf].jj_command_keymaps then
+		for _, map in ipairs(vim.b[state.buf].jj_command_keymaps) do
+			local modes = map.modes
+			if type(modes) ~= "table" then
+				modes = { modes }
+			end
+			for _, mode in ipairs(modes) do
+				pcall(vim.keymap.del, mode, map.lhs, { buffer = state.buf })
+			end
+		end
+		vim.b[state.buf].jj_command_keymaps = nil
+	end
+
+	-- Add command-specific keymaps for jj buffers
+	local new_command_keymaps = {}
+	local function register_command_keymap(modes, lhs, rhs, opts)
+		local normalized_modes = type(modes) == "table" and vim.deepcopy(modes) or { modes }
+		opts = opts or {}
+		opts.buffer = state.buf
+		if opts.noremap == nil then
+			opts.noremap = true
+		end
+		if opts.silent == nil then
+			opts.silent = true
+		end
+		vim.keymap.set(modes, lhs, rhs, opts)
+		table.insert(new_command_keymaps, { modes = normalized_modes, lhs = lhs })
+	end
+
+	-- Add Enter key mapping for status buffers to open files
+	local cmd_parts = vim.split(cmd, " ")
+	if cmd_parts[2] == "st" or cmd_parts[2] == "status" then
+		register_command_keymap({ "n" }, "<CR>", handle_status_enter, { desc = "Open file under cursor" })
+		register_command_keymap({ "n" }, "X", handle_status_restore, { desc = "Restore file under cursor" })
+	elseif cmd_parts[2] == "log" then
+		register_command_keymap({ "n" }, "<CR>", handle_log_enter, { desc = "Edit change under cursor" })
+		register_command_keymap({ "n" }, "d", handle_log_diff, { desc = "Diff change under cursor" })
+	end
+
+	if #new_command_keymaps > 0 then
+		vim.b[state.buf].jj_command_keymaps = new_command_keymaps
 	end
 
 	vim.cmd("stopinsert")
