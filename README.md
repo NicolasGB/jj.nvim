@@ -16,7 +16,7 @@ This plugin aims to be something like vim-fugitive but for driving the jj-vcs CL
 - Terminal-based output display for jj commands
 - Support jj subcommands including your aliases through the cmdline.
 - First class citizens with ui integration
-  - `describe` - Set change descriptions with a Git-style commit message editor
+  - `describe` / `desc` - Set change descriptions with a Git-style commit message editor
   - `status` / `st` - Show repository status
   - `log` - Display log history with configurable options
   - `diff` - Show changes
