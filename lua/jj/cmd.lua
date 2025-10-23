@@ -912,7 +912,7 @@ function M.j(args)
 	local cmd = string.format("jj %s", cmd_args)
 
 	-- Handle known subcommands with custom logic
-	if subcommand == "describe" then
+	if subcommand == "describe" or subcommand == "desc" then
 		local description = table.concat(remaining_args, " ")
 		M.describe(description ~= "" and description or nil)
 		return
