@@ -269,6 +269,7 @@ local function run_floating(cmd)
 			PAGER = "cat",
 			DELTA_PAGER = "cat",
 			COLORTERM = "truecolor",
+			DFT_BACKGROUND = "light",
 		},
 		on_stdout = function(_, data)
 			if not vim.api.nvim_buf_is_valid(state.floating_buf) then
@@ -424,6 +425,7 @@ local function run(cmd)
 			PAGER = "cat",
 			DELTA_PAGER = "cat",
 			COLORTERM = "truecolor",
+			DFT_BACKGROUND = "light",
 		},
 		on_stdout = function(_, data)
 			if not vim.api.nvim_buf_is_valid(state.buf) or not state.chan then
@@ -549,7 +551,7 @@ local function execute_describe(description)
 		return
 	end
 
-	-- Use --stdin to properly handle multi-line descriptions and special characters
+	-- Use --stdin to properly handle multi-line  and special characters
 	local _, success = utils.execute_command("jj describe --stdin", "Failed to describe", description)
 	if success then
 		utils.notify("Description set.", vim.log.levels.INFO)

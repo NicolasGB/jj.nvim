@@ -167,7 +167,7 @@ function M.get_status_files()
 	local files = {}
 	-- Parse jj status output: "M filename", "A filename", "D filename", "R old => new"
 	for line in result:gmatch("[^\r\n]+") do
-		local status, file = line:match("^([MADR])%s+(.+)$")
+		local status, file = line:match("^([MADRC])%s+(.+)$")
 		if status and file then
 			table.insert(files, { status = status, file = file })
 		end
@@ -250,12 +250,12 @@ function M.open_ephemeral_buffer(initial_text, on_done)
 				})
 
 				-- Then check for status indicators and highlight the rest of the line
-				local status_pos = line:find("[MADR] ", 4) -- Find status after "JJ:"
+				local status_pos = line:find("[MADRC] ", 4) -- Find status after "JJ:"
 				if status_pos then
 					local status = line:sub(status_pos, status_pos) -- Get the status character
 					local hl_group = nil
 
-					if status == "A" then
+					if status == "A" or status == "C" then
 						hl_group = "JJAdded"
 					elseif status == "M" then
 						hl_group = "JJModified"
