@@ -2,6 +2,7 @@
 local M = {}
 
 local utils = require("jj.utils")
+local diff = require("jj.diff")
 
 -- Config for cmd module
 M.config = {
@@ -551,7 +552,7 @@ local function execute_describe(description)
 		return
 	end
 
-	-- Use --stdin to properly handle multi-line  and special characters
+	-- Use --stdin to properly handle multi-line and special characters
 	local _, success = utils.execute_command("jj describe --stdin", "Failed to describe", description)
 	if success then
 		utils.notify("Description set.", vim.log.levels.INFO)
@@ -896,7 +897,7 @@ function M.j(args)
 	end
 
 	if #args == 0 then
-		-- Use the user's default command and do not try to parse anythng else
+		-- Use the user's default command and do not try to parse anything else
 		run("jj")
 		return
 	end
@@ -940,7 +941,7 @@ local function handle_j_command(opts)
 	M.j(args)
 end
 
---- Register the J command
+--- Register the J and Jdiff commands
 function M.register_command()
 	vim.api.nvim_create_user_command("J", handle_j_command, {
 		nargs = "*",
@@ -972,6 +973,19 @@ function M.register_command()
 			return matches
 		end,
 		desc = "Execute jj commands with subcommand support",
+	})
+
+	vim.api.nvim_create_user_command("Jdiff", diff.open_vdiff, {
+		nargs = "?",
+		desc = "Diff against jj revision",
+	})
+	vim.api.nvim_create_user_command("Jhdiff", diff.open_hdiff, {
+		nargs = "?",
+		desc = "Horizontal diff against jj revision",
+	})
+	vim.api.nvim_create_user_command("Jvdiff", diff.open_vdiff, {
+		nargs = "?",
+		desc = "Vertical diff against jj revision",
 	})
 end
 
