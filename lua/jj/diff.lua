@@ -31,6 +31,11 @@ function M.open_revision(rev, path)
 	vim.api.nvim_buf_set_name(buf, buf_name)
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
+	local ft = vim.filetype.match({ filename = path })
+	if ft then
+		vim.bo[buf].filetype = ft
+	end
+
 	vim.bo[buf].buftype = "nofile"
 	vim.bo[buf].bufhidden = "wipe"
 	vim.bo[buf].readonly = true
@@ -66,3 +71,4 @@ function M.open_hdiff(opts)
 end
 
 return M
+
