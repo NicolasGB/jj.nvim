@@ -119,8 +119,9 @@ end
 local function get_rev_from_log_line(line)
 	-- Define jujutsu symbols with their UTF-8 byte sequences
 	local jj_symbols = {
-		diamond = "\226\151\134", -- ◆
-		circle = "\226\151\139", -- ○
+		diamond = "\226\151\134", -- ◆ U+25C6
+		circle = "\226\151\139", -- ○ U+25CB
+		conflict = "\195\151", -- × U+00D7
 	}
 
 	local revset
