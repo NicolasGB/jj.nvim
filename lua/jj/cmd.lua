@@ -170,6 +170,26 @@ local function handle_log_enter()
 		close_terminal_buffer()
 	end
 end
+
+--- Handle keypress enter on `jj log` buffer to edit a previous revision even if it is immutable
+local function handle_log_shift_enter()
+	local line = vim.api.nvim_get_current_line()
+
+	local revset = get_rev_from_log_line(line)
+
+	if revset then
+		-- If we found a revision, edit it ignoreing immutability
+		local cmd = string.format("jj edit %s --ignore-immutable", revset)
+		local _, success = utils.execute_command(cmd, "Error editing change")
+		if not success then
+			return
+		end
+
+		utils.notify(string.format("Editing change: `%s`", revset), vim.log.levels.INFO)
+		-- Close the terminal buffer
+		close_terminal_buffer()
+	end
+end
 ---
 ---
 --- Create a floating window for terminal output
@@ -514,6 +534,7 @@ local function run(cmd)
 		register_command_keymap({ "n" }, "X", handle_status_restore, { desc = "Restore file under cursor" })
 	elseif cmd_parts[2] == "log" then
 		register_command_keymap({ "n" }, "<CR>", handle_log_enter, { desc = "Edit change under cursor" })
+    register_command_keymap({ "n" }, "<S-CR>", handle_log_shift_enter, { desc = "Edit change under cursor ignoring immutability" })
 		register_command_keymap({ "n" }, "d", handle_log_diff, { desc = "Diff change under cursor" })
 	end
 
