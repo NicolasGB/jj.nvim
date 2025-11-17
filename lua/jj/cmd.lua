@@ -151,47 +151,41 @@ local function get_rev_from_log_line(line)
 	return nil
 end
 
---- Handle keypress enter on `jj log` buffer to edit a previous revision
-local function handle_log_enter()
+--- Handle keypress enter on `jj log` buffer to edit a revision.
+--- If ignore_immut is true, adds --ignore-immutable to the command.
+--- Silently returns if no revision is found or the jj command fails.
+--- On success, notifies and refreshes the log buffer.
+--- @param ignore_immut? boolean Pass --ignore-immutable to jj edit when true.
+local function handle_log_enter(ignore_immut)
 	local line = vim.api.nvim_get_current_line()
-
 	local revset = get_rev_from_log_line(line)
+  if not revset or revset == "" then
+    return
+  end
+  -- If we found a revision, edit it.
 
-	if revset then
-		-- If we found a revision, edit it
-		local cmd = string.format("jj edit %s", revset)
-		local _, success = utils.execute_command(cmd, "Error editing change")
-		if not success then
-			return
-		end
+  -- Build command parts.
+  local cmd_parts = { "jj", "edit" }
+  if ignore_immut then
+    table.insert(cmd_parts, "--ignore-immutable")
+  end
 
-		utils.notify(string.format("Editing change: `%s`", revset), vim.log.levels.INFO)
-		-- Close the terminal buffer
-		close_terminal_buffer()
-	end
+  table.insert(cmd_parts, revset)
+
+  -- Build cmd string
+  local cmd = table.concat(cmd_parts, " ")
+
+  -- Try to execute cmd
+  local _, success = utils.execute_command(cmd, "Error editing change")
+  if not success then
+    return
+  end
+
+  utils.notify(string.format("Editing change: `%s`", revset), vim.log.levels.INFO)
+  -- Close the terminal buffer
+  close_terminal_buffer()
 end
 
---- Handle keypress enter on `jj log` buffer to edit a previous revision even if it is immutable
-local function handle_log_shift_enter()
-	local line = vim.api.nvim_get_current_line()
-
-	local revset = get_rev_from_log_line(line)
-
-	if revset then
-		-- If we found a revision, edit it ignoreing immutability
-		local cmd = string.format("jj edit %s --ignore-immutable", revset)
-		local _, success = utils.execute_command(cmd, "Error editing change")
-		if not success then
-			return
-		end
-
-		utils.notify(string.format("Editing change: `%s`", revset), vim.log.levels.INFO)
-		-- Close the terminal buffer
-		close_terminal_buffer()
-	end
-end
----
----
 --- Create a floating window for terminal output
 --- @param config table Window configuration options
 --- @param enter boolean Whether to enter the window after creation
@@ -533,8 +527,12 @@ local function run(cmd)
 		register_command_keymap({ "n" }, "<CR>", handle_status_enter, { desc = "Open file under cursor" })
 		register_command_keymap({ "n" }, "X", handle_status_restore, { desc = "Restore file under cursor" })
 	elseif cmd_parts[2] == "log" then
-		register_command_keymap({ "n" }, "<CR>", handle_log_enter, { desc = "Edit change under cursor" })
-    register_command_keymap({ "n" }, "<S-CR>", handle_log_shift_enter, { desc = "Edit change under cursor ignoring immutability" })
+		register_command_keymap({ "n" }, "<CR>", function()
+      handle_log_enter(false)
+    end, { desc = "Edit change under cursor" })
+    register_command_keymap({ "n" }, "<S-CR>", function()
+      handle_log_enter(true)
+    end, { desc = "Edit change under cursor ignoring immutability" })
 		register_command_keymap({ "n" }, "d", handle_log_diff, { desc = "Diff change under cursor" })
 	end
 
