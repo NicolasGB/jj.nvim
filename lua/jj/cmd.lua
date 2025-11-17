@@ -170,6 +170,27 @@ local function handle_log_enter()
 		close_terminal_buffer()
 	end
 end
+
+--- Handle keypress n on `jj log` buffer to create a new commit after the current one
+local function handle_log_new()
+	local line = vim.api.nvim_get_current_line()
+
+	local revset = get_rev_from_log_line(line)
+
+	if revset then
+		-- If we found a revision, edit it
+		local cmd = string.format("jj new -A %s", revset)
+		local _, success = utils.execute_command(cmd, string.format("Error creating new change after `%s`", revset))
+		if not success then
+			return
+		end
+
+		utils.notify(string.format("Succesfully created change after: `%s`", revset), vim.log.levels.INFO)
+		-- Update the log buffer
+		M.log()
+	end
+end
+
 ---
 ---
 --- Create a floating window for terminal output
@@ -515,6 +536,7 @@ local function run(cmd)
 	elseif cmd_parts[2] == "log" then
 		register_command_keymap({ "n" }, "<CR>", handle_log_enter, { desc = "Edit change under cursor" })
 		register_command_keymap({ "n" }, "d", handle_log_diff, { desc = "Diff change under cursor" })
+		register_command_keymap({ "n" }, "n", handle_log_new, { desc = "Diff change under cursor" })
 	end
 
 	if #new_command_keymaps > 0 then
