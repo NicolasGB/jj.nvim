@@ -50,8 +50,15 @@ In your log ouptut press `CR` in a line to directly edit a `mutable` change.
 You can create new changes directly from the log buffer with multiple options:
 
 - `n` - Create a new change branching off the revision under the cursor
-- `<C-n>` - Create a new change after the revision under the cursor  
+- `<C-n>` - Create a new change after the revision under the cursor
 - `<S-n>` - Create a new change after while ignoring immutability constraints
+
+### Undo/Redo from the log buffer
+
+You can undo/redo changes directly from the log buffer:
+
+- `u` - Undo the last operation
+- `r` - Redo the last undone operation
 
 ### Open a changed file
 

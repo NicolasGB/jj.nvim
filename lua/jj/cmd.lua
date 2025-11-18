@@ -590,6 +590,13 @@ local function run(cmd)
 		register_command_keymap({ "n" }, "<S-n>", function()
 			handle_log_new("after", true)
 		end, { desc = "New change after the change under cursor ignoring immutability" })
+		-- Undo/Redo
+		register_command_keymap({ "n" }, "u", function()
+			M.undo()
+		end, { desc = "Undo last operation" })
+		register_command_keymap({ "n" }, "r", function()
+			M.redo()
+		end, { desc = "Redo last operation" })
 	end
 
 	if #new_command_keymaps > 0 then
@@ -1132,4 +1139,3 @@ function M.register_command()
 end
 
 return M
-
