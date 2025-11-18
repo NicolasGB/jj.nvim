@@ -13,13 +13,15 @@ local state = {
 	-- The current terminal buffer for jj commands
 	--- @type integer|nil
 	buf = nil,
-
 	-- The current channel to communciate with the terminal
 	--- @type integer|nil
 	chan = nil,
 	--- The current job id for the terminal buffer
 	--- @type integer|nil
 	job_id = nil,
+	-- The current command being displayed
+	--- @type string|nil
+	buf_cmd = nil,
 
 	-- The floating buffer if any
 	--- @type integer|nil
@@ -125,7 +127,6 @@ local function get_rev_from_log_line(line)
 	}
 
 	local revset
-	--TODO: handle x on conflicts
 
 	-- Try each symbol pattern
 	for _, symbol in pairs(jj_symbols) do
@@ -166,11 +167,12 @@ local function handle_log_enter(ignore_immut)
 
   -- Build command parts.
   local cmd_parts = { "jj", "edit" }
+
+  table.insert(cmd_parts, revset)
+
   if ignore_immut then
     table.insert(cmd_parts, "--ignore-immutable")
   end
-
-  table.insert(cmd_parts, revset)
 
   -- Build cmd string
   local cmd = table.concat(cmd_parts, " ")
@@ -186,6 +188,61 @@ local function handle_log_enter(ignore_immut)
   close_terminal_buffer()
 end
 
+--- Create a new change relative to the revision under the cursor in a jj log buffer.
+--- Behavior:
+---   flag == nil       -> branch off the current revision
+---   flag == "after"   -> create a new change after the current revision (-A)
+--- If ignore_immut is true, adds --ignore-immutable to the command.
+--- Silently returns if no revision is found or the jj command fails.
+--- On success, notifies and refreshes the log buffer.
+--- @param flag? 'after' Position relative to the current revision; nil to branch off.
+--- @param ignore_immut? boolean Pass --ignore-immutable to jj when true.
+local function handle_log_new(flag, ignore_immut)
+	local line = vim.api.nvim_get_current_line()
+	local revset = get_rev_from_log_line(line)
+	if not revset or revset == "" then
+		return
+	end
+
+	-- Mapping for flag-specific options and messages.
+	local flag_map = {
+		after = {
+			opt = "-A",
+			err = "Error creating new change after: `%s`",
+			ok = "Successfully created change after: `%s`",
+		},
+		default = {
+			opt = "",
+			err = "Error creating new change branching off `%s`",
+			ok = "Successfully created change branching off `%s`",
+		},
+	}
+
+	local cfg = flag_map[flag] or flag_map.default
+
+	-- Build command parts
+	local cmd_parts = { "jj", "new" }
+	if cfg.opt ~= "" then
+		table.insert(cmd_parts, cfg.opt)
+	end
+	table.insert(cmd_parts, revset)
+	if ignore_immut then
+		table.insert(cmd_parts, "--ignore-immutable")
+	end
+
+	local cmd = table.concat(cmd_parts, " ")
+	local _, success = utils.execute_command(cmd, string.format(cfg.err, revset))
+	if not success then
+		return
+	end
+
+	utils.notify(string.format(cfg.ok, revset), vim.log.levels.INFO)
+	-- Refresh the log buffer after creating the change.
+	M.log()
+end
+
+---
+---
 --- Create a floating window for terminal output
 --- @param config table Window configuration options
 --- @param enter boolean Whether to enter the window after creation
@@ -247,23 +304,15 @@ local function run_floating(cmd)
 		state.floating_chan = nil
 	end
 
-	local win, buf
+	-- Wipe old buffer if it exists
 	if state.floating_buf and vim.api.nvim_buf_is_valid(state.floating_buf) then
-		-- Find or create a window for the buffer
-		local buf_wins = vim.fn.win_findbuf(state.floating_buf)
-		if #buf_wins > 0 then
-			vim.api.nvim_set_current_win(buf_wins[1])
-			win = buf_wins[1]
-		else
-			-- If the buffer is hidden create a new window and override the buffer of it
-			_, win = create_floating_window({}, true)
-			vim.api.nvim_win_set_buf(win, state.floating_buf)
-		end
-	else
-		-- Otherwise create a new buffer
-		buf, win = create_floating_window({}, true)
-		state.floating_buf = buf
+		vim.api.nvim_buf_delete(state.floating_buf, { force = true })
+		state.floating_buf = nil
 	end
+
+	-- Create new floating buffer
+	local buf, win = create_floating_window({}, true)
+	state.floating_buf = buf
 
 	-- Create new terminal channel
 	local chan = vim.api.nvim_open_term(state.floating_buf, {})
@@ -273,8 +322,8 @@ local function run_floating(cmd)
 	end
 	state.floating_chan = chan
 
-	-- Clear terminal before running new command
-	vim.api.nvim_chan_send(chan, "\27[H\27[2J")
+	-- Move cursor to top before output arrives
+	vim.api.nvim_win_set_cursor(win, { 1, 0 })
 
 	local jid = vim.fn.jobstart(cmd, {
 		pty = true,
@@ -384,6 +433,7 @@ local function run(cmd)
 		state.buf = nil
 		state.chan = nil
 		state.job_id = nil
+		state.buf_cmd = nil
 	end
 
 	-- Stop any running job first
@@ -398,28 +448,18 @@ local function run(cmd)
 		state.chan = nil
 	end
 
-	local win
+	-- Wipe old buffer if it exists
 	if state.buf and vim.api.nvim_buf_is_valid(state.buf) then
-		-- Find or create a window for the buffer
-		local buf_wins = vim.fn.win_findbuf(state.buf)
-		if #buf_wins > 0 then
-			vim.api.nvim_set_current_win(buf_wins[1])
-			win = buf_wins[1]
-		else
-			vim.cmd("split")
-			win = vim.api.nvim_get_current_win()
-			vim.api.nvim_win_set_buf(win, state.buf)
-		end
-	else
-		-- Create new terminal buffer
-		vim.cmd("split")
-		win = vim.api.nvim_get_current_win()
-		state.buf = vim.api.nvim_create_buf(false, true)
-		vim.api.nvim_win_set_buf(win, state.buf)
-
-		-- Set buffer options only once
-		vim.bo[state.buf].bufhidden = "wipe"
+		vim.api.nvim_buf_delete(state.buf, { force = true })
+		state.buf = nil
 	end
+
+	-- Create new terminal buffer
+	vim.cmd("split")
+	local win = vim.api.nvim_get_current_win()
+	state.buf = vim.api.nvim_create_buf(false, true)
+	vim.api.nvim_win_set_buf(win, state.buf)
+	vim.bo[state.buf].bufhidden = "wipe"
 
 	-- Create new terminal channel
 	local chan = vim.api.nvim_open_term(state.buf, {})
@@ -429,8 +469,10 @@ local function run(cmd)
 	end
 	state.chan = chan
 
-	-- Clear terminal before running new command
-	vim.api.nvim_chan_send(chan, "\27[H\27[2J")
+	-- Move cursor to top before output arrives
+	vim.api.nvim_win_set_cursor(win, { 1, 0 })
+
+	local cmd_parts = vim.split(cmd, "%s+")
 
 	local jid = vim.fn.jobstart(cmd, {
 		pty = true,
@@ -450,13 +492,18 @@ local function run(cmd)
 			local output = table.concat(data, "\n")
 			vim.api.nvim_chan_send(state.chan, output)
 		end,
-		on_exit = function(_, _)
+		on_exit = function(_, exit_code)
 			vim.schedule(function()
+				-- Make the buffer not modifiable
 				if vim.api.nvim_buf_is_valid(state.buf) then
 					vim.bo[state.buf].modifiable = false
 					if vim.api.nvim_get_current_buf() == state.buf then
 						vim.cmd("stopinsert")
 					end
+				end
+				-- Store the subcommand on successful exit
+				if exit_code == 0 then
+					state.buf_cmd = cmd_parts[2] or nil
 				end
 			end)
 		end,
@@ -522,18 +569,34 @@ local function run(cmd)
 	end
 
 	-- Add Enter key mapping for status buffers to open files
-	local cmd_parts = vim.split(cmd, " ")
 	if cmd_parts[2] == "st" or cmd_parts[2] == "status" then
 		register_command_keymap({ "n" }, "<CR>", handle_status_enter, { desc = "Open file under cursor" })
 		register_command_keymap({ "n" }, "X", handle_status_restore, { desc = "Restore file under cursor" })
 	elseif cmd_parts[2] == "log" then
+    -- EDIT
 		register_command_keymap({ "n" }, "<CR>", function()
       handle_log_enter(false)
     end, { desc = "Edit change under cursor" })
     register_command_keymap({ "n" }, "<S-CR>", function()
       handle_log_enter(true)
     end, { desc = "Edit change under cursor ignoring immutability" })
+    -- Diff
 		register_command_keymap({ "n" }, "d", handle_log_diff, { desc = "Diff change under cursor" })
+		-- New
+		register_command_keymap({ "n" }, "n", handle_log_new, { desc = "New change off the change under cursor" })
+		register_command_keymap({ "n" }, "<C-n>", function()
+			handle_log_new("after")
+		end, { desc = "New change after the change under cursor" })
+		register_command_keymap({ "n" }, "<S-n>", function()
+			handle_log_new("after", true)
+		end, { desc = "New change after the change under cursor ignoring immutability" })
+		-- Undo/Redo
+		register_command_keymap({ "n" }, "u", function()
+			M.undo()
+		end, { desc = "Undo last operation" })
+		register_command_keymap({ "n" }, "r", function()
+			M.redo()
+		end, { desc = "Redo last operation" })
 	end
 
 	if #new_command_keymaps > 0 then
@@ -558,6 +621,7 @@ local function run(cmd)
 					vim.fn.jobstop(state.job_id)
 					state.job_id = nil
 				end
+				state.buf_cmd = nil
 			end,
 		})
 		vim.b[state.buf].jj_cleanup_set = true
@@ -759,6 +823,9 @@ function M.squash()
 	local _, success = utils.execute_command(cmd, "Failed to squash")
 	if success then
 		utils.notify("Command `squash` was succesful.", vim.log.levels.INFO)
+		if state.buf_cmd == "log" then
+			M.log()
+		end
 	end
 end
 
@@ -910,6 +977,38 @@ function M.bookmark_delete()
 	end)
 end
 
+--- Jujutsu undo
+function M.undo()
+	if not utils.ensure_jj() then
+		return
+	end
+
+	local cmd = "jj undo"
+	local _, success = utils.execute_command(cmd, "Failed to undo")
+	if success then
+		utils.notify("Command `undo` was succesful.", vim.log.levels.INFO)
+		if state.buf_cmd == "log" then
+			M.log({})
+		end
+	end
+end
+---
+--- Jujutsu redo
+function M.redo()
+	if not utils.ensure_jj() then
+		return
+	end
+
+	local cmd = "jj redo"
+	local _, success = utils.execute_command(cmd, "Failed to redo")
+	if success then
+		utils.notify("Command `redo` was succesful.", vim.log.levels.INFO)
+		if state.buf_cmd == "log" then
+			M.log({})
+		end
+	end
+end
+
 --- @param args string|string[] jj command arguments
 function M.j(args)
 	if not utils.ensure_jj() then
@@ -917,41 +1016,59 @@ function M.j(args)
 	end
 
 	if #args == 0 then
-		-- Use the user's default command and do not try to parse anything else
-		run("jj")
-		return
+		local default_cmd, success =
+			utils.execute_command("jj config get ui.default-command", "Error getting user's default command", nil, true)
+		if not success or default_cmd == "" then
+			run("jj")
+			return
+		end
+		args = { vim.trim(default_cmd or "") }
 	end
 
-	-- Check if args is a string
+	-- Normalize to table
 	if type(args) == "string" then
-		-- Split the string into a table of arguments
 		args = vim.split(args, "%s+")
 	end
 
 	local subcommand = args[1]
 	local remaining_args = vim.list_slice(args, 2)
+	local cmd = string.format("jj %s", table.concat(args, " "))
+	local remaining_args_str = table.concat(remaining_args, " ")
 
-	local cmd_args = table.concat(args, " ")
-	local cmd = string.format("jj %s", cmd_args)
+	-- Dispatch table for known subcommands
+	local handlers = {
+		describe = function()
+			M.describe(remaining_args_str ~= "" and remaining_args_str or nil)
+		end,
+		desc = function()
+			M.describe(remaining_args_str ~= "" and remaining_args_str or nil)
+		end,
+		edit = function()
+			if #remaining_args == 0 then
+				M.edit()
+			else
+				run(cmd)
+			end
+		end,
+		new = function()
+			M.new({ show_log = true, args = remaining_args_str, with_input = false })
+		end,
+		rebase = function()
+			M.rebase()
+		end,
+		undo = function()
+			M.undo()
+		end,
+		redo = function()
+			M.redo()
+		end,
+	}
 
-	-- Handle known subcommands with custom logic
-	if subcommand == "describe" or subcommand == "desc" then
-		local description = table.concat(remaining_args, " ")
-		M.describe(description ~= "" and description or nil)
-		return
-	elseif subcommand == "edit" and #remaining_args == 0 then
-		M.edit()
-		return
-	elseif subcommand == "new" then
-		M.new({ show_log = true, args = table.concat(remaining_args, " "), with_input = false })
-		return
-	elseif subcommand == "rebase" then
-		M.rebase()
-		return
+	if handlers[subcommand] then
+		handlers[subcommand]()
+	else
+		run(cmd)
 	end
-
-	-- Run the command in the terminal
-	run(cmd)
 end
 
 --- Handle J command with subcommands and direct jj passthrough
@@ -982,6 +1099,8 @@ function M.register_command()
 				"git",
 				"rebase",
 				"abandon",
+				"undo",
+				"redo",
 			}
 
 			local matches = {}

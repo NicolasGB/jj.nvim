@@ -23,6 +23,8 @@ This plugin aims to be something like vim-fugitive but for driving the jj-vcs CL
   - `new` - Create a new change
   - `edit` - Edit a change
   - `squash` - Squash the current diff to it's parent
+  - `undo` - Undo the last operation
+  - `redo` - Redo the last undone operation
 - Picker for for [Snacks.nvim](https://github.com/folke/snacks.nvim)
   - `jj status` Displays the current changes diffs
   - `jj file_history` Displays a buffer's history changes and allows to edit it's change (including immutable changes)
@@ -43,6 +45,21 @@ Jumping up and down your log history ?
 In your log ouptut press `CR` in a line to directly edit a `mutable` change.
 If you are sure what your are doingpress `S-CR` (Shift Enter) to edit a `immutable` change.
 ![Edit-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/edit-log.gif)
+
+### Create new changes from the log buffer
+
+You can create new changes directly from the log buffer with multiple options:
+
+- `n` - Create a new change branching off the revision under the cursor
+- `<C-n>` - Create a new change after the revision under the cursor
+- `<S-n>` - Create a new change after while ignoring immutability constraints
+
+### Undo/Redo from the log buffer
+
+You can undo/redo changes directly from the log buffer:
+
+- `u` - Undo the last operation
+- `r` - Redo the last undone operation
 
 ### Open a changed file
 
@@ -93,7 +110,7 @@ The plugin provides a `:J` command that accepts jj subcommands:
 
     }
   },
-  
+
   -- Choose the editor mode for describe command
   -- "buffer" - Opens a Git-style commit message buffer with syntax highlighting (default)
   -- "input" - Uses a simple vim.ui.input prompt
@@ -118,13 +135,13 @@ The `describe_editor` option lets you choose how you want to write commit descri
   - Shows file changes with syntax highlighting
   - Multi-line editing with proper formatting
   - Close with `q` or `<Esc>`, save with `:w` or `:wq`
-  
 - **`"input"`** - Simple single-line input prompt
   - Quick and minimal
   - Good for short, single-line descriptions
   - Uses `vim.ui.input()` which can be customized by UI plugins like dressing.nvim
 
 Example:
+
 ```lua
 require("jj").setup({
   describe_editor = "input", -- Use simple input mode
@@ -176,6 +193,8 @@ require("jj").setup({
     vim.keymap.set("n", "<leader>js", cmd.status, { desc = "JJ status" })
     vim.keymap.set("n", "<leader>dj", cmd.diff, { desc = "JJ diff" })
     vim.keymap.set("n", "<leader>sj", cmd.squash, { desc = "JJ squash" })
+    vim.keymap.set("n", "<leader>ju", cmd.undo, { desc = "JJ undo" })
+    vim.keymap.set("n", "<leader>jy", cmd.redo, { desc = "JJ redo" })
 
     -- Pickers
     local picker = require("jj.picker")
