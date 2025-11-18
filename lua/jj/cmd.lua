@@ -13,14 +13,12 @@ local state = {
 	-- The current terminal buffer for jj commands
 	--- @type integer|nil
 	buf = nil,
-
 	-- The current channel to communciate with the terminal
 	--- @type integer|nil
 	chan = nil,
 	--- The current job id for the terminal buffer
 	--- @type integer|nil
 	job_id = nil,
-
 	-- The current command being displayed
 	--- @type string|nil
 	buf_cmd = nil,
@@ -290,23 +288,15 @@ local function run_floating(cmd)
 		state.floating_chan = nil
 	end
 
-	local win, buf
+	-- Wipe old buffer if it exists
 	if state.floating_buf and vim.api.nvim_buf_is_valid(state.floating_buf) then
-		-- Find or create a window for the buffer
-		local buf_wins = vim.fn.win_findbuf(state.floating_buf)
-		if #buf_wins > 0 then
-			vim.api.nvim_set_current_win(buf_wins[1])
-			win = buf_wins[1]
-		else
-			-- If the buffer is hidden create a new window and override the buffer of it
-			_, win = create_floating_window({}, true)
-			vim.api.nvim_win_set_buf(win, state.floating_buf)
-		end
-	else
-		-- Otherwise create a new buffer
-		buf, win = create_floating_window({}, true)
-		state.floating_buf = buf
+		vim.api.nvim_buf_delete(state.floating_buf, { force = true })
+		state.floating_buf = nil
 	end
+
+	-- Create new floating buffer
+	local buf, win = create_floating_window({}, true)
+	state.floating_buf = buf
 
 	-- Create new terminal channel
 	local chan = vim.api.nvim_open_term(state.floating_buf, {})
@@ -316,8 +306,8 @@ local function run_floating(cmd)
 	end
 	state.floating_chan = chan
 
-	-- Clear terminal before running new command
-	vim.api.nvim_chan_send(chan, "\27[H\27[2J")
+	-- Move cursor to top before output arrives
+	vim.api.nvim_win_set_cursor(win, { 1, 0 })
 
 	local jid = vim.fn.jobstart(cmd, {
 		pty = true,
@@ -442,28 +432,18 @@ local function run(cmd)
 		state.chan = nil
 	end
 
-	local win
+	-- Wipe old buffer if it exists
 	if state.buf and vim.api.nvim_buf_is_valid(state.buf) then
-		-- Find or create a window for the buffer
-		local buf_wins = vim.fn.win_findbuf(state.buf)
-		if #buf_wins > 0 then
-			vim.api.nvim_set_current_win(buf_wins[1])
-			win = buf_wins[1]
-		else
-			vim.cmd("split")
-			win = vim.api.nvim_get_current_win()
-			vim.api.nvim_win_set_buf(win, state.buf)
-		end
-	else
-		-- Create new terminal buffer
-		vim.cmd("split")
-		win = vim.api.nvim_get_current_win()
-		state.buf = vim.api.nvim_create_buf(false, true)
-		vim.api.nvim_win_set_buf(win, state.buf)
-
-		-- Set buffer options only once
-		vim.bo[state.buf].bufhidden = "wipe"
+		vim.api.nvim_buf_delete(state.buf, { force = true })
+		state.buf = nil
 	end
+
+	-- Create new terminal buffer
+	vim.cmd("split")
+	local win = vim.api.nvim_get_current_win()
+	state.buf = vim.api.nvim_create_buf(false, true)
+	vim.api.nvim_win_set_buf(win, state.buf)
+	vim.bo[state.buf].bufhidden = "wipe"
 
 	-- Create new terminal channel
 	local chan = vim.api.nvim_open_term(state.buf, {})
@@ -473,11 +453,10 @@ local function run(cmd)
 	end
 	state.chan = chan
 
-	-- Split the current command in parts for further use
-	local cmd_parts = vim.split(cmd, "%s+")
+	-- Move cursor to top before output arrives
+	vim.api.nvim_win_set_cursor(win, { 1, 0 })
 
-	-- Clear terminal before running new command
-	vim.api.nvim_chan_send(chan, "\27[H\27[2J")
+	local cmd_parts = vim.split(cmd, "%s+")
 
 	local jid = vim.fn.jobstart(cmd, {
 		pty = true,
