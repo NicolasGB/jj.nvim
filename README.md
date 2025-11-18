@@ -23,6 +23,8 @@ This plugin aims to be something like vim-fugitive but for driving the jj-vcs CL
   - `new` - Create a new change
   - `edit` - Edit a change
   - `squash` - Squash the current diff to it's parent
+  - `undo` - Undo the last operation
+  - `redo` - Redo the last undone operation
 - Picker for for [Snacks.nvim](https://github.com/folke/snacks.nvim)
   - `jj status` Displays the current changes diffs
   - `jj file_history` Displays a buffer's history changes and allows to edit it's change (including immutable changes)
@@ -183,6 +185,8 @@ require("jj").setup({
     vim.keymap.set("n", "<leader>js", cmd.status, { desc = "JJ status" })
     vim.keymap.set("n", "<leader>dj", cmd.diff, { desc = "JJ diff" })
     vim.keymap.set("n", "<leader>sj", cmd.squash, { desc = "JJ squash" })
+    vim.keymap.set("n", "<leader>ju", cmd.undo, { desc = "JJ undo" })
+    vim.keymap.set("n", "<leader>jy", cmd.redo, { desc = "JJ redo" })
 
     -- Pickers
     local picker = require("jj.picker")

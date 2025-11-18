@@ -1009,52 +1009,59 @@ function M.j(args)
 	end
 
 	if #args == 0 then
-		-- Use the user's default command and do not try to parse anything else
 		local default_cmd, success =
 			utils.execute_command("jj config get ui.default-command", "Error getting user's default command", nil, true)
-		-- If we can't find the default cmd we simply run it
 		if not success or default_cmd == "" then
 			run("jj")
 			return
 		end
-		-- Trim leading and trailing whitespace
-		if default_cmd then
-			default_cmd = default_cmd:gsub("^%s+", ""):gsub("%s+$", "")
-		end
-		-- Modify the args table to contain the new default command this will allow for descendant logic to parse the cmd and use builtin functions
-		args = { default_cmd }
+		args = { vim.trim(default_cmd or "") }
 	end
 
-	-- Check if args is a string
+	-- Normalize to table
 	if type(args) == "string" then
-		-- Split the string into a table of arguments
 		args = vim.split(args, "%s+")
 	end
 
 	local subcommand = args[1]
 	local remaining_args = vim.list_slice(args, 2)
+	local cmd = string.format("jj %s", table.concat(args, " "))
+	local remaining_args_str = table.concat(remaining_args, " ")
 
-	local cmd_args = table.concat(args, " ")
-	local cmd = string.format("jj %s", cmd_args)
+	-- Dispatch table for known subcommands
+	local handlers = {
+		describe = function()
+			M.describe(remaining_args_str ~= "" and remaining_args_str or nil)
+		end,
+		desc = function()
+			M.describe(remaining_args_str ~= "" and remaining_args_str or nil)
+		end,
+		edit = function()
+			if #remaining_args == 0 then
+				M.edit()
+			else
+				run(cmd)
+			end
+		end,
+		new = function()
+			M.new({ show_log = true, args = remaining_args_str, with_input = false })
+		end,
+		rebase = function()
+			M.rebase()
+		end,
+		undo = function()
+			M.undo()
+		end,
+		redo = function()
+			M.redo()
+		end,
+	}
 
-	-- Handle known subcommands with custom logic
-	if subcommand == "describe" or subcommand == "desc" then
-		local description = table.concat(remaining_args, " ")
-		M.describe(description ~= "" and description or nil)
-		return
-	elseif subcommand == "edit" and #remaining_args == 0 then
-		M.edit()
-		return
-	elseif subcommand == "new" then
-		M.new({ show_log = true, args = table.concat(remaining_args, " "), with_input = false })
-		return
-	elseif subcommand == "rebase" then
-		M.rebase()
-		return
+	if handlers[subcommand] then
+		handlers[subcommand]()
+	else
+		run(cmd)
 	end
-
-	-- Run the command in the terminal
-	run(cmd)
 end
 
 --- Handle J command with subcommands and direct jj passthrough
