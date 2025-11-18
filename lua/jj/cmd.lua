@@ -21,6 +21,10 @@ local state = {
 	--- @type integer|nil
 	job_id = nil,
 
+	-- The current command being displayed
+	--- @type string|nil
+	buf_cmd = nil,
+
 	-- The floating buffer if any
 	--- @type integer|nil
 	floating_buf = nil,
@@ -125,7 +129,6 @@ local function get_rev_from_log_line(line)
 	}
 
 	local revset
-	--TODO: handle x on conflicts
 
 	-- Try each symbol pattern
 	for _, symbol in pairs(jj_symbols) do
@@ -424,6 +427,7 @@ local function run(cmd)
 		state.buf = nil
 		state.chan = nil
 		state.job_id = nil
+		state.buf_cmd = nil
 	end
 
 	-- Stop any running job first
@@ -469,6 +473,9 @@ local function run(cmd)
 	end
 	state.chan = chan
 
+	-- Split the current command in parts for further use
+	local cmd_parts = vim.split(cmd, "%s+")
+
 	-- Clear terminal before running new command
 	vim.api.nvim_chan_send(chan, "\27[H\27[2J")
 
@@ -490,13 +497,18 @@ local function run(cmd)
 			local output = table.concat(data, "\n")
 			vim.api.nvim_chan_send(state.chan, output)
 		end,
-		on_exit = function(_, _)
+		on_exit = function(_, exit_code)
 			vim.schedule(function()
+				-- Make the buffer not modifiable
 				if vim.api.nvim_buf_is_valid(state.buf) then
 					vim.bo[state.buf].modifiable = false
 					if vim.api.nvim_get_current_buf() == state.buf then
 						vim.cmd("stopinsert")
 					end
+				end
+				-- Store the subcommand on successful exit
+				if exit_code == 0 then
+					state.buf_cmd = cmd_parts[2] or nil
 				end
 			end)
 		end,
@@ -562,7 +574,6 @@ local function run(cmd)
 	end
 
 	-- Add Enter key mapping for status buffers to open files
-	local cmd_parts = vim.split(cmd, " ")
 	if cmd_parts[2] == "st" or cmd_parts[2] == "status" then
 		register_command_keymap({ "n" }, "<CR>", handle_status_enter, { desc = "Open file under cursor" })
 		register_command_keymap({ "n" }, "X", handle_status_restore, { desc = "Restore file under cursor" })
@@ -603,6 +614,7 @@ local function run(cmd)
 					vim.fn.jobstop(state.job_id)
 					state.job_id = nil
 				end
+				state.buf_cmd = nil
 			end,
 		})
 		vim.b[state.buf].jj_cleanup_set = true
@@ -804,6 +816,9 @@ function M.squash()
 	local _, success = utils.execute_command(cmd, "Failed to squash")
 	if success then
 		utils.notify("Command `squash` was succesful.", vim.log.levels.INFO)
+		if state.buf_cmd == "log" then
+			M.log()
+		end
 	end
 end
 
@@ -955,6 +970,38 @@ function M.bookmark_delete()
 	end)
 end
 
+--- Jujutsu undo
+function M.undo()
+	if not utils.ensure_jj() then
+		return
+	end
+
+	local cmd = "jj undo"
+	local _, success = utils.execute_command(cmd, "Failed to undo")
+	if success then
+		utils.notify("Command `undo` was succesful.", vim.log.levels.INFO)
+		if state.buf_cmd == "log" then
+			M.log({})
+		end
+	end
+end
+---
+--- Jujutsu redo
+function M.redo()
+	if not utils.ensure_jj() then
+		return
+	end
+
+	local cmd = "jj redo"
+	local _, success = utils.execute_command(cmd, "Failed to redo")
+	if success then
+		utils.notify("Command `redo` was succesful.", vim.log.levels.INFO)
+		if state.buf_cmd == "log" then
+			M.log({})
+		end
+	end
+end
+
 --- @param args string|string[] jj command arguments
 function M.j(args)
 	if not utils.ensure_jj() then
@@ -1038,6 +1085,8 @@ function M.register_command()
 				"git",
 				"rebase",
 				"abandon",
+				"undo",
+				"redo",
 			}
 
 			local matches = {}
@@ -1076,3 +1125,4 @@ function M.register_command()
 end
 
 return M
+
