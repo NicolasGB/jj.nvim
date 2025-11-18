@@ -171,24 +171,57 @@ local function handle_log_enter()
 	end
 end
 
---- Handle keypress n on `jj log` buffer to create a new commit after the current one
-local function handle_log_new()
+--- Create a new change relative to the revision under the cursor in a jj log buffer.
+--- Behavior:
+---   flag == nil       -> branch off the current revision
+---   flag == "after"   -> create a new change after the current revision (-A)
+--- If ignore_immut is true, adds --ignore-immutable to the command.
+--- Silently returns if no revision is found or the jj command fails.
+--- On success, notifies and refreshes the log buffer.
+--- @param flag? 'after' Position relative to the current revision; nil to branch off.
+--- @param ignore_immut? boolean Pass --ignore-immutable to jj when true.
+local function handle_log_new(flag, ignore_immut)
 	local line = vim.api.nvim_get_current_line()
-
 	local revset = get_rev_from_log_line(line)
-
-	if revset then
-		-- If we found a revision, edit it
-		local cmd = string.format("jj new -A %s", revset)
-		local _, success = utils.execute_command(cmd, string.format("Error creating new change after `%s`", revset))
-		if not success then
-			return
-		end
-
-		utils.notify(string.format("Succesfully created change after: `%s`", revset), vim.log.levels.INFO)
-		-- Update the log buffer
-		M.log()
+	if not revset or revset == "" then
+		return
 	end
+
+	-- Mapping for flag-specific options and messages.
+	local flag_map = {
+		after = {
+			opt = "-A",
+			err = "Error creating new change after: `%s`",
+			ok = "Successfully created change after: `%s`",
+		},
+		default = {
+			opt = "",
+			err = "Error creating new change branching off `%s`",
+			ok = "Successfully created change branching off `%s`",
+		},
+	}
+
+	local cfg = flag_map[flag] or flag_map.default
+
+	-- Build command parts
+	local cmd_parts = { "jj", "new" }
+	if cfg.opt ~= "" then
+		table.insert(cmd_parts, cfg.opt)
+	end
+	table.insert(cmd_parts, revset)
+	if ignore_immut then
+		table.insert(cmd_parts, "--ignore-immutable")
+	end
+
+	local cmd = table.concat(cmd_parts, " ")
+	local _, success = utils.execute_command(cmd, string.format(cfg.err, revset))
+	if not success then
+		return
+	end
+
+	utils.notify(string.format(cfg.ok, revset), vim.log.levels.INFO)
+	-- Refresh the log buffer after creating the change.
+	M.log()
 end
 
 ---
@@ -534,9 +567,18 @@ local function run(cmd)
 		register_command_keymap({ "n" }, "<CR>", handle_status_enter, { desc = "Open file under cursor" })
 		register_command_keymap({ "n" }, "X", handle_status_restore, { desc = "Restore file under cursor" })
 	elseif cmd_parts[2] == "log" then
+		-- Edit
 		register_command_keymap({ "n" }, "<CR>", handle_log_enter, { desc = "Edit change under cursor" })
+		-- Diff
 		register_command_keymap({ "n" }, "d", handle_log_diff, { desc = "Diff change under cursor" })
-		register_command_keymap({ "n" }, "n", handle_log_new, { desc = "Diff change under cursor" })
+		-- New
+		register_command_keymap({ "n" }, "n", handle_log_new, { desc = "New change off the change under cursor" })
+		register_command_keymap({ "n" }, "<C-n>", function()
+			handle_log_new("after")
+		end, { desc = "New change after the change under cursor" })
+		register_command_keymap({ "n" }, "<S-n>", function()
+			handle_log_new("after", true)
+		end, { desc = "New change after the change under cursor ignoring immutability" })
 	end
 
 	if #new_command_keymaps > 0 then
@@ -921,8 +963,19 @@ function M.j(args)
 
 	if #args == 0 then
 		-- Use the user's default command and do not try to parse anything else
-		run("jj")
-		return
+		local default_cmd, success =
+			utils.execute_command("jj config get ui.default-command", "Error getting user's default command", nil, true)
+		-- If we can't find the default cmd we simply run it
+		if not success or default_cmd == "" then
+			run("jj")
+			return
+		end
+		-- Trim leading and trailing whitespace
+		if default_cmd then
+			default_cmd = default_cmd:gsub("^%s+", ""):gsub("%s+$", "")
+		end
+		-- Modify the args table to contain the new default command this will allow for descendant logic to parse the cmd and use builtin functions
+		args = { default_cmd }
 	end
 
 	-- Check if args is a string
