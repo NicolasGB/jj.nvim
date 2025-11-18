@@ -408,6 +408,15 @@ local function handle_log_diff()
 	end
 end
 
+--- Handle describign a log line
+local function handle_log_describe()
+	local line = vim.api.nvim_get_current_line()
+	local revset = get_rev_from_log_line(line)
+  M.describe(nil, revset)
+  local str = string.format("jj describe -r %s", revset)
+	utils.notify(str, vim.log.levels.ERROR)
+end
+
 --- Run a command and show it's output in a terminal buffer
 --- If a previous command already existed it smartly reuses the buffer cleaning the previous output
 ---@param cmd string
@@ -576,6 +585,7 @@ local function run(cmd)
 		register_command_keymap({ "n" }, "r", function()
 			M.redo()
 		end, { desc = "Redo last operation" })
+		register_command_keymap({ "n" }, "D", handle_log_describe, { desc = "Describe change under cursor" })
 	end
 
 	if #new_command_keymaps > 0 then
@@ -609,17 +619,26 @@ end
 
 --- Execute jj describe command with the given description
 ---@param description string The description text
-local function execute_describe(description)
+local function execute_describe(description, revset)
 	if not description or description == "" then
 		utils.notify("Description cannot be empty", vim.log.levels.ERROR)
 		return
 	end
-
-	-- Use --stdin to properly handle multi-line and special characters
-	local _, success = utils.execute_command("jj describe --stdin", "Failed to describe", description)
-	if success then
-		utils.notify("Description set.", vim.log.levels.INFO)
-	end
+  if revset == nil then
+	  -- Use --stdin to properly handle multi-line and special characters
+	  local _, success = utils.execute_command("jj describe --stdin", "Failed to describe", description)
+	  if success then
+	  	utils.notify("Description set.", vim.log.levels.INFO)
+	  end
+  else
+	  -- Use --stdin to properly handle multi-line and special characters
+    cmd = "jj describe -r " .. revset .. " --stdin"
+    print(vim.inspect(description))
+	  local _, success = utils.execute_command(cmd, "Failed to describe", description)
+	  if success then
+	  	utils.notify("Description set.", vim.log.levels.INFO)
+	  end
+  end
 end
 
 --- @class jj.cmd.describe_opts
@@ -633,19 +652,27 @@ local default_describe_opts = {
 --- Jujutsu describe
 ---@param description? string Optional description text
 ---@param opts? jj.cmd.describe_opts Optional command options
-function M.describe(description, opts)
+function M.describe(description, revset, opts)
 	if not utils.ensure_jj() then
 		return
-	end
+  end
 
 	-- Check if a description was provided otherwise require for input
 	if description then
 		-- Description provided directly
-		execute_describe(description)
+		execute_describe(description, revset)
 	else
 		-- Use buffer editor mode
 		if M.config.describe_editor == "buffer" then
 			-- Build initial lines
+      local cmd
+      if revset then
+        cmd = "jj log -r " .. revset .. " --no-graph -T 'coalesce(description, \"(no description set)\n\")'"
+      else
+        cmd = "jj log -r @ --no-graph -T 'coalesce(description, \"(no description set)\n\")'"
+      end
+      local old_description_raw, success = utils.execute_command(cmd, "Failed to get old description")
+      local old_description = old_description_raw:gsub("^%s+", ""):gsub("%s+$", "")
 			local status_files = utils.get_status_files()
 			local text = { "JJ: This commit contains the following changes:" }
 			for _, item in ipairs(status_files) do
@@ -655,6 +682,7 @@ function M.describe(description, opts)
 			table.insert(text, 'JJ: Lines starting with "JJ:" (like this one) will be ignored when finalizing')
 			table.insert(text, "") -- Empty line to separate from user input
 			table.insert(text, "") -- Another empty line where user can start typing
+			table.insert(text, old_description)
 
 			utils.open_ephemeral_buffer(text, function(buf_lines)
 				local user_lines = {}
@@ -665,8 +693,9 @@ function M.describe(description, opts)
 				end
 				-- Join lines and trim leading/trailing whitespace
 				local trimmed_description = table.concat(user_lines, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
-				execute_describe(trimmed_description)
+				execute_describe(trimmed_description, revset)
 			end)
+			close_terminal_buffer()
 		else
 			local merged_opts = vim.tbl_deep_extend("force", default_describe_opts, opts or {})
 			if merged_opts.with_status then
@@ -680,7 +709,7 @@ function M.describe(description, opts)
 			}, function(input)
 				-- If the user inputed something, execute the describe command
 				if input then
-					execute_describe(input)
+					execute_describe(input, revset)
 				end
 				-- Close the current terminal when finished
 				close_terminal_buffer()
