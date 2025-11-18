@@ -113,6 +113,50 @@ local function handle_status_restore()
 	end
 end
 
+--- Extract status from a jujutsu log line
+--- @param line string The log line to parse
+--- @return string|nil The status if found, nil otherwise
+local function get_change_status(line)
+	-- Define jujutsu symbols with their UTF-8 byte sequences
+	local jj_symbols = {
+		diamond = "\226\151\134", -- ◆ U+25C6
+		circle = "\226\151\139", -- ○ U+25CB
+		conflict = "\195\151", -- × U+00D7
+    current = "@",
+	}
+
+  local jj_symbol_to_status = {
+		["\226\151\134"] = "immutable",
+		["\226\151\139"] = "mutable",
+		["\195\151"] = "conflict",
+    ["@"] = "current",
+  }
+
+	local status
+
+	for _, symbol in pairs(jj_symbols) do
+		-- Pattern: Lines starting with symbol
+		revset = line:match("^%s*" .. symbol .. "%s+(%w+)")
+		if revset then
+			return jj_symbol_to_status[symbol]
+		end
+
+		-- Pattern: Lines with │ followed by symbol (this are the branches)
+		revset = line:match("^│%s*" .. symbol .. "%s+(%w+)")
+		if revset then
+			return jj_symbol_to_status[symbol]
+		end
+	end
+
+	-- Pattern for simple ASCII symbols
+	revset = line:match("^%s*[@]%s+(%w+)")
+	if revset then
+    return jj_symbol_to_status[symbol]
+	end
+
+	return nil
+end
+
 --- Extract revision ID from a jujutsu log line
 --- @param line string The log line to parse
 --- @return string|nil The revision ID if found, nil otherwise
@@ -156,8 +200,14 @@ local function handle_log_enter()
 	local line = vim.api.nvim_get_current_line()
 
 	local revset = get_rev_from_log_line(line)
+  local status = get_change_status(line)
 
 	if revset then
+    if status == "current" then
+      M.status()
+		  utils.notify(string.format("jj status %s", revset), vim.log.levels.INFO)
+      return
+    end
 		-- If we found a revision, edit it
 		local cmd = string.format("jj edit %s", revset)
 		local _, success = utils.execute_command(cmd, "Error editing change")
