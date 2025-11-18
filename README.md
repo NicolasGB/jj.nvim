@@ -43,6 +43,14 @@ Jumping up and down your log history ?
 In your log ouptut press `CR` in a line to directly edit a `mutable` change.
 ![Edit-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/edit-log.gif)
 
+### Create new changes from the log buffer
+
+You can create new changes directly from the log buffer with multiple options:
+
+- `n` - Create a new change branching off the revision under the cursor
+- `<C-n>` - Create a new change after the revision under the cursor  
+- `<S-n>` - Create a new change after while ignoring immutability constraints
+
 ### Open a changed file
 
 Just press enter to open the a file from the `status` output in your current window.
@@ -92,7 +100,7 @@ The plugin provides a `:J` command that accepts jj subcommands:
 
     }
   },
-  
+
   -- Choose the editor mode for describe command
   -- "buffer" - Opens a Git-style commit message buffer with syntax highlighting (default)
   -- "input" - Uses a simple vim.ui.input prompt
@@ -117,13 +125,13 @@ The `describe_editor` option lets you choose how you want to write commit descri
   - Shows file changes with syntax highlighting
   - Multi-line editing with proper formatting
   - Close with `q` or `<Esc>`, save with `:w` or `:wq`
-  
 - **`"input"`** - Simple single-line input prompt
   - Quick and minimal
   - Good for short, single-line descriptions
   - Uses `vim.ui.input()` which can be customized by UI plugins like dressing.nvim
 
 Example:
+
 ```lua
 require("jj").setup({
   describe_editor = "input", -- Use simple input mode
