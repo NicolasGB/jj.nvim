@@ -102,9 +102,10 @@ end
 --- @param cmd string The command to execute
 --- @param error_prefix string|nil Optional error message prefix
 --- @param input string|nil Optional input to pass to stdin
+--- @param silent boolean|nil Optional to silent the notification
 --- @return string|nil output The command output, or nil if failed
 --- @return boolean success Whether the command succeeded
-function M.execute_command(cmd, error_prefix, input)
+function M.execute_command(cmd, error_prefix, input, silent)
 	local output
 	if input then
 		output = vim.fn.system(cmd, input)
@@ -120,7 +121,10 @@ function M.execute_command(cmd, error_prefix, input)
 		else
 			error_message = output
 		end
-		M.notify(error_message, vim.log.levels.ERROR)
+		if not silent then
+			M.notify(error_message, vim.log.levels.ERROR)
+		end
+
 		return nil, false
 	end
 
