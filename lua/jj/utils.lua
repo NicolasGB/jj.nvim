@@ -309,12 +309,11 @@ function M.open_ephemeral_buffer(initial_text, on_done)
 
 	-- Position cursor at the end (after the last JJ: line) and enter insert mode
 	vim.schedule(function()
-		-- Get the number of lines in the buffer
-		local line_count = vim.api.nvim_buf_line_count(buf)
-		-- Move cursor to the last line, column 0
-		vim.api.nvim_win_set_cursor(0, { line_count, 0 })
-		-- Enter insert mode
-		vim.cmd("startinsert")
+    local line_count = vim.api.nvim_buf_line_count(buf)
+    local target_line_idx = line_count - 1 -- 0-indexed line number for API calls
+    local last_line_content = vim.api.nvim_buf_get_lines(buf, target_line_idx, line_count, false)[1]
+    local col_index = #last_line_content
+    vim.api.nvim_win_set_cursor(0, { line_count, col_index })
 	end)
 
 	-- Handle :w and :wq commands
