@@ -678,15 +678,15 @@ function M.describe(description, revset, opts)
 	    end
       local old_description = vim.trim(old_description_raw)
       local status_files = utils.get_status_files(revset)
-			local text = { "JJ: This commit contains the following changes:" }
+			local text = { old_description }
+			table.insert(text, "") -- Empty line to separate from user input
+      table.insert(text, "JJ: Change ID: " .. revset)
+			table.insert(text, "JJ: This commit contains the following changes:")
 			for _, item in ipairs(status_files) do
 				table.insert(text, string.format("JJ:     %s %s", item.status, item.file))
 			end
 			table.insert(text, "JJ:") -- blank line
-			table.insert(text, 'JJ: Lines starting with "JJ:" (like this one) will be ignored when finalizing')
-			table.insert(text, "") -- Empty line to separate from user input
-			table.insert(text, "") -- Another empty line where user can start typing
-			table.insert(text, old_description)
+			table.insert(text, 'JJ: Lines starting with "JJ:" (like this one) will be removed')
 
 			utils.open_ephemeral_buffer(text, function(buf_lines)
 				local user_lines = {}

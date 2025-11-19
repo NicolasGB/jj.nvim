@@ -313,7 +313,7 @@ function M.open_ephemeral_buffer(initial_text, on_done)
     local target_line_idx = line_count - 1 -- 0-indexed line number for API calls
     local last_line_content = vim.api.nvim_buf_get_lines(buf, target_line_idx, line_count, false)[1]
     local col_index = #last_line_content
-    vim.api.nvim_win_set_cursor(0, { line_count, col_index })
+    vim.api.nvim_win_set_cursor(0, { 1, 0 })
 	end)
 
 	-- Handle :w and :wq commands
