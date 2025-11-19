@@ -38,11 +38,12 @@ Here are some cool features you can do with jj.nvim
 You can diff any change in your log history by simply pressing `d` on it's line, yeah just like that!
 ![Diff-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/diff-log.gif)
 
-### Edit mutable changes
+### Edit changes
 
 Jumping up and down your log history ?
 
 In your log ouptut press `CR` in a line to directly edit a `mutable` change.
+If you are sure what your are doing press `S-CR` (Shift Enter) to edit a `immutable` change.
 ![Edit-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/edit-log.gif)
 
 ### Create new changes from the log buffer
