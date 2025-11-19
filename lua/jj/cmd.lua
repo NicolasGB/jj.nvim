@@ -7,6 +7,7 @@ local diff = require("jj.diff")
 -- Config for cmd module
 M.config = {
 	describe_editor = "buffer", -- "buffer" or "input"
+	describe_quit_on_esc = true,
 }
 
 local state = {
@@ -641,11 +642,13 @@ local function execute_describe(description)
 end
 
 --- @class jj.cmd.describe_opts
---- @field with_status boolean: Whether or not `jj st` should be displayed in a buffer while describing the commit
+--- @field with_status boolean?: Whether or not `jj st` should be displayed in a buffer while describing the commit
+--- @field quit_on_esc boolean?: Optional enable or disable quitting the `jj describe` buffer by hitting `<Esc>`
 
 --- @type jj.cmd.describe_opts
 local default_describe_opts = {
 	with_status = true,
+	quit_on_esc = true,
 }
 
 --- Jujutsu describe
@@ -661,7 +664,8 @@ function M.describe(description, opts)
 		-- Description provided directly
 		execute_describe(description)
 	else
-		-- Use buffer editor mode
+		local merged_opts = vim.tbl_deep_extend("force", default_describe_opts, opts or {})
+		-- Use buffer editor mode	
 		if M.config.describe_editor == "buffer" then
 			-- Build initial lines
 			local status_files = utils.get_status_files()
@@ -674,19 +678,24 @@ function M.describe(description, opts)
 			table.insert(text, "") -- Empty line to separate from user input
 			table.insert(text, "") -- Another empty line where user can start typing
 
-			utils.open_ephemeral_buffer(text, function(buf_lines)
-				local user_lines = {}
-				for _, line in ipairs(buf_lines) do
-					if not line:match("^JJ:") then
-						table.insert(user_lines, line)
+			local quit_on_esc = M.config.describe_quit_on_esc and merged_opts.quit_on_esc
+
+			utils.open_ephemeral_buffer({
+				initial_text = text,
+				quit_on_esc = quit_on_esc,
+				on_done = function(buf_lines)
+					local user_lines = {}
+					for _, line in ipairs(buf_lines) do
+						if not line:match("^JJ:") then
+							table.insert(user_lines, line)
+						end
 					end
+					-- Join lines and trim leading/trailing whitespace
+					local trimmed_description = table.concat(user_lines, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
+					execute_describe(trimmed_description)
 				end
-				-- Join lines and trim leading/trailing whitespace
-				local trimmed_description = table.concat(user_lines, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
-				execute_describe(trimmed_description)
-			end)
+			})
 		else
-			local merged_opts = vim.tbl_deep_extend("force", default_describe_opts, opts or {})
 			if merged_opts.with_status then
 				-- Show the status in a terminal buffer
 				M.status()
@@ -989,6 +998,7 @@ function M.undo()
 		end
 	end
 end
+
 ---
 --- Jujutsu redo
 function M.redo()
