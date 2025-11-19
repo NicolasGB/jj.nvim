@@ -43,7 +43,7 @@ You can diff any change in your log history by simply pressing `d` on it's line,
 Jumping up and down your log history ?
 
 In your log ouptut press `CR` in a line to directly edit a `mutable` change.
-If you are sure what your are doingpress `S-CR` (Shift Enter) to edit a `immutable` change.
+If you are sure what your are doing press `S-CR` (Shift Enter) to edit a `immutable` change.
 ![Edit-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/edit-log.gif)
 
 ### Create new changes from the log buffer
