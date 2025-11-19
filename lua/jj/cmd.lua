@@ -669,10 +669,10 @@ function M.describe(description, revset, opts)
         cmd = "jj log -r @ --no-graph -T 'coalesce(description, \"(no description set)\n\")'"
       end
       local old_description_raw, success = utils.execute_command(cmd, "Failed to get old description")
-      local old_description = old_description_raw:gsub("^%s+", ""):gsub("%s+$", "")
 	    if not old_description_raw or not success then
 	    	return 
 	    end
+      local old_description = vim.trim(old_description_raw)
       local status_files = utils.get_status_files(revset)
 			local text = { "JJ: This commit contains the following changes:" }
 			for _, item in ipairs(status_files) do
