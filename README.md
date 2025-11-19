@@ -203,7 +203,7 @@ require("jj").setup({
     -- Some functions like `describe` or `log` can take parameters
     vim.keymap.set("n", "<leader>jL", function()
       jj.log {
-        revisions = "all()",
+        revisions = "'all()'", -- equivalent to jj log -r ::
       }
     end, { desc = "JJ log all" })
 
