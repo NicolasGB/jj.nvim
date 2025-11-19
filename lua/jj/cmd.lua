@@ -670,6 +670,9 @@ function M.describe(description, revset, opts)
       end
       local old_description_raw, success = utils.execute_command(cmd, "Failed to get old description")
       local old_description = old_description_raw:gsub("^%s+", ""):gsub("%s+$", "")
+	    if not old_description_raw or not success then
+	    	return 
+	    end
       local status_files = utils.get_status_files(revset)
 			local text = { "JJ: This commit contains the following changes:" }
 			for _, item in ipairs(status_files) do
