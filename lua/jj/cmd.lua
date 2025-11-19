@@ -412,7 +412,11 @@ end
 local function handle_log_describe()
 	local line = vim.api.nvim_get_current_line()
 	local revset = get_rev_from_log_line(line)
-  M.describe(nil, revset)
+	if revset then
+    M.describe(nil, revset)
+	else
+		utils.notify("No valid revision found in the log line", vim.log.levels.ERROR)
+	end
 end
 
 --- Run a command and show it's output in a terminal buffer
