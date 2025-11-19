@@ -125,31 +125,27 @@ local function get_rev_from_log_line(line)
 		circle = "\226\151\139", -- ○ U+25CB
 		conflict = "\195\151", -- × U+00D7
 	}
+  -- Also accept ASCII markers (e.g. "@")
+  local ascii_symbols = { "@", "%*", "/", "\\", "%-", "%+" }
 
-	local revset
+  -- Build pattern to match "graph junk" at start of the line:
+  -- also take into account crazy templates from users
+  local allowed_prefix = "[│┃┆┇┊┋╭╮╰╯├┤┬┴┼─└┘┌┐%s" -- graph chars and whitespace
+  for _, sym in pairs(jj_symbols) do
+      allowed_prefix = allowed_prefix .. sym
+  end
+  for _, sym in ipairs(ascii_symbols) do
+      allowed_prefix = allowed_prefix .. sym
+  end
+  allowed_prefix = allowed_prefix .. "]*"   -- close character class
 
-	-- Try each symbol pattern
-	for _, symbol in pairs(jj_symbols) do
-		-- Pattern: Lines starting with symbol
-		revset = line:match("^%s*" .. symbol .. "%s+(%w+)")
-		if revset then
-			return revset
-		end
+  -- Jujutsu revsets are always alphanumeric: (%w+). Match the first one.
+  local revset = line:match("^" .. allowed_prefix .. "(%w+)")
+  if revset then
+      return revset
+  end
 
-		-- Pattern: Lines with │ followed by symbol (this are the branches)
-		revset = line:match("^│%s*" .. symbol .. "%s+(%w+)")
-		if revset then
-			return revset
-		end
-	end
-
-	-- Pattern for simple ASCII symbols
-	revset = line:match("^%s*[@]%s+(%w+)")
-	if revset then
-		return revset
-	end
-
-	return nil
+  return nil
 end
 
 --- Handle keypress enter on `jj log` buffer to edit a revision.
