@@ -158,12 +158,17 @@ end
 
 --- Get a list of files with their status in the current jj repository.
 --- @return table[] A list of tables with {status = string, file = string}
-function M.get_status_files()
+function M.get_status_files(revset)
 	if not M.ensure_jj() then
 		return {}
 	end
 
-	local result, success = M.execute_command("jj status", "Error getting status")
+  if revset == nil then
+    revset = '@'
+  end
+
+  cmd = "jj log -r " .. revset .. " --no-graph -T 'self.diff().summary()'"
+	local result, success = M.execute_command(cmd, "Error getting status")
 	if not success or not result then
 		return {}
 	end
