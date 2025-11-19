@@ -634,7 +634,7 @@ local function execute_describe(description, revset)
 	  end
   else
 	  -- Use --stdin to properly handle multi-line and special characters
-    cmd = "jj describe -r " .. revset .. " --stdin"
+    local cmd = "jj describe -r " .. revset .. " --stdin"
 	  local _, success = utils.execute_command(cmd, "Failed to describe", description)
 	  if success then
 	  	utils.notify("Description set.", vim.log.levels.INFO)
