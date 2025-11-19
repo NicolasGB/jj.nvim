@@ -413,8 +413,6 @@ local function handle_log_describe()
 	local line = vim.api.nvim_get_current_line()
 	local revset = get_rev_from_log_line(line)
   M.describe(nil, revset)
-  local str = string.format("jj describe -r %s", revset)
-	utils.notify(str, vim.log.levels.ERROR)
 end
 
 --- Run a command and show it's output in a terminal buffer
@@ -633,7 +631,6 @@ local function execute_describe(description, revset)
   else
 	  -- Use --stdin to properly handle multi-line and special characters
     cmd = "jj describe -r " .. revset .. " --stdin"
-    print(vim.inspect(description))
 	  local _, success = utils.execute_command(cmd, "Failed to describe", description)
 	  if success then
 	  	utils.notify("Description set.", vim.log.levels.INFO)
