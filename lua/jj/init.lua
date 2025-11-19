@@ -20,6 +20,8 @@ M.config = {
 	},
 	--- @type string Editor mode for describe command: "buffer" (Git-style editor) or "input" (simple input prompt)
 	describe_editor = "buffer",
+	--- @type boolean This enables or disables quitting the `jj describe` buffer by hitting `<Esc>`
+	describe_quit_on_esc = true,
 }
 
 --- Setup the plugin
@@ -29,11 +31,13 @@ function M.setup(opts)
 
 	picker.setup(opts and opts.picker or {})
 	utils.setup({ highlights = M.config.highlights })
-	
+
 	-- Pass describe_editor config to cmd module
 	if opts and opts.describe_editor then
 		cmd.config.describe_editor = opts.describe_editor
 	end
+	-- Pass describe_quit_on_esc config to cmd module, default true
+	cmd.config.describe_quit_on_esc = not (opts and opts.describe_quit_on_esc == false)
 
 	cmd.register_command()
 end

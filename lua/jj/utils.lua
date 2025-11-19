@@ -209,9 +209,26 @@ function M.notify(message, level)
 	vim.notify(message, level, { title = "JJ", timeout = 3000 })
 end
 
----@param initial_text string[] Lines to initialize the buffer with
----@param on_done fun(buf: string[])? Optional callback called with user text on buffer write
-function M.open_ephemeral_buffer(initial_text, on_done)
+--- @class open_ephemeral_buffer_opts
+---@field initial_text string[]? Lines to initialize the buffer with
+---@field quit_on_esc boolean? Optional enable or disable quitting the ephemeral buffer by hitting `<Esc>`
+---@field on_done fun(buf: string[])? Optional callback called with user text on buffer write
+
+--- @type open_ephemeral_buffer_opts
+local default_open_ephemeral_buffer_opts = {
+	initial_text = {},
+	on_done = nil,
+	quit_on_esc = true
+}
+
+---@param opts open_ephemeral_buffer_opts? Options
+function M.open_ephemeral_buffer(opts)
+	opts = opts or default_open_ephemeral_buffer_opts
+
+	local initial_text = opts.initial_text
+	local on_done = opts.on_done
+	local quit_on_esc = opts.quit_on_esc
+
 	-- Initialize highlight groups once
 	init_highlights()
 
@@ -332,13 +349,15 @@ function M.open_ephemeral_buffer(initial_text, on_done)
 		{ buffer = buf, noremap = true, silent = true, desc = "Close describe buffer" }
 	)
 
-	-- Add keymap to close the buffer with '<Esc>' in normal mode
-	vim.keymap.set(
-		"n",
-		"<Esc>",
-		"<cmd>close!<CR>",
-		{ buffer = buf, noremap = true, silent = true, desc = "Close describe buffer" }
-	)
+	if (quit_on_esc) then
+		-- Add keymap to close the buffer with '<Esc>' in normal mode
+		vim.keymap.set(
+			"n",
+			"<Esc>",
+			"<cmd>close!<CR>",
+			{ buffer = buf, noremap = true, silent = true, desc = "Close describe buffer" }
+		)
+	end
 end
 
 --- Parse the current line in the jj status buffer to extract file information.
