@@ -163,11 +163,11 @@ function M.get_status_files(revset)
 		return {}
 	end
 
-  if revset == nil then
-    revset = '@'
-  end
+	if revset == nil then
+		revset = "@"
+	end
 
-  cmd = "jj log -r " .. revset .. " --no-graph -T 'self.diff().summary()'"
+	cmd = "jj log -r " .. revset .. " --no-graph -T 'self.diff().summary()'"
 	local result, success = M.execute_command(cmd, "Error getting status")
 	if not success or not result then
 		return {}
@@ -309,11 +309,11 @@ function M.open_ephemeral_buffer(initial_text, on_done)
 
 	-- Position cursor at the end (after the last JJ: line) and enter insert mode
 	vim.schedule(function()
-    local line_count = vim.api.nvim_buf_line_count(buf)
-    local target_line_idx = line_count - 1 -- 0-indexed line number for API calls
-    local last_line_content = vim.api.nvim_buf_get_lines(buf, target_line_idx, line_count, false)[1]
-    local col_index = #last_line_content
-    vim.api.nvim_win_set_cursor(0, { 1, 0 })
+		local line_count = vim.api.nvim_buf_line_count(buf)
+		local target_line_idx = line_count - 1 -- 0-indexed line number for API calls
+		local last_line_content = vim.api.nvim_buf_get_lines(buf, target_line_idx, line_count, false)[1]
+		local col_index = #last_line_content
+		vim.api.nvim_win_set_cursor(0, { 1, 0 })
 	end)
 
 	-- Handle :w and :wq commands
@@ -404,6 +404,36 @@ function M.parse_file_info_from_status_line()
 	end
 
 	return nil
+end
+
+--- Parse the default command from jj config
+--- @return table|nil args Array of command arguments, or nil if parsing fails
+function M.parse_default_cmd()
+	local default_cmd, success =
+		M.execute_command("jj config get ui.default-command", "Error getting user's default command", nil, true)
+	if not success or not default_cmd or default_cmd == "" then
+		return nil
+	end
+
+	-- Remove whitespace and parse TOML output
+	default_cmd = vim.trim(default_cmd)
+
+	-- Try to parse as TOML array: ["item1", "item2", ...]
+	-- Pattern "%[(.*)%]" captures everything between square brackets
+	local array_items = default_cmd:match("%[(.*)%]")
+	if array_items then
+		local args = {}
+		-- Pattern '"([^"]+)"' captures content between double quotes (non-greedy)
+		for item in array_items:gmatch('"([^"]+)"') do
+			table.insert(args, item)
+		end
+		return #args > 0 and args or nil
+	else
+		-- Single string value, remove surrounding quotes if present
+		-- Pattern '^"?(.-)"?$' optionally matches quotes at start/end, captures content
+		local single_value = default_cmd:match('^"?(.-)"?$')
+		return single_value and { single_value } or nil
+	end
 end
 
 return M
