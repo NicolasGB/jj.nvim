@@ -36,9 +36,9 @@ local state = {
 
 --- Close the current terminal buffer if it exists
 local function close_terminal_buffer()
-  if not state.buf then
-    return
-  elseif state.buf and vim.api.nvim_buf_is_valid(state.buf) then
+	if not state.buf then
+		return
+	elseif state.buf and vim.api.nvim_buf_is_valid(state.buf) then
 		vim.cmd("bwipeout! " .. state.buf)
 	else
 		vim.cmd("close")
@@ -162,31 +162,31 @@ end
 local function handle_log_enter(ignore_immut)
 	local line = vim.api.nvim_get_current_line()
 	local revset = get_rev_from_log_line(line)
-  if not revset or revset == "" then
-    return
-  end
-  -- If we found a revision, edit it.
+	if not revset or revset == "" then
+		return
+	end
+	-- If we found a revision, edit it.
 
-  -- Build command parts.
-  local cmd_parts = { "jj", "edit" }
-  if ignore_immut then
-    table.insert(cmd_parts, "--ignore-immutable")
-  end
+	-- Build command parts.
+	local cmd_parts = { "jj", "edit" }
+	if ignore_immut then
+		table.insert(cmd_parts, "--ignore-immutable")
+	end
 
-  table.insert(cmd_parts, revset)
+	table.insert(cmd_parts, revset)
 
-  -- Build cmd string
-  local cmd = table.concat(cmd_parts, " ")
+	-- Build cmd string
+	local cmd = table.concat(cmd_parts, " ")
 
-  -- Try to execute cmd
-  local _, success = utils.execute_command(cmd, "Error editing change")
-  if not success then
-    return
-  end
+	-- Try to execute cmd
+	local _, success = utils.execute_command(cmd, "Error editing change")
+	if not success then
+		return
+	end
 
-  utils.notify(string.format("Editing change: `%s`", revset), vim.log.levels.INFO)
-  -- Close the terminal buffer
-  close_terminal_buffer()
+	utils.notify(string.format("Editing change: `%s`", revset), vim.log.levels.INFO)
+	-- Close the terminal buffer
+	close_terminal_buffer()
 end
 
 --- Create a new change relative to the revision under the cursor in a jj log buffer.
@@ -428,7 +428,7 @@ local function handle_log_describe()
 	local line = vim.api.nvim_get_current_line()
 	local revset = get_rev_from_log_line(line)
 	if revset then
-    M.describe(nil, revset)
+		M.describe(nil, revset)
 	else
 		utils.notify("No valid revision found in the log line", vim.log.levels.ERROR)
 	end
@@ -585,11 +585,11 @@ local function run(cmd)
 	elseif cmd_parts[2] == "log" then
 		-- Edit
 		register_command_keymap({ "n" }, "<CR>", function()
-      handle_log_enter(false)
-    end, { desc = "Edit change under cursor" })
-    register_command_keymap({ "n" }, "<S-CR>", function()
-      handle_log_enter(true)
-    end, { desc = "Edit change under cursor ignoring immutability" })
+			handle_log_enter(false)
+		end, { desc = "Edit change under cursor" })
+		register_command_keymap({ "n" }, "<S-CR>", function()
+			handle_log_enter(true)
+		end, { desc = "Edit change under cursor ignoring immutability" })
 		-- Diff
 		register_command_keymap({ "n" }, "d", handle_log_diff, { desc = "Diff change under cursor" })
 		-- New
@@ -646,20 +646,20 @@ local function execute_describe(description, revset)
 		utils.notify("Description cannot be empty", vim.log.levels.ERROR)
 		return
 	end
-  if revset == nil then
-	  -- Use --stdin to properly handle multi-line and special characters
-	  local _, success = utils.execute_command("jj describe --stdin", "Failed to describe", description)
-	  if success then
-	  	utils.notify("Description set.", vim.log.levels.INFO)
-	  end
-  else
-	  -- Use --stdin to properly handle multi-line and special characters
-    local cmd = "jj describe -r " .. revset .. " --stdin"
-	  local _, success = utils.execute_command(cmd, "Failed to describe", description)
-	  if success then
-	  	utils.notify("Description set.", vim.log.levels.INFO)
-	  end
-  end
+	if revset == nil then
+		-- Use --stdin to properly handle multi-line and special characters
+		local _, success = utils.execute_command("jj describe --stdin", "Failed to describe", description)
+		if success then
+			utils.notify("Description set.", vim.log.levels.INFO)
+		end
+	else
+		-- Use --stdin to properly handle multi-line and special characters
+		local cmd = "jj describe -r " .. revset .. " --stdin"
+		local _, success = utils.execute_command(cmd, "Failed to describe", description)
+		if success then
+			utils.notify("Description set.", vim.log.levels.INFO)
+		end
+	end
 end
 
 --- @class jj.cmd.describe_opts
@@ -676,7 +676,7 @@ local default_describe_opts = {
 function M.describe(description, revset, opts)
 	if not utils.ensure_jj() then
 		return
-  end
+	end
 
 	-- Check if a description was provided otherwise require for input
 	if description then
@@ -686,19 +686,19 @@ function M.describe(description, revset, opts)
 		-- Use buffer editor mode
 		if M.config.describe_editor == "buffer" then
 			-- Build initial lines
-      if not revset then
-        revset = '@'
-      end
-      local cmd = "jj log -r " .. revset .. " --no-graph -T 'coalesce(description, \"(no description set)\n\")'"
-      local old_description_raw, success = utils.execute_command(cmd, "Failed to get old description")
-	    if not old_description_raw or not success then
-	    	return 
-	    end
-      local old_description = vim.trim(old_description_raw)
-      local status_files = utils.get_status_files(revset)
+			if not revset then
+				revset = "@"
+			end
+			local cmd = "jj log -r " .. revset .. " --no-graph -T 'coalesce(description, \"(no description set)\n\")'"
+			local old_description_raw, success = utils.execute_command(cmd, "Failed to get old description")
+			if not old_description_raw or not success then
+				return
+			end
+			local old_description = vim.trim(old_description_raw)
+			local status_files = utils.get_status_files(revset)
 			local text = { old_description }
 			table.insert(text, "") -- Empty line to separate from user input
-      table.insert(text, "JJ: Change ID: " .. revset)
+			table.insert(text, "JJ: Change ID: " .. revset)
 			table.insert(text, "JJ: This commit contains the following changes:")
 			for _, item in ipairs(status_files) do
 				table.insert(text, string.format("JJ:     %s %s", item.status, item.file))
@@ -1046,13 +1046,14 @@ function M.j(args)
 	end
 
 	if #args == 0 then
-		local default_cmd, success =
-			utils.execute_command("jj config get ui.default-command", "Error getting user's default command", nil, true)
-		if not success or default_cmd == "" then
+		-- Parse the default command
+		local default_cmd = utils.parse_default_cmd()
+		-- If nil simply run jj
+		if default_cmd == nil then
 			run("jj")
 			return
 		end
-		args = { vim.trim(default_cmd or "") }
+		args = default_cmd
 	end
 
 	-- Normalize to table
