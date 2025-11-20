@@ -36,7 +36,9 @@ local state = {
 
 --- Close the current terminal buffer if it exists
 local function close_terminal_buffer()
-	if state.buf and vim.api.nvim_buf_is_valid(state.buf) then
+  if not state.buf then
+    return
+  elseif state.buf and vim.api.nvim_buf_is_valid(state.buf) then
 		vim.cmd("bwipeout! " .. state.buf)
 	else
 		vim.cmd("close")
