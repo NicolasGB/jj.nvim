@@ -666,12 +666,10 @@ function M.describe(description, revset, opts)
 		-- Use buffer editor mode
 		if M.config.describe_editor == "buffer" then
 			-- Build initial lines
-      local cmd
-      if revset then
-        cmd = "jj log -r " .. revset .. " --no-graph -T 'coalesce(description, \"(no description set)\n\")'"
-      else
-        cmd = "jj log -r @ --no-graph -T 'coalesce(description, \"(no description set)\n\")'"
+      if not revset then
+        revset = '@'
       end
+      local cmd = "jj log -r " .. revset .. " --no-graph -T 'coalesce(description, \"(no description set)\n\")'"
       local old_description_raw, success = utils.execute_command(cmd, "Failed to get old description")
 	    if not old_description_raw or not success then
 	    	return 
