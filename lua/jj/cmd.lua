@@ -187,6 +187,70 @@ local function handle_log_enter(ignore_immut)
   close_terminal_buffer()
 end
 
+local function handle_log_bookmark()
+  local line = vim.api.nvim_get_current_line()
+  local revset = get_rev_from_log_line(line)
+  if not revset or revset == "" then
+    return
+  end
+
+  local cmd = "jj bookmark list"
+  local bookmarks, success = utils.execute_command(cmd, "Error getting bookmarks")
+  if not success then
+    return
+  end
+
+  utils.notify(string.format("Editing Bookmark: `%s`", revset), vim.log.levels.INFO)
+
+  local names = {}
+  for line in string.gmatch(bookmarks, "([^\n]+)") do
+    local name = string.match(line, "^(.-):")
+    if name then
+      -- Trim any leading/trailing whitespace
+      table.insert(names, vim.trim(name))
+    end
+  end
+  table.insert(names, "create")
+
+  local function on_select(choice, idx)
+    if idx == 0 then
+      utils.notify("canceled", vim.log.levels.INFO)
+      return
+    end
+    if choice == "create" then
+      vim.defer_fn(function ()
+        vim.ui.input({ prompt = "Enter Bookmark Name: " }, function(input)
+          if input then
+            utils.notify("Created Bookmark " .. input .. " on revset " .. revset, vim.log.levels.INFO)
+            local cmd = "jj bookmark create -r " .. revset .. " " .. input
+            local _, success = utils.execute_command(cmd, "Error creating bookmark")
+            if not success then
+              return
+            end
+          else
+            utils.notify("canceled", vim.log.levels.INFO)
+          end
+        end)
+      end, 50) -- 50ms delay cause 0 is causing issues
+    else
+      utils.notify("Moved Bookmark " .. choice .. " on revset " .. revset, vim.log.levels.INFO)
+      local cmd = "jj bookmark set " .. choice .. " -r " .. revset .. " --allow-backwards"
+      local _, success = utils.execute_command(cmd, "Error creating bookmark")
+      if not success then
+        return
+      end
+    end
+  end
+
+  vim.ui.select(
+    names,
+    { prompt = "Select Bookmark: " },
+    on_select
+  )
+
+  close_terminal_buffer()
+end
+
 --- Create a new change relative to the revision under the cursor in a jj log buffer.
 --- Behavior:
 ---   flag == nil       -> branch off the current revision
@@ -578,7 +642,9 @@ local function run(cmd)
       handle_log_enter(true)
     end, { desc = "Edit change under cursor ignoring immutability" })
 		-- Diff
+    -- Bookmark
 		register_command_keymap({ "n" }, "d", handle_log_diff, { desc = "Diff change under cursor" })
+    register_command_keymap({ "n" }, "b", handle_log_bookmark, { desc = "Edit Bookmark" })
 		-- New
 		register_command_keymap({ "n" }, "n", handle_log_new, { desc = "New change off the change under cursor" })
 		register_command_keymap({ "n" }, "<C-n>", function()
