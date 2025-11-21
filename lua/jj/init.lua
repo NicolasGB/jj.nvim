@@ -29,7 +29,7 @@ function M.setup(opts)
 
 	picker.setup(opts and opts.picker or {})
 	utils.setup({ highlights = M.config.highlights })
-	
+
 	-- Pass describe_editor config to cmd module
 	if opts and opts.describe_editor then
 		cmd.config.describe_editor = opts.describe_editor

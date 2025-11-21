@@ -222,7 +222,7 @@ function M.open_ephemeral_buffer(initial_text, on_done)
 
 	-- Create a horizontal split at the bottom, half the screen height
 	local height = math.floor(vim.o.lines / 2)
-	vim.cmd(string.format("botright %dsplit", height))
+	vim.cmd(string.format("%dsplit", height))
 
 	-- Create a new unlisted, scratch buffer
 	local buf = vim.api.nvim_create_buf(false, true)
