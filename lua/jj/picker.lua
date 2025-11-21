@@ -1,4 +1,5 @@
 local utils = require("jj.utils")
+local runner = require("jj.core.runner")
 
 --- @class jj.picker
 
@@ -35,7 +36,7 @@ end
 --- Gets the files in the current jj repository
 --- @return jj.picker.file[]|nil A list of files with their changes or nil if not in a jj repo
 local function get_files()
-	local diff_ouptut, ok = utils.execute_command("jj diff --summary --quiet")
+	local diff_ouptut, ok = runner.execute_command("jj diff --summary --quiet")
 	if not ok then
 		return
 	end
@@ -88,7 +89,7 @@ end
 local function log_history(file_path)
 	local format =
 		"jj log %s -r 'all()' -T builtin_log_oneline --config 'template-aliases.\"format_timestamp(timestamp)\"=timestamp'"
-	local output, ok = utils.execute_command(string.format(format, file_path))
+	local output, ok = runner.execute_command(string.format(format, file_path))
 	if not ok then
 		return
 	end

@@ -1,4 +1,5 @@
 local utils = require("jj.utils")
+local runner = require("jj.core.runner")
 
 --- @class jj.picker.snacks
 local M = {}
@@ -142,7 +143,7 @@ function M.file_log_history(opts, log_lines)
 				return
 			end
 
-			local _, ok = utils.execute_command(
+			local _, ok = runner.execute_command(
 				string.format("jj edit %s --ignore-immutable", item.rev),
 				string.format("could not edit revision '%s'", item.rev)
 			)
