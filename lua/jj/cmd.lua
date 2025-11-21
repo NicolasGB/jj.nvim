@@ -47,7 +47,9 @@ end
 
 --- Close the current terminal buffer if it exists
 local function close_floating_buffer()
-	if state.buf and vim.api.nvim_buf_is_valid(state.floating_buf) then
+	if not state.floating_buf then
+		return
+	elseif state.floating_buf and vim.api.nvim_buf_is_valid(state.floating_buf) then
 		vim.cmd("bwipeout! " .. state.floating_buf)
 	else
 		vim.cmd("close")
@@ -56,7 +58,9 @@ end
 
 --- Hide the current floating window
 local function hide_floating_window()
-	if state.floating_buf and vim.api.nvim_buf_is_valid(state.floating_buf) then
+	if not state.floating_buf then
+		return
+	elseif state.floating_buf and vim.api.nvim_buf_is_valid(state.floating_buf) then
 		vim.cmd("hide")
 	end
 end
@@ -465,7 +469,9 @@ local function run(cmd)
 	end
 
 	-- Create new terminal buffer
-	vim.cmd("split")
+	local height = math.floor(vim.o.lines / 2)
+	vim.cmd(string.format("%dsplit", height))
+
 	local win = vim.api.nvim_get_current_win()
 	state.buf = vim.api.nvim_create_buf(false, true)
 	vim.api.nvim_win_set_buf(win, state.buf)
@@ -689,7 +695,7 @@ function M.describe(description, revset, opts)
 			if not revset then
 				revset = "@"
 			end
-			local cmd = "jj log -r " .. revset .. " --no-graph -T 'coalesce(description, \"(no description set)\n\")'"
+			local cmd = "jj log -r " .. revset .. " --no-graph -T 'coalesce(description, \"\n\")'"
 			local old_description_raw, success = utils.execute_command(cmd, "Failed to get old description")
 			if not old_description_raw or not success then
 				return
