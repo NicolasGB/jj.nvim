@@ -3,7 +3,10 @@ local M = {}
 
 local utils = require("jj.utils")
 local parser = require("jj.core.parser")
+local buffer = require("jj.core.buffer")
+local runner = require("jj.core.runner")
 
+--- @class jj.ui.terminal.state
 local state = {
 	-- The current terminal buffer for jj commands
 	--- @type integer|nil
@@ -29,28 +32,17 @@ local state = {
 	floating_job_id = nil,
 }
 
+-- Re-export
 M.state = state
 
 --- Close the current terminal buffer if it exists
 function M.close_terminal_buffer()
-	if not state.buf then
-		return
-	elseif state.buf and vim.api.nvim_buf_is_valid(state.buf) then
-		vim.cmd("bwipeout! " .. state.buf)
-	else
-		vim.cmd("close")
-	end
+	buffer.close(state.buf)
 end
 
 --- Close the current terminal buffer if it exists
 local function close_floating_buffer()
-	if not state.floating_buf then
-		return
-	elseif state.floating_buf and vim.api.nvim_buf_is_valid(state.floating_buf) then
-		vim.cmd("bwipeout! " .. state.floating_buf)
-	else
-		vim.cmd("close")
-	end
+	buffer.close(state.floating_buf)
 end
 
 --- Hide the current floating window
@@ -88,8 +80,6 @@ local function handle_status_restore()
 	if not file_info then
 		return
 	end
-
-	local runner = require("jj.core.runner")
 
 	if file_info.is_rename then
 		-- For renamed files, remove the new file and restore the old one from parent revision
@@ -131,7 +121,6 @@ local function handle_log_enter(ignore_immut)
 		return
 	end
 
-	local runner = require("jj.core.runner")
 	-- If we found a revision, edit it.
 
 	-- Build command parts.
@@ -171,8 +160,6 @@ local function handle_log_new(flag, ignore_immut)
 	if not revset or revset == "" then
 		return
 	end
-
-	local runner = require("jj.core.runner")
 
 	-- Mapping for flag-specific options and messages.
 	local flag_map = {
@@ -235,45 +222,6 @@ local function handle_log_describe()
 	end
 end
 
---- Create a floating window for terminal output
---- @param config table Window configuration options
---- @param enter boolean Whether to enter the window after creation
---- @return integer buf Buffer number
---- @return integer win Window number
-local function create_floating_window(config, enter)
-	local default_config = {
-		width = math.floor(vim.o.columns * 0.8),
-		height = math.floor(vim.o.lines * 0.8),
-		row = math.floor((vim.o.lines - math.floor(vim.o.lines * 0.8)) / 2),
-		col = math.floor((vim.o.columns - math.floor(vim.o.columns * 0.8)) / 2),
-		relative = "editor",
-		style = "minimal",
-		border = "rounded",
-		title = " JJ Diff ",
-		title_pos = "center",
-	}
-
-	local merged_config = vim.tbl_extend("force", default_config, config or {})
-
-	-- Create buffer
-	local buf = vim.api.nvim_create_buf(false, true)
-
-	-- Create window
-	local win = vim.api.nvim_open_win(buf, enter or false, merged_config)
-
-	-- Set buffer options
-	vim.bo[buf].bufhidden = "hide"
-
-	-- Set window options
-	vim.wo[win].wrap = true
-	vim.wo[win].number = false
-	vim.wo[win].relativenumber = false
-	vim.wo[win].cursorline = false
-	vim.wo[win].signcolumn = "no"
-
-	return buf, win
-end
-
 --- Run the command in a floating window
 --- @param cmd string The command to run in the floating window
 function M.run_floating(cmd)
@@ -303,7 +251,32 @@ function M.run_floating(cmd)
 	end
 
 	-- Create new floating buffer
-	local buf, win = create_floating_window({}, true)
+	local buf, win = buffer.create_float({
+		title = " JJ Diff ",
+		title_pos = "center",
+		enter = true,
+		bufhidden = "hide",
+		win_options = {
+			wrap = true,
+			number = false,
+			relativenumber = false,
+			cursorline = false,
+			signcolumn = "no",
+		},
+		on_exit = function(b)
+			if state.floating_buf == b then
+				state.floating_buf = nil
+			end
+			if state.floating_chan then
+				vim.fn.chanclose(state.floating_chan)
+				state.floating_chan = nil
+			end
+			if state.floating_job_id then
+				vim.fn.jobstop(state.floating_job_id)
+				state.floating_job_id = nil
+			end
+		end,
+	})
 	state.floating_buf = buf
 
 	-- Create new terminal channel
@@ -329,7 +302,7 @@ function M.run_floating(cmd)
 			DFT_BACKGROUND = "light",
 		},
 		on_stdout = function(_, data)
-			if not vim.api.nvim_buf_is_valid(state.floating_buf) then
+			if not state.floating_buf or not vim.api.nvim_buf_is_valid(state.floating_buf) then
 				return
 			end
 			local output = table.concat(data, "\n")
@@ -337,75 +310,42 @@ function M.run_floating(cmd)
 		end,
 		on_exit = function(_, _) --[[ exit_code ]]
 			vim.schedule(function()
-				if vim.api.nvim_buf_is_valid(state.floating_buf) then
-					vim.bo[state.floating_buf].modifiable = false
-					if vim.api.nvim_get_current_buf() == state.floating_buf then
-						vim.cmd("stopinsert")
-					end
-				end
+				buffer.set_modifiable(state.floating_buf, false)
+				buffer.stop_insert(state.floating_buf)
 			end)
 		end,
 	})
 
-	-- Set keymaps only if they haven't been set for this buffer
-	if not vim.b[state.floating_buf].jj_keymaps_set then
-		vim.keymap.set(
-			{ "n", "v" },
-			"i",
-			function() end,
-			{ buffer = state.floating_buf, noremap = true, silent = true }
-		)
-		vim.keymap.set(
-			{ "n", "v" },
-			"c",
-			function() end,
-			{ buffer = state.floating_buf, noremap = true, silent = true }
-		)
-		vim.keymap.set(
-			{ "n", "v" },
-			"a",
-			function() end,
-			{ buffer = state.floating_buf, noremap = true, silent = true }
-		)
-		vim.keymap.set(
-			{ "n", "v" },
-			"q",
-			close_floating_buffer,
-			{ buffer = state.floating_buf, noremap = true, silent = true, desc = "Close the floating buffer" }
-		)
-		vim.keymap.set(
-			{ "n" },
-			"<ESC>",
-			hide_floating_window,
-			{ buffer = state.floating_buf, noremap = true, silent = true, desc = "Hide the buffer" }
-		)
-		vim.b[state.floating_buf].jj_keymaps_set = true
+	if jid <= 0 then
+		vim.api.nvim_chan_send(chan, "Failed to start command: " .. cmd .. "\r\n")
+		state.floating_chan = nil
+	else
+		state.floating_job_id = jid
 	end
 
-	-- Set up cleanup autocmd only once per buffer
-	if not vim.b[state.floating_buf].jj_cleanup_set then
-		vim.api.nvim_create_autocmd({ "BufWipeout", "BufDelete" }, {
-			buffer = state.floating_buf,
-			callback = function()
-				if state.floating_buf and vim.api.nvim_buf_is_valid(state.floating_buf) then
-					state.floating_buf = nil
-				end
-				if state.floating_chan then
-					vim.fn.chanclose(chan)
-				end
-				if jid then
-					vim.fn.jobstop(jid)
-				end
-			end,
+	-- Set keymaps only if they haven't been set for this buffer
+	if not vim.b[state.floating_buf].jj_keymaps_set then
+		buffer.set_keymaps(state.floating_buf, {
+			{ modes = { "n", "v" }, lhs = "i", rhs = function() end },
+			{ modes = { "n", "v" }, lhs = "c", rhs = function() end },
+			{ modes = { "n", "v" }, lhs = "a", rhs = function() end },
+			{
+				modes = { "n", "v" },
+				lhs = "q",
+				rhs = close_floating_buffer,
+				opts = { desc = "Close the floating buffer" },
+			},
+			{ modes = "n", lhs = "<ESC>", rhs = hide_floating_window, opts = { desc = "Hide the buffer" } },
 		})
-		vim.b[state.floating_buf].jj_cleanup_set = true
+		vim.b[state.floating_buf].jj_keymaps_set = true
 	end
 end
 
 --- Run a command and show it's output in a terminal buffer
 --- If a previous command already existed it smartly reuses the buffer cleaning the previous output
---- @param cmd string|string[]
-function M.run(cmd)
+--- @param cmd string|string[] The command to run in the terminal buffer
+--- @param keymaps jj.core.buffer.keymap[]|nil Additional keymaps to set for this command buffer
+function M.run(cmd, keymaps)
 	if type(cmd) == "string" then
 		cmd = { cmd }
 	end
@@ -437,12 +377,26 @@ function M.run(cmd)
 	end
 
 	-- Create new terminal buffer
-	local height = math.floor(vim.o.lines / 2)
-	vim.cmd(string.format("%dsplit", height))
+	state.buf = buffer.create({
+		split = "horizontal",
+		size = math.floor(vim.o.lines / 2),
+		on_exit = function(buf)
+			if state.buf == buf then
+				state.buf = nil
+			end
+			if state.chan then
+				vim.fn.chanclose(state.chan)
+				state.chan = nil
+			end
+			if state.job_id then
+				vim.fn.jobstop(state.job_id)
+				state.job_id = nil
+			end
+			state.buf_cmd = nil
+		end,
+	})
 
 	local win = vim.api.nvim_get_current_win()
-	state.buf = vim.api.nvim_create_buf(false, true)
-	vim.api.nvim_win_set_buf(win, state.buf)
 	vim.bo[state.buf].bufhidden = "wipe"
 
 	-- Create new terminal channel
@@ -474,7 +428,7 @@ function M.run(cmd)
 			DFT_BACKGROUND = "light",
 		},
 		on_stdout = function(_, data)
-			if not vim.api.nvim_buf_is_valid(state.buf) or not state.chan then
+			if not state.buf or not vim.api.nvim_buf_is_valid(state.buf) or not state.chan then
 				return
 			end
 			local output = table.concat(data, "\n")
@@ -483,12 +437,8 @@ function M.run(cmd)
 		on_exit = function(_, exit_code)
 			vim.schedule(function()
 				-- Make the buffer not modifiable
-				if vim.api.nvim_buf_is_valid(state.buf) then
-					vim.bo[state.buf].modifiable = false
-					if vim.api.nvim_get_current_buf() == state.buf then
-						vim.cmd("stopinsert")
-					end
-				end
+				buffer.set_modifiable(state.buf, false)
+				buffer.stop_insert(state.buf)
 				-- Store the subcommand on successful exit
 				if exit_code == 0 then
 					state.buf_cmd = cmd[2] or nil
@@ -507,114 +457,123 @@ function M.run(cmd)
 	-- Set keymaps only if they haven't been set for this buffer
 	-- Set base keymaps only if they haven't been set for this buffer yet
 	if not vim.b[state.buf].jj_keymaps_set then
-		vim.keymap.set({ "n", "v" }, "i", function() end, { buffer = state.buf, noremap = true, silent = true })
-		vim.keymap.set({ "n", "v" }, "c", function() end, { buffer = state.buf, noremap = true, silent = true })
-		vim.keymap.set({ "n", "v" }, "a", function() end, { buffer = state.buf, noremap = true, silent = true })
-		vim.keymap.set(
-			{ "n", "v" },
-			"q",
-			M.close_terminal_buffer,
-			{ buffer = state.buf, noremap = true, silent = true, desc = "Close the terminal buffer" }
-		)
-		vim.keymap.set(
-			{ "n" },
-			"<ESC>",
-			M.close_terminal_buffer,
-			{ buffer = state.buf, noremap = true, silent = true, desc = "Close the terminal buffer" }
-		)
+		buffer.set_keymaps(state.buf, {
+			-- Disable insert, command and append modes
+			{ modes = { "n", "v" }, lhs = "i", rhs = function() end },
+			{ modes = { "n", "v" }, lhs = "c", rhs = function() end },
+			{ modes = { "n", "v" }, lhs = "a", rhs = function() end },
+			-- Close terminal buffer
+			{
+				modes = { "n", "v" },
+				lhs = "q",
+				rhs = M.close_terminal_buffer,
+				opts = { desc = "Close the terminal buffer" },
+			},
+			-- Close terminal buffer with ESC
+			{
+				modes = "n",
+				lhs = "<ESC>",
+				rhs = M.close_terminal_buffer,
+				opts = { desc = "Close the terminal buffer" },
+			},
+		})
 
 		vim.b[state.buf].jj_keymaps_set = true
 	end
 
 	-- Remove command-specific keymaps from previous runs
 	if vim.b[state.buf].jj_command_keymaps then
-		for _, map in ipairs(vim.b[state.buf].jj_command_keymaps) do
-			local modes = map.modes
-			if type(modes) ~= "table" then
-				modes = { modes }
-			end
-			for _, mode in ipairs(modes) do
-				pcall(vim.keymap.del, mode, map.lhs, { buffer = state.buf })
-			end
-		end
+		buffer.remove_keymaps(state.buf, vim.b[state.buf].jj_command_keymaps)
 		vim.b[state.buf].jj_command_keymaps = nil
 	end
 
 	-- Add command-specific keymaps for jj buffers
 	local new_command_keymaps = {}
-	local function register_command_keymap(modes, lhs, rhs, opts)
-		local normalized_modes = type(modes) == "table" and vim.deepcopy(modes) or { modes }
-		opts = opts or {}
-		opts.buffer = state.buf
-		if opts.noremap == nil then
-			opts.noremap = true
+
+	-- Append the given keymaps
+	if keymaps and #keymaps > 0 then
+		for _, km in ipairs(keymaps) do
+			table.insert(new_command_keymaps, km)
 		end
-		if opts.silent == nil then
-			opts.silent = true
-		end
-		vim.keymap.set(modes, lhs, rhs, opts)
-		table.insert(new_command_keymaps, { modes = normalized_modes, lhs = lhs })
 	end
 
 	-- Add Enter key mapping for status buffers to open files
 	if cmd[2] == "st" or cmd[2] == "status" then
-		register_command_keymap({ "n" }, "<CR>", handle_status_enter, { desc = "Open file under cursor" })
-		register_command_keymap({ "n" }, "X", handle_status_restore, { desc = "Restore file under cursor" })
+		new_command_keymaps = {
+			{ modes = "n", lhs = "<CR>", rhs = handle_status_enter, opts = { desc = "Open file under cursor" } },
+			{ modes = "n", lhs = "X", rhs = handle_status_restore, opts = { desc = "Restore file under cursor" } },
+		}
 	elseif cmd[2] == "log" then
-		-- Edit
-		register_command_keymap({ "n" }, "<CR>", function()
-			handle_log_enter(false)
-		end, { desc = "Edit change under cursor" })
-		register_command_keymap({ "n" }, "<S-CR>", function()
-			handle_log_enter(true)
-		end, { desc = "Edit change under cursor ignoring immutability" })
-		-- Diff
-		register_command_keymap({ "n" }, "d", handle_log_diff, { desc = "Diff change under cursor" })
-		-- New
-		register_command_keymap({ "n" }, "n", handle_log_new, { desc = "New change off the change under cursor" })
-		register_command_keymap({ "n" }, "<C-n>", function()
-			handle_log_new("after")
-		end, { desc = "New change after the change under cursor" })
-		register_command_keymap({ "n" }, "<S-n>", function()
-			handle_log_new("after", true)
-		end, { desc = "New change after the change under cursor ignoring immutability" })
-		-- Undo/Redo
-		register_command_keymap({ "n" }, "u", function()
-			require("jj.cmd").undo()
-		end, { desc = "Undo last operation" })
-		register_command_keymap({ "n" }, "r", function()
-			require("jj.cmd").redo()
-		end, { desc = "Redo last operation" })
-		register_command_keymap({ "n" }, "D", handle_log_describe, { desc = "Describe change under cursor" })
+		new_command_keymaps = {
+			-- Edit
+			{
+				modes = "n",
+				lhs = "<CR>",
+				rhs = function()
+					handle_log_enter(false)
+				end,
+				opts = { desc = "Edit change under cursor" },
+			},
+			{
+				modes = "n",
+				lhs = "<S-CR>",
+				rhs = function()
+					handle_log_enter(true)
+				end,
+				opts = { desc = "Edit change under cursor ignoring immutability" },
+			},
+			-- Diff
+			{ modes = "n", lhs = "d", rhs = handle_log_diff, opts = { desc = "Diff change under cursor" } },
+			-- New
+			{
+				modes = "n",
+				lhs = "n",
+				rhs = handle_log_new,
+				opts = { desc = "New change off the change under cursor" },
+			},
+			{
+				modes = "n",
+				lhs = "<C-n>",
+				rhs = function()
+					handle_log_new("after")
+				end,
+				opts = { desc = "New change after the change under cursor" },
+			},
+			{
+				modes = "n",
+				lhs = "<S-n>",
+				rhs = function()
+					handle_log_new("after", true)
+				end,
+				opts = { desc = "New change after the change under cursor ignoring immutability" },
+			},
+			-- Undo/Redo
+			{
+				modes = "n",
+				lhs = "u",
+				rhs = function()
+					require("jj.cmd").undo()
+				end,
+				opts = { desc = "Undo last operation" },
+			},
+			{
+				modes = "n",
+				lhs = "r",
+				rhs = function()
+					require("jj.cmd").redo()
+				end,
+				opts = { desc = "Redo last operation" },
+			},
+			{ modes = "n", lhs = "D", rhs = handle_log_describe, opts = { desc = "Describe change under cursor" } },
+		}
 	end
 
 	if #new_command_keymaps > 0 then
+		buffer.set_keymaps(state.buf, new_command_keymaps)
 		vim.b[state.buf].jj_command_keymaps = new_command_keymaps
 	end
 
 	vim.cmd("stopinsert")
-
-	-- Set up cleanup autocmd only once per buffer
-	if not vim.b[state.buf].jj_cleanup_set then
-		vim.api.nvim_create_autocmd({ "BufWipeout", "BufDelete" }, {
-			buffer = state.buf,
-			callback = function()
-				if state.buf and vim.api.nvim_buf_is_valid(state.buf) then
-					state.buf = nil
-				end
-				if state.chan then
-					vim.fn.chanclose(state.chan)
-					state.chan = nil
-				end
-				if state.job_id then
-					vim.fn.jobstop(state.job_id)
-					state.job_id = nil
-				end
-				state.buf_cmd = nil
-			end,
-		})
-		vim.b[state.buf].jj_cleanup_set = true
-	end
 end
 
 return M
