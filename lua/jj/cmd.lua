@@ -2,683 +2,52 @@
 local M = {}
 
 local utils = require("jj.utils")
+local runner = require("jj.core.runner")
+local parser = require("jj.core.parser")
+local terminal = require("jj.ui.terminal")
+local editor = require("jj.ui.editor")
 local diff = require("jj.diff")
 
 -- Config for cmd module
+--- @class jj.cmd.opts
 M.config = {
+	--- @type "buffer"|"input" Editor mode for describe command: "buffer" (Git-style editor) or "input" (simple input prompt)
 	describe_editor = "buffer", -- "buffer" or "input"
 }
 
-local state = {
-	-- The current terminal buffer for jj commands
-	--- @type integer|nil
-	buf = nil,
-	-- The current channel to communciate with the terminal
-	--- @type integer|nil
-	chan = nil,
-	--- The current job id for the terminal buffer
-	--- @type integer|nil
-	job_id = nil,
-	-- The current command being displayed
-	--- @type string|nil
-	buf_cmd = nil,
-
-	-- The floating buffer if any
-	--- @type integer|nil
-	floating_buf = nil,
-	-- The floating channel to communciate with the terminal
-	--- @type integer|nil
-	floating_chan = nil,
-	--- The floating job id for the terminal buffer
-	--- @type integer|nil
-	floating_job_id = nil,
-}
-
---- Close the current terminal buffer if it exists
-local function close_terminal_buffer()
-	if not state.buf then
-		return
-	elseif state.buf and vim.api.nvim_buf_is_valid(state.buf) then
-		vim.cmd("bwipeout! " .. state.buf)
-	else
-		vim.cmd("close")
-	end
-end
-
---- Close the current terminal buffer if it exists
-local function close_floating_buffer()
-	if not state.floating_buf then
-		return
-	elseif state.floating_buf and vim.api.nvim_buf_is_valid(state.floating_buf) then
-		vim.cmd("bwipeout! " .. state.floating_buf)
-	else
-		vim.cmd("close")
-	end
-end
-
---- Hide the current floating window
-local function hide_floating_window()
-	if not state.floating_buf then
-		return
-	elseif state.floating_buf and vim.api.nvim_buf_is_valid(state.floating_buf) then
-		vim.cmd("hide")
-	end
-end
-
-local function handle_status_enter()
-	local file_info = utils.parse_file_info_from_status_line()
-
-	if not file_info then
-		return
-	end
-
-	local filepath = file_info.new_path
-	local stat = vim.uv.fs_stat(filepath)
-	if not stat then
-		utils.notify("File not found: " .. filepath, vim.log.levels.ERROR)
-		return
-	end
-
-	-- Go to the previous window (split above)
-	vim.cmd("wincmd p")
-
-	-- Open the file in that window, replacing current buffer
-	vim.cmd("edit " .. vim.fn.fnameescape(filepath))
-end
-
-local function handle_status_restore()
-	local file_info = utils.parse_file_info_from_status_line()
-
-	if not file_info then
-		return
-	end
-
-	if file_info.is_rename then
-		-- For renamed files, remove the new file and restore the old one from parent revision
-		local rm_cmd = "rm " .. vim.fn.shellescape(file_info.new_path)
-		local restore_cmd = "jj restore --from @- " .. vim.fn.shellescape(file_info.old_path)
-
-		local _, rm_success = utils.execute_command(rm_cmd, "Failed to remove renamed file")
-		if rm_success then
-			local _, restore_success = utils.execute_command(restore_cmd, "Failed to restore original file")
-			if restore_success then
-				utils.notify(
-					"Reverted rename: " .. file_info.new_path .. " -> " .. file_info.old_path,
-					vim.log.levels.INFO
-				)
-				M.status()
-			end
-		end
-	else
-		-- For non-renamed files, use regular restore
-		local restore_cmd = "jj restore " .. vim.fn.shellescape(file_info.old_path)
-
-		local _, success = utils.execute_command(restore_cmd, "Failed to restore")
-		if success then
-			utils.notify("Restored: " .. file_info.old_path, vim.log.levels.INFO)
-			M.status()
-		end
-	end
-end
-
---- Extract revision ID from a jujutsu log line
---- @param line string The log line to parse
---- @return string|nil The revision ID if found, nil otherwise
-local function get_rev_from_log_line(line)
-	-- Define jujutsu symbols with their UTF-8 byte sequences
-	local jj_symbols = {
-		diamond = "\226\151\134", -- ◆ U+25C6
-		circle = "\226\151\139", -- ○ U+25CB
-		conflict = "\195\151", -- × U+00D7
-	}
-
-	local revset
-
-	-- Try each symbol pattern
-	for _, symbol in pairs(jj_symbols) do
-		-- Pattern: Lines starting with symbol
-		revset = line:match("^%s*" .. symbol .. "%s+(%w+)")
-		if revset then
-			return revset
-		end
-
-		-- Pattern: Lines with │ followed by symbol (this are the branches)
-		revset = line:match("^│%s*" .. symbol .. "%s+(%w+)")
-		if revset then
-			return revset
-		end
-	end
-
-	-- Pattern for simple ASCII symbols
-	revset = line:match("^%s*[@]%s+(%w+)")
-	if revset then
-		return revset
-	end
-
-	return nil
-end
-
---- Handle keypress enter on `jj log` buffer to edit a revision.
---- If ignore_immut is true, adds --ignore-immutable to the command.
---- Silently returns if no revision is found or the jj command fails.
---- On success, notifies and refreshes the log buffer.
---- @param ignore_immut? boolean Pass --ignore-immutable to jj edit when true.
-local function handle_log_enter(ignore_immut)
-	local line = vim.api.nvim_get_current_line()
-	local revset = get_rev_from_log_line(line)
-	if not revset or revset == "" then
-		return
-	end
-	-- If we found a revision, edit it.
-
-	-- Build command parts.
-	local cmd_parts = { "jj", "edit" }
-	if ignore_immut then
-		table.insert(cmd_parts, "--ignore-immutable")
-	end
-
-	table.insert(cmd_parts, revset)
-
-	-- Build cmd string
-	local cmd = table.concat(cmd_parts, " ")
-
-	-- Try to execute cmd
-	local _, success = utils.execute_command(cmd, "Error editing change")
-	if not success then
-		return
-	end
-
-	utils.notify(string.format("Editing change: `%s`", revset), vim.log.levels.INFO)
-	-- Close the terminal buffer
-	close_terminal_buffer()
-end
-
---- Create a new change relative to the revision under the cursor in a jj log buffer.
---- Behavior:
----   flag == nil       -> branch off the current revision
----   flag == "after"   -> create a new change after the current revision (-A)
---- If ignore_immut is true, adds --ignore-immutable to the command.
---- Silently returns if no revision is found or the jj command fails.
---- On success, notifies and refreshes the log buffer.
---- @param flag? 'after' Position relative to the current revision; nil to branch off.
---- @param ignore_immut? boolean Pass --ignore-immutable to jj when true.
-local function handle_log_new(flag, ignore_immut)
-	local line = vim.api.nvim_get_current_line()
-	local revset = get_rev_from_log_line(line)
-	if not revset or revset == "" then
-		return
-	end
-
-	-- Mapping for flag-specific options and messages.
-	local flag_map = {
-		after = {
-			opt = "-A",
-			err = "Error creating new change after: `%s`",
-			ok = "Successfully created change after: `%s`",
-		},
-		default = {
-			opt = "",
-			err = "Error creating new change branching off `%s`",
-			ok = "Successfully created change branching off `%s`",
-		},
-	}
-
-	local cfg = flag_map[flag] or flag_map.default
-
-	-- Build command parts
-	local cmd_parts = { "jj", "new" }
-	if cfg.opt ~= "" then
-		table.insert(cmd_parts, cfg.opt)
-	end
-	table.insert(cmd_parts, revset)
-	if ignore_immut then
-		table.insert(cmd_parts, "--ignore-immutable")
-	end
-
-	local cmd = table.concat(cmd_parts, " ")
-	local _, success = utils.execute_command(cmd, string.format(cfg.err, revset))
-	if not success then
-		return
-	end
-
-	utils.notify(string.format(cfg.ok, revset), vim.log.levels.INFO)
-	-- Refresh the log buffer after creating the change.
-	M.log()
-end
-
---- Create a floating window for terminal output
---- @param config table Window configuration options
---- @param enter boolean Whether to enter the window after creation
---- @return integer buf Buffer number
---- @return integer win Window number
-local function create_floating_window(config, enter)
-	local default_config = {
-		width = math.floor(vim.o.columns * 0.8),
-		height = math.floor(vim.o.lines * 0.8),
-		row = math.floor((vim.o.lines - math.floor(vim.o.lines * 0.8)) / 2),
-		col = math.floor((vim.o.columns - math.floor(vim.o.columns * 0.8)) / 2),
-		relative = "editor",
-		style = "minimal",
-		border = "rounded",
-		title = " JJ Diff ",
-		title_pos = "center",
-	}
-
-	local merged_config = vim.tbl_extend("force", default_config, config or {})
-
-	-- Create buffer
-	local buf = vim.api.nvim_create_buf(false, true)
-
-	-- Create window
-	local win = vim.api.nvim_open_win(buf, enter or false, merged_config)
-
-	-- Set buffer options
-	vim.bo[buf].bufhidden = "hide"
-
-	-- Set window options
-	vim.wo[win].wrap = true
-	vim.wo[win].number = false
-	vim.wo[win].relativenumber = false
-	vim.wo[win].cursorline = false
-	vim.wo[win].signcolumn = "no"
-
-	return buf, win
-end
-
---- Run the command in a floating window
---- @param cmd string The command to run in the floating window
-local function run_floating(cmd)
-	-- Clean up previous state if invalid
-	if state.floating_buf and not vim.api.nvim_buf_is_valid(state.floating_buf) then
-		state.floating_buf = nil
-		state.floating_chan = nil
-		state.floating_job_id = nil
-	end
-
-	-- Stop any running job first
-	if state.floating_job_id then
-		vim.fn.jobstop(state.floating_job_id)
-		state.floating_job_id = nil
-	end
-
-	-- Close previous channel
-	if state.floating_chan then
-		vim.fn.chanclose(state.floating_chan)
-		state.floating_chan = nil
-	end
-
-	-- Wipe old buffer if it exists
-	if state.floating_buf and vim.api.nvim_buf_is_valid(state.floating_buf) then
-		vim.api.nvim_buf_delete(state.floating_buf, { force = true })
-		state.floating_buf = nil
-	end
-
-	-- Create new floating buffer
-	local buf, win = create_floating_window({}, true)
-	state.floating_buf = buf
-
-	-- Create new terminal channel
-	local chan = vim.api.nvim_open_term(state.floating_buf, {})
-	if not chan or chan <= 0 then
-		vim.notify("Failed to create terminal channel", vim.log.levels.ERROR)
-		return
-	end
-	state.floating_chan = chan
-
-	-- Move cursor to top before output arrives
-	vim.api.nvim_win_set_cursor(win, { 1, 0 })
-
-	local jid = vim.fn.jobstart(cmd, {
-		pty = true,
-		width = vim.api.nvim_win_get_width(win),
-		height = vim.api.nvim_win_get_height(win),
-		env = {
-			TERM = "xterm-256color",
-			PAGER = "cat",
-			DELTA_PAGER = "cat",
-			COLORTERM = "truecolor",
-			DFT_BACKGROUND = "light",
-		},
-		on_stdout = function(_, data)
-			if not vim.api.nvim_buf_is_valid(state.floating_buf) then
-				return
-			end
-			local output = table.concat(data, "\n")
-			vim.api.nvim_chan_send(chan, output)
-		end,
-		on_exit = function(_, _)
-			vim.schedule(function()
-				if vim.api.nvim_buf_is_valid(state.floating_buf) then
-					vim.bo[state.floating_buf].modifiable = false
-					if vim.api.nvim_get_current_buf() == state.floating_buf then
-						vim.cmd("stopinsert")
-					end
-				end
-			end)
-		end,
-	})
-
-	-- Set keymaps only if they haven't been set for this buffer
-	if not vim.b[state.floating_buf].jj_keymaps_set then
-		vim.keymap.set(
-			{ "n", "v" },
-			"i",
-			function() end,
-			{ buffer = state.floating_buf, noremap = true, silent = true }
-		)
-		vim.keymap.set(
-			{ "n", "v" },
-			"c",
-			function() end,
-			{ buffer = state.floating_buf, noremap = true, silent = true }
-		)
-		vim.keymap.set(
-			{ "n", "v" },
-			"a",
-			function() end,
-			{ buffer = state.floating_buf, noremap = true, silent = true }
-		)
-		vim.keymap.set(
-			{ "n", "v" },
-			"q",
-			close_floating_buffer,
-			{ buffer = state.floating_bufbuf, noremap = true, silent = true, desc = "Close the floating buffer" }
-		)
-		vim.keymap.set(
-			{ "n" },
-			"<ESC>",
-			hide_floating_window,
-			{ buffer = state.floating_bufbuf, noremap = true, silent = true, desc = "Hide the buffer" }
-		)
-		vim.b[state.floating_buf].jj_keymaps_set = true
-	end
-
-	-- Set up cleanup autocmd only once per buffer
-	if not vim.b[state.floating_buf].jj_cleanup_set then
-		vim.api.nvim_create_autocmd({ "BufWipeout", "BufDelete" }, {
-			buffer = state.floating_buf,
-			callback = function()
-				if state.floating_buf and vim.api.nvim_buf_is_valid(state.floating_buf) then
-					state.floating_buf = nil
-				end
-				if state.floating_chan then
-					vim.fn.chanclose(chan)
-				end
-				if jid then
-					vim.fn.jobstop(jid)
-				end
-			end,
-		})
-		vim.b[state.floating_buf].jj_cleanup_set = true
-	end
-end
-
---- Handle diffing a log line
-local function handle_log_diff()
-	local line = vim.api.nvim_get_current_line()
-
-	local revset = get_rev_from_log_line(line)
-
-	if revset then
-		local cmd = string.format("jj show %s", revset)
-		run_floating(cmd)
-	else
-		utils.notify("No valid revision found in the log line", vim.log.levels.ERROR)
-	end
-end
-
---- Handle describign a log line
-local function handle_log_describe()
-	local line = vim.api.nvim_get_current_line()
-	local revset = get_rev_from_log_line(line)
-	if revset then
-		M.describe(nil, revset)
-	else
-		utils.notify("No valid revision found in the log line", vim.log.levels.ERROR)
-	end
-end
-
---- Run a command and show it's output in a terminal buffer
---- If a previous command already existed it smartly reuses the buffer cleaning the previous output
----@param cmd string
-local function run(cmd)
-	-- Clean up previous state if invalid
-	if state.buf and not vim.api.nvim_buf_is_valid(state.buf) then
-		state.buf = nil
-		state.chan = nil
-		state.job_id = nil
-		state.buf_cmd = nil
-	end
-
-	-- Stop any running job first
-	if state.job_id then
-		vim.fn.jobstop(state.job_id)
-		state.job_id = nil
-	end
-
-	-- Close previous channel
-	if state.chan then
-		vim.fn.chanclose(state.chan)
-		state.chan = nil
-	end
-
-	-- Wipe old buffer if it exists
-	if state.buf and vim.api.nvim_buf_is_valid(state.buf) then
-		vim.api.nvim_buf_delete(state.buf, { force = true })
-		state.buf = nil
-	end
-
-	-- Create new terminal buffer
-	local height = math.floor(vim.o.lines / 2)
-	vim.cmd(string.format("%dsplit", height))
-
-	local win = vim.api.nvim_get_current_win()
-	state.buf = vim.api.nvim_create_buf(false, true)
-	vim.api.nvim_win_set_buf(win, state.buf)
-	vim.bo[state.buf].bufhidden = "wipe"
-
-	-- Create new terminal channel
-	local chan = vim.api.nvim_open_term(state.buf, {})
-	if not chan or chan <= 0 then
-		vim.notify("Failed to create terminal channel", vim.log.levels.ERROR)
-		return
-	end
-	state.chan = chan
-
-	-- Move cursor to top before output arrives
-	vim.api.nvim_win_set_cursor(win, { 1, 0 })
-
-	local cmd_parts = vim.split(cmd, "%s+")
-
-	local jid = vim.fn.jobstart(cmd, {
-		pty = true,
-		width = vim.api.nvim_win_get_width(win),
-		height = vim.api.nvim_win_get_height(win),
-		env = {
-			TERM = "xterm-256color",
-			PAGER = "cat",
-			DELTA_PAGER = "cat",
-			COLORTERM = "truecolor",
-			DFT_BACKGROUND = "light",
-		},
-		on_stdout = function(_, data)
-			if not vim.api.nvim_buf_is_valid(state.buf) or not state.chan then
-				return
-			end
-			local output = table.concat(data, "\n")
-			vim.api.nvim_chan_send(state.chan, output)
-		end,
-		on_exit = function(_, exit_code)
-			vim.schedule(function()
-				-- Make the buffer not modifiable
-				if vim.api.nvim_buf_is_valid(state.buf) then
-					vim.bo[state.buf].modifiable = false
-					if vim.api.nvim_get_current_buf() == state.buf then
-						vim.cmd("stopinsert")
-					end
-				end
-				-- Store the subcommand on successful exit
-				if exit_code == 0 then
-					state.buf_cmd = cmd_parts[2] or nil
-				end
-			end)
-		end,
-	})
-
-	if jid <= 0 then
-		vim.api.nvim_chan_send(chan, "Failed to start command: " .. cmd .. "\r\n")
-		state.chan = nil
-	else
-		state.job_id = jid
-	end
-
-	-- Set keymaps only if they haven't been set for this buffer
-	-- Set base keymaps only if they haven't been set for this buffer yet
-	if not vim.b[state.buf].jj_keymaps_set then
-		vim.keymap.set({ "n", "v" }, "i", function() end, { buffer = state.buf, noremap = true, silent = true })
-		vim.keymap.set({ "n", "v" }, "c", function() end, { buffer = state.buf, noremap = true, silent = true })
-		vim.keymap.set({ "n", "v" }, "a", function() end, { buffer = state.buf, noremap = true, silent = true })
-		vim.keymap.set(
-			{ "n", "v" },
-			"q",
-			close_terminal_buffer,
-			{ buffer = state.buf, noremap = true, silent = true, desc = "Close the terminal buffer" }
-		)
-		vim.keymap.set(
-			{ "n" },
-			"<ESC>",
-			close_terminal_buffer,
-			{ buffer = state.buf, noremap = true, silent = true, desc = "Close the terminal buffer" }
-		)
-
-		vim.b[state.buf].jj_keymaps_set = true
-	end
-
-	-- Remove command-specific keymaps from previous runs
-	if vim.b[state.buf].jj_command_keymaps then
-		for _, map in ipairs(vim.b[state.buf].jj_command_keymaps) do
-			local modes = map.modes
-			if type(modes) ~= "table" then
-				modes = { modes }
-			end
-			for _, mode in ipairs(modes) do
-				pcall(vim.keymap.del, mode, map.lhs, { buffer = state.buf })
-			end
-		end
-		vim.b[state.buf].jj_command_keymaps = nil
-	end
-
-	-- Add command-specific keymaps for jj buffers
-	local new_command_keymaps = {}
-	local function register_command_keymap(modes, lhs, rhs, opts)
-		local normalized_modes = type(modes) == "table" and vim.deepcopy(modes) or { modes }
-		opts = opts or {}
-		opts.buffer = state.buf
-		if opts.noremap == nil then
-			opts.noremap = true
-		end
-		if opts.silent == nil then
-			opts.silent = true
-		end
-		vim.keymap.set(modes, lhs, rhs, opts)
-		table.insert(new_command_keymaps, { modes = normalized_modes, lhs = lhs })
-	end
-
-	-- Add Enter key mapping for status buffers to open files
-	if cmd_parts[2] == "st" or cmd_parts[2] == "status" then
-		register_command_keymap({ "n" }, "<CR>", handle_status_enter, { desc = "Open file under cursor" })
-		register_command_keymap({ "n" }, "X", handle_status_restore, { desc = "Restore file under cursor" })
-	elseif cmd_parts[2] == "log" then
-		-- Edit
-		register_command_keymap({ "n" }, "<CR>", function()
-			handle_log_enter(false)
-		end, { desc = "Edit change under cursor" })
-		register_command_keymap({ "n" }, "<S-CR>", function()
-			handle_log_enter(true)
-		end, { desc = "Edit change under cursor ignoring immutability" })
-		-- Diff
-		register_command_keymap({ "n" }, "d", handle_log_diff, { desc = "Diff change under cursor" })
-		-- New
-		register_command_keymap({ "n" }, "n", handle_log_new, { desc = "New change off the change under cursor" })
-		register_command_keymap({ "n" }, "<C-n>", function()
-			handle_log_new("after")
-		end, { desc = "New change after the change under cursor" })
-		register_command_keymap({ "n" }, "<S-n>", function()
-			handle_log_new("after", true)
-		end, { desc = "New change after the change under cursor ignoring immutability" })
-		-- Undo/Redo
-		register_command_keymap({ "n" }, "u", function()
-			M.undo()
-		end, { desc = "Undo last operation" })
-		register_command_keymap({ "n" }, "r", function()
-			M.redo()
-		end, { desc = "Redo last operation" })
-		register_command_keymap({ "n" }, "D", handle_log_describe, { desc = "Describe change under cursor" })
-	end
-
-	if #new_command_keymaps > 0 then
-		vim.b[state.buf].jj_command_keymaps = new_command_keymaps
-	end
-
-	vim.cmd("stopinsert")
-
-	-- Set up cleanup autocmd only once per buffer
-	if not vim.b[state.buf].jj_cleanup_set then
-		vim.api.nvim_create_autocmd({ "BufWipeout", "BufDelete" }, {
-			buffer = state.buf,
-			callback = function()
-				if state.buf and vim.api.nvim_buf_is_valid(state.buf) then
-					state.buf = nil
-				end
-				if state.chan then
-					vim.fn.chanclose(state.chan)
-					state.chan = nil
-				end
-				if state.job_id then
-					vim.fn.jobstop(state.job_id)
-					state.job_id = nil
-				end
-				state.buf_cmd = nil
-			end,
-		})
-		vim.b[state.buf].jj_cleanup_set = true
-	end
-end
-
---- Execute jj describe command with the given description
----@param description string The description text
-local function execute_describe(description, revset)
-	if not description or description == "" then
-		utils.notify("Description cannot be empty", vim.log.levels.ERROR)
-		return
-	end
-	if revset == nil then
-		-- Use --stdin to properly handle multi-line and special characters
-		local _, success = utils.execute_command("jj describe --stdin", "Failed to describe", description)
-		if success then
-			utils.notify("Description set.", vim.log.levels.INFO)
-		end
-	else
-		-- Use --stdin to properly handle multi-line and special characters
-		local cmd = "jj describe -r " .. revset .. " --stdin"
-		local _, success = utils.execute_command(cmd, "Failed to describe", description)
-		if success then
-			utils.notify("Description set.", vim.log.levels.INFO)
-		end
-	end
-end
-
 --- @class jj.cmd.describe_opts
 --- @field with_status boolean: Whether or not `jj st` should be displayed in a buffer while describing the commit
-
 --- @type jj.cmd.describe_opts
 local default_describe_opts = {
 	with_status = true,
 }
 
---- Jujutsu describe
----@param description? string Optional description text
----@param opts? jj.cmd.describe_opts Optional command options
+--- Execute jj describe command with the given description
+--- @param description string The description text
+--- @param revset? string The revision to describe
+local function execute_describe(description, revset)
+	if not description or description == "" then
+		utils.notify("Description cannot be empty", vim.log.levels.ERROR)
+		return
+	end
+
+	local cmd = "jj describe"
+	if revset then
+		cmd = cmd .. " -r " .. revset
+	end
+	cmd = cmd .. " --stdin"
+
+	-- Use --stdin to properly handle multi-line and special characters
+	local _, success = runner.execute_command(cmd, "Failed to describe", description)
+	if success then
+		utils.notify("Description set.", vim.log.levels.INFO)
+	end
+end
+
+-- Jujutsu describe
+--- @param description? string Optional description text
+--- @param revset? string The revision to describe
+--- @param opts? jj.cmd.describe_opts Optional command options
 function M.describe(description, revset, opts)
 	if not utils.ensure_jj() then
 		return
@@ -688,72 +57,75 @@ function M.describe(description, revset, opts)
 	if description then
 		-- Description provided directly
 		execute_describe(description, revset)
-	else
-		-- Use buffer editor mode
-		if M.config.describe_editor == "buffer" then
-			-- Build initial lines
-			if not revset then
-				revset = "@"
-			end
-			local cmd = "jj log -r " .. revset .. " --no-graph -T 'coalesce(description, \"\n\")'"
-			local old_description_raw, success = utils.execute_command(cmd, "Failed to get old description")
-			if not old_description_raw or not success then
-				return
-			end
-			local old_description = vim.trim(old_description_raw)
-			local status_files = utils.get_status_files(revset)
-			local text = { old_description }
-			table.insert(text, "") -- Empty line to separate from user input
-			table.insert(text, "JJ: Change ID: " .. revset)
-			table.insert(text, "JJ: This commit contains the following changes:")
-			for _, item in ipairs(status_files) do
-				table.insert(text, string.format("JJ:     %s %s", item.status, item.file))
-			end
-			table.insert(text, "JJ:") -- blank line
-			table.insert(text, 'JJ: Lines starting with "JJ:" (like this one) will be removed')
+		return
+	end
 
-			utils.open_ephemeral_buffer(text, function(buf_lines)
-				local user_lines = {}
-				for _, line in ipairs(buf_lines) do
-					if not line:match("^JJ:") then
-						table.insert(user_lines, line)
-					end
-				end
-				-- Join lines and trim leading/trailing whitespace
-				local trimmed_description = table.concat(user_lines, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
-				execute_describe(trimmed_description, revset)
-			end)
-			close_terminal_buffer()
-		else
-			local merged_opts = vim.tbl_deep_extend("force", default_describe_opts, opts or {})
-			if merged_opts.with_status then
-				-- Show the status in a terminal buffer
-				M.status()
-			end
+	if not revset then
+		revset = "@"
+	end
 
-			vim.ui.input({
-				prompt = "Description: ",
-				default = "",
-			}, function(input)
-				-- If the user inputed something, execute the describe command
-				if input then
-					execute_describe(input, revset)
-				end
-				-- Close the current terminal when finished
-				close_terminal_buffer()
-			end)
+	-- Use buffer editor mode
+	if M.config.describe_editor == "buffer" then
+		local cmd = "jj log -r " .. revset .. " --no-graph -T 'coalesce(description, \"\n\")'"
+		local old_description_raw, success = runner.execute_command(cmd, "Failed to get old description")
+		if not old_description_raw or not success then
+			return
 		end
+
+		local log_cmd = "jj log -r " .. revset .. " --no-graph -T 'self.diff().summary()'"
+		local status_result, success2 = runner.execute_command(log_cmd, "Error getting status")
+		if not success2 then
+			return
+		end
+
+		local status_files = parser.get_status_files(status_result)
+		local old_description = vim.trim(old_description_raw)
+
+		local text = { old_description }
+		table.insert(text, "") -- Empty line to separate from user input
+		table.insert(text, "JJ: Change ID: " .. revset)
+		table.insert(text, "JJ: This commit contains the following changes:")
+		for _, item in ipairs(status_files) do
+			table.insert(text, string.format("JJ:     %s %s", item.status, item.file))
+		end
+		table.insert(text, "JJ:") -- blank line
+		table.insert(text, 'JJ: Lines starting with "JJ:" (like this one) will be removed')
+
+		editor.open_editor(text, function(buf_lines)
+			local user_lines = {}
+			for _, line in ipairs(buf_lines) do
+				if not line:match("^JJ:") then
+					table.insert(user_lines, line)
+				end
+			end
+			-- Join lines and trim leading/trailing whitespace
+			local trimmed_description = table.concat(user_lines, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
+			execute_describe(trimmed_description, revset)
+		end)
+		terminal.close_terminal_buffer()
+	else
+		-- Use input mode
+		local merged_opts = vim.tbl_deep_extend("force", default_describe_opts, opts or {})
+		if merged_opts.with_status then
+			-- Show the status in a terminal buffer
+			M.status()
+		end
+
+		vim.ui.input({
+			prompt = "Description: ",
+			default = "",
+		}, function(input)
+			-- If the user inputed something, execute the describe command
+			if input then
+				execute_describe(input, revset)
+			end
+			-- Close the current terminal when finished
+			terminal.close_terminal_buffer()
+		end)
 	end
 end
 
---- Jujutsu status.
---
---  it executes `jj st` and either:
---   1. Shows the output in a notification (if `opts.notify` is true), or
---   2. Displays it in the buffer by default.
---
--- @param opts? table Optional settings:
--- @field notify boolean If true, show the status in a notification instead of buffer.
+-- Jujutsu status.
 function M.status(opts)
 	if not utils.ensure_jj() then
 		return
@@ -762,13 +134,13 @@ function M.status(opts)
 	local cmd = "jj st"
 
 	if opts and opts.notify then
-		local output = utils.execute_command(cmd, "Failed to get status")
-		if output then
-			utils.notify(output, vim.log.levels.INFO)
+		local output, success = runner.execute_command(cmd, "Failed to get status")
+		if success then
+			utils.notify(output and output or "", vim.log.levels.INFO)
 		end
 	else
 		-- Default behavior: show in buffer
-		run(cmd)
+		terminal.run(cmd)
 	end
 end
 
@@ -777,25 +149,27 @@ end
 --- @field with_input? boolean Whether or not to use nvim input to decide the parent of the new commit
 --- @field args? string The arguments to append to the new command
 
---- Jujutsu new
----@param opts jj.cmd.new_opts|nil
+-- Jujutsu new
+--- @param opts? jj.cmd.new_opts
 function M.new(opts)
 	if not utils.ensure_jj() then
 		return
 	end
 
-	---@param cmd string
+	opts = opts or {}
+
+	--- @param cmd string
 	local function execute_new(cmd)
-		utils.execute_command(cmd, "Failed to create new change")
+		runner.execute_command(cmd, "Failed to create new change")
 		utils.notify("Command `new` was succesful.", vim.log.levels.INFO)
 		-- Show the updated log if the user requested it
-		if opts and opts.show_log then
+		if opts.show_log then
 			M.log()
 		end
 	end
 
 	-- If the user wants use input mode
-	if opts and opts.with_input then
+	if opts.with_input then
 		if opts.show_log then
 			M.log()
 		end
@@ -806,18 +180,18 @@ function M.new(opts)
 			if input then
 				execute_new(string.format("jj new %s", input))
 			end
-			close_terminal_buffer()
+			terminal.close_terminal_buffer()
 		end)
 	else
 		-- Otherwise follow a classic flow for inputing
 		local cmd = "jj new"
-		if opts and opts.args then
+		if opts.args then
 			cmd = string.format("jj new %s", opts.args)
 		end
 
 		execute_new(cmd)
 		-- If the show log is enabled show log
-		if opts and opts.show_log then
+		if opts.show_log then
 			M.log()
 		end
 	end
@@ -833,91 +207,71 @@ function M.edit()
 		prompt = "Change to edit: ",
 		default = "",
 	}, function(input)
-		-- If the user inputed something, execute the describe command
 		if input then
-			local _, success = utils.execute_command(string.format("jj edit %s", input), "Error editing change")
+			local _, success = runner.execute_command(string.format("jj edit %s", input), "Error editing change")
 			if not success then
 				return
 			end
-
-			-- If ok update the log window
 			M.log({})
 		else
-			-- If user exited without saving discard the log
-			close_terminal_buffer()
+			terminal.close_terminal_buffer()
 		end
 	end)
 end
 
---- Jujutsu squash
+-- Jujutsu squash
 function M.squash()
 	if not utils.ensure_jj() then
 		return
 	end
 
 	local cmd = "jj squash"
-	local _, success = utils.execute_command(cmd, "Failed to squash")
+	local _, success = runner.execute_command(cmd, "Failed to squash")
 	if success then
 		utils.notify("Command `squash` was succesful.", vim.log.levels.INFO)
-		if state.buf_cmd == "log" then
+		if terminal.state.buf_cmd == "log" then
 			M.log()
 		end
 	end
 end
 
----@class jj.cmd.log_opts
----@field summary? boolean: Show a summary of the log
----@field reversed? boolean: Show the log in reverse order
----@field no_graph? boolean: Do not show the graph in the log output
----@field limit? uinteger : Limit the number of log entries shown, defaults to 20 if not provided
----@field revisions? string: Which revisions to show
+--- @class jj.cmd.log_opts
+--- @field summary? boolean
+--- @field reversed? boolean
+--- @field no_graph? boolean
+--- @field limit? uinteger
+--- @field revisions? string
 
---- @type jj.cmd.log_opts
-local default_log_opts = {
-	--- @type boolean
-	summary = false,
-	--- @type boolean
-	reversed = false,
-	--- @type boolean
-	no_graph = false,
-	--- @type uinteger
-	limit = 20,
-}
---- Jujutsu log
----@param opts jj.cmd.log_opts|nil Command options from nvim_create_user_command
+local default_log_opts = { summary = false, reversed = false, no_graph = false, limit = 20 }
+
+-- Jujutsu log
+--- @param opts? jj.cmd.log_opts
 function M.log(opts)
 	if not utils.ensure_jj() then
 		return
 	end
 
 	local cmd = "jj log"
-
-	-- Merge default options with provided ones
 	local merged_opts = vim.tbl_extend("force", default_log_opts, opts or {})
 
-	-- Add options to the command
 	for key, value in pairs(merged_opts) do
-		-- Replace _ with - for command line options
 		key = key:gsub("_", "-")
-
-		-- Handle special cases such as limit
 		if key == "limit" and value then
 			cmd = string.format("%s --%s %d", cmd, key, value)
 		elseif key == "revisions" and value then
 			cmd = string.format("%s --%s %s", cmd, key, value)
 		elseif value then
-			-- Simply append the option
 			cmd = string.format("%s --%s", cmd, key)
 		end
 	end
 
-	run(cmd)
+	terminal.run(cmd)
 end
 
----@class jj.cmd.diff_opts
----@field current boolean Wether or not to only diff the current buffer
+--- @class jj.cmd.diff_opts
+--- @field current boolean Wether or not to only diff the current buffer
 
---- Jujutsu diff
+-- Jujutsu diff
 --- @param opts? jj.cmd.diff_opts The options for the diff command
 function M.diff(opts)
 	if not utils.ensure_jj() then
@@ -936,16 +290,15 @@ function M.diff(opts)
 		end
 	end
 
-	run(cmd)
+	terminal.run(cmd)
 end
 
---- Jujutsu rebase
+-- Jujutsu rebase
 function M.rebase()
 	if not utils.ensure_jj() then
 		return
 	end
 
-	-- show log before rebasing
 	M.log({})
 	vim.ui.input({
 		prompt = "Rebase destination: ",
@@ -954,92 +307,90 @@ function M.rebase()
 		if input then
 			local cmd = string.format("jj rebase -d '%s'", input)
 			utils.notify(string.format("Beginning rebase on %s", input), vim.log.levels.INFO)
-			local _, success = utils.execute_command(cmd, "Error rebasing")
+			local _, success = runner.execute_command(cmd, "Error rebasing")
 			if success then
 				utils.notify("Rebase successful.", vim.log.levels.INFO)
 				M.log({})
 			end
 		else
-			close_terminal_buffer()
+			terminal.close_terminal_buffer()
 		end
 	end)
 end
 
---- Jujutsu create bookmark
+-- Jujutsu create bookmark
 function M.bookmark_create()
 	if not utils.ensure_jj() then
 		return
 	end
 
-	-- show log before rebasing
 	M.log({})
 	vim.ui.input({
 		prompt = "Bookmark name: ",
 	}, function(input)
 		if input then
 			local cmd = string.format("jj b c %s", input)
-			local _, success = utils.execute_command(cmd, "Error creating bookmark")
+			local _, success = runner.execute_command(cmd, "Error creating bookmark")
 			if success then
 				utils.notify(string.format("Bookmark `%s` created successfully for @", input), vim.log.levels.INFO)
 				M.log({})
 			end
 		else
-			close_terminal_buffer()
+			terminal.close_terminal_buffer()
 		end
 	end)
 end
 
---- Jujutsu delete bookmark
+-- Jujutsu delete bookmark
 function M.bookmark_delete()
 	if not utils.ensure_jj() then
 		return
 	end
 
-	-- show log before rebasing
 	M.log({})
 	vim.ui.input({
 		prompt = "Bookmark name: ",
 	}, function(input)
 		if input then
 			local cmd = string.format("jj b d %s", input)
-			local _, success = utils.execute_command(cmd, "Error deleting bookmark")
+			local _, success = runner.execute_command(cmd, "Error deleting bookmark")
 			if success then
 				utils.notify(string.format("Bookmark `%s` deleted successfully.", input), vim.log.levels.INFO)
 				M.log({})
 			end
 		else
-			close_terminal_buffer()
+			terminal.close_terminal_buffer()
 		end
 	end)
 end
 
---- Jujutsu undo
+-- Jujutsu undo
 function M.undo()
 	if not utils.ensure_jj() then
 		return
 	end
 
 	local cmd = "jj undo"
-	local _, success = utils.execute_command(cmd, "Failed to undo")
+	local _, success = runner.execute_command(cmd, "Failed to undo")
 	if success then
 		utils.notify("Command `undo` was succesful.", vim.log.levels.INFO)
-		if state.buf_cmd == "log" then
+		if terminal.state.buf_cmd == "log" then
 			M.log({})
 		end
 	end
 end
----
---- Jujutsu redo
+
+-- Jujutsu redo
 function M.redo()
 	if not utils.ensure_jj() then
 		return
 	end
 
 	local cmd = "jj redo"
-	local _, success = utils.execute_command(cmd, "Failed to redo")
+	local _, success = runner.execute_command(cmd, "Failed to redo")
 	if success then
 		utils.notify("Command `redo` was succesful.", vim.log.levels.INFO)
-		if state.buf_cmd == "log" then
+		if terminal.state.buf_cmd == "log" then
 			M.log({})
 		end
 	end
@@ -1052,17 +403,25 @@ function M.j(args)
 	end
 
 	if #args == 0 then
-		-- Parse the default command
-		local default_cmd = utils.parse_default_cmd()
-		-- If nil simply run jj
+		local default_cmd_str, success = runner.execute_command(
+			"jj config get ui.default-command",
+			"Error getting user's default command",
+			nil,
+			true
+		)
+		if not success then
+			terminal.run("jj")
+			return
+		end
+
+		local default_cmd = parser.parse_default_cmd(default_cmd_str and default_cmd_str or "")
 		if default_cmd == nil then
-			run("jj")
+			terminal.run("jj")
 			return
 		end
 		args = default_cmd
 	end
 
-	-- Normalize to table
 	if type(args) == "string" then
 		args = vim.split(args, "%s+")
 	end
@@ -1072,7 +431,6 @@ function M.j(args)
 	local cmd = string.format("jj %s", table.concat(args, " "))
 	local remaining_args_str = table.concat(remaining_args, " ")
 
-	-- Dispatch table for known subcommands
 	local handlers = {
 		describe = function()
 			M.describe(remaining_args_str ~= "" and remaining_args_str or nil)
@@ -1084,7 +442,7 @@ function M.j(args)
 			if #remaining_args == 0 then
 				M.edit()
 			else
-				run(cmd)
+				terminal.run(cmd)
 			end
 		end,
 		new = function()
@@ -1104,23 +462,22 @@ function M.j(args)
 	if handlers[subcommand] then
 		handlers[subcommand]()
 	else
-		run(cmd)
+		terminal.run(cmd)
 	end
 end
 
---- Handle J command with subcommands and direct jj passthrough
----@param opts table Command options from nvim_create_user_command
+-- Handle J command with subcommands and direct jj passthrough
+--- @param opts table Command options from nvim_create_user_command
 local function handle_j_command(opts)
-	local args = opts.fargs
-	M.j(args)
+	M.j(opts.fargs)
 end
 
---- Register the J and Jdiff commands
+-- Register the J and Jdiff commands
+
 function M.register_command()
 	vim.api.nvim_create_user_command("J", handle_j_command, {
 		nargs = "*",
 		complete = function(arglead, _, _)
-			-- Basic completion for common jj subcommands
 			local subcommands = {
 				"log",
 				"status",
@@ -1139,7 +496,6 @@ function M.register_command()
 				"undo",
 				"redo",
 			}
-
 			local matches = {}
 			for _, cmd in ipairs(subcommands) do
 				if cmd:match("^" .. vim.pesc(arglead)) then
@@ -1151,7 +507,6 @@ function M.register_command()
 		desc = "Execute jj commands with subcommand support",
 	})
 
-	-- Unified creation of jj diff commands with optional revision argument
 	local function create_diff_command(name, fn, desc)
 		vim.api.nvim_create_user_command(name, function(opts)
 			local rev = opts.fargs[1]
@@ -1160,16 +515,9 @@ function M.register_command()
 			else
 				fn()
 			end
-		end, {
-			nargs = "?",
-			desc = desc .. " (optionally pass jj revision)",
-		})
+		end, { nargs = "?", desc = desc .. " (optionally pass jj revision)" })
 	end
 
-	-- Commands:
-	-- Jdiff  : vertical diff by default
-	-- Jhdiff : horizontal diff
-	-- Jvdiff : vertical diff (explicit)
 	create_diff_command("Jdiff", diff.open_vdiff, "Vertical diff against jj revision")
 	create_diff_command("Jhdiff", diff.open_hdiff, "Horizontal diff against jj revision")
 	create_diff_command("Jvdiff", diff.open_vdiff, "Vertical diff against jj revision")

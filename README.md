@@ -172,48 +172,81 @@ require("jj").setup({
 ## Example config
 
 ```lua
+
 {
+
   "nicolasgb/jj.nvim",
+
   dependencies = {
+
     "folke/snacks.nvim", -- Optional only if you use picker's
+
   },
+
   config = function()
-    require("jj").setup({
+
+    local jj = require("jj")
+    jj.setup({
+
       highlights = {
         -- Customize colors if desired
         modified = { fg = "#89ddff" },
       }
     })
 
-    local cmd = require("jj.cmd")
-    vim.keymap.set("n", "<leader>jd", cmd.describe, { desc = "JJ describe" })
-    vim.keymap.set("n", "<leader>jl", cmd.log, { desc = "JJ log" })
-    vim.keymap.set("n", "<leader>je", cmd.edit, { desc = "JJ edit" })
-    vim.keymap.set("n", "<leader>jn", cmd.new, { desc = "JJ new" })
-    vim.keymap.set("n", "<leader>js", cmd.status, { desc = "JJ status" })
-    vim.keymap.set("n", "<leader>dj", cmd.diff, { desc = "JJ diff" })
-    vim.keymap.set("n", "<leader>sj", cmd.squash, { desc = "JJ squash" })
-    vim.keymap.set("n", "<leader>ju", cmd.undo, { desc = "JJ undo" })
-    vim.keymap.set("n", "<leader>jy", cmd.redo, { desc = "JJ redo" })
+
+
+    vim.keymap.set("n", "<leader>jd", jj.describe, { desc = "JJ describe" })
+
+    vim.keymap.set("n", "<leader>jl", jj.log, { desc = "JJ log" })
+
+    vim.keymap.set("n", "<leader>je", jj.edit, { desc = "JJ edit" })
+
+    vim.keymap.set("n", "<leader>jn", jj.new, { desc = "JJ new" })
+
+    vim.keymap.set("n", "<leader>js", jj.status, { desc = "JJ status" })
+
+    vim.keymap.set("n", "<leader>sj", jj.squash, { desc = "JJ squash" })
+
+    vim.keymap.set("n", "<leader>ju", jj.undo, { desc = "JJ undo" })
+
+    vim.keymap.set("n", "<leader>jy", jj.redo, { desc = "JJ redo" })
+
+
+
+    -- Using the new `diff` table for clarity
+
+    vim.keymap.set("n", "<leader>dj", jj.diff.vsplit, { desc = "JJ diff vertical" })
+
+
 
     -- Pickers
-    local picker = require("jj.picker")
-    vim.keymap.set("n", "<leader>gj", picker.status, { desc = "JJ Picker status" })
-    vim.keymap.set("n", "<leader>gl", picker.file_history, { desc = "JJ Picker file history" })
 
-    -- Some functions like `describe` or `log` can take parameters
+    vim.keymap.set("n", "<leader>gj", jj.picker.status, { desc = "JJ Picker status" })
+
+    vim.keymap.set("n", "<leader>gl", jj.picker.file_history, { desc = "JJ Picker file history" })
+
+
+
+    -- Some functions like `log` can take parameters
+
     vim.keymap.set("n", "<leader>jL", function()
       jj.log {
         revisions = "'all()'", -- equivalent to jj log -r ::
       }
     end, { desc = "JJ log all" })
 
+
+
     -- This is an alias i use for moving bookmarks its so good
+
     vim.keymap.set("n", "<leader>jt", function()
-      cmd.j "tug"
-      cmd.log {}
+      jj.j "tug"
+      jj.log {}
     end, { desc = "JJ tug" })
+
   end,
+
 }
 
 ```
