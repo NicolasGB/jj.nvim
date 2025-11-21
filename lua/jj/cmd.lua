@@ -64,7 +64,7 @@ local function resolve_keymaps_from_specs(cfg, specs)
 
 	for key, spec in pairs(specs) do
 		local lhs = cfg[key]
-		if lhs then
+		if lhs and spec.handler then
 			if type(lhs) == "table" then
 				for _, key_lhs in ipairs(lhs) do
 					table.insert(
@@ -172,8 +172,12 @@ function M.describe(description, revset, opts)
 		local status_files = parser.get_status_files(status_result)
 		local old_description = vim.trim(old_description_raw)
 
-		local first_line = old_description:match("^[^\n]*") or ""
-		local text = { first_line }
+		-- Split description into lines to preserve multiline descriptions
+		local description_lines = vim.split(old_description, "\n")
+		local text = {}
+		for _, line in ipairs(description_lines) do
+			table.insert(text, line)
+		end
 		table.insert(text, "") -- Empty line to separate from user input
 		table.insert(text, "JJ: Change ID: " .. revset)
 		table.insert(text, "JJ: This commit contains the following changes:")
@@ -182,6 +186,12 @@ function M.describe(description, revset, opts)
 		end
 		table.insert(text, "JJ:") -- blank line
 		table.insert(text, 'JJ: Lines starting with "JJ:" (like this one) will be removed')
+
+		-- Check if we're coming from the log view so we can reopen it after editing
+		local open_log_on_close = terminal.state.buf_cmd == "log"
+
+		-- Close the terminal buffer before opening editor
+		terminal.close_terminal_buffer()
 
 		editor.open_editor(text, function(buf_lines)
 			local user_lines = {}
@@ -193,9 +203,17 @@ function M.describe(description, revset, opts)
 			-- Join lines and trim leading/trailing whitespace
 			local trimmed_description = table.concat(user_lines, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
 			execute_describe(trimmed_description, revset)
+			-- Once editing is done, reopen the log if we came from there
+		end, function()
+			if open_log_on_close then
+				vim.schedule(function()
+					vim.o.lazyredraw = true
+					M.log({})
+					vim.o.lazyredraw = false
+					vim.cmd("redraw!")
+				end)
+			end
 		end, describe_editor_keymaps())
-
-		terminal.close_terminal_buffer()
 	else
 		-- Use input mode
 		local merged_opts = vim.tbl_deep_extend("force", default_describe_opts, opts or {})
@@ -279,8 +297,6 @@ end
 -- Resolve status keymaps from config, filtering out nil values
 --- @return jj.core.buffer.keymap[]
 local function status_keymaps()
-	-- Reduce repetition by declaring a specification table.
-	-- Each entry maps the config key name to:
 	local cfg = M.config.keymaps.status or {}
 	local specs = {
 		open_file = {
@@ -407,14 +423,6 @@ function M.squash()
 	end
 end
 
---- @class jj.cmd.log_opts
---- @field summary? boolean
---- @field reversed? boolean
---- @field no_graph? boolean
---- @field limit? uinteger
---- @field revisions? string
-
-local default_log_opts = { summary = false, reversed = false, no_graph = false, limit = 20 }
 ---
 --- Create a new change relative to the revision under the cursor in a jj log buffer.
 --- Behavior:
@@ -595,6 +603,17 @@ local function log_keymaps()
 	return resolve_keymaps_from_specs(cfg, specs)
 end
 
+--- @class jj.cmd.log_opts
+--- @field summary? boolean
+--- @field reversed? boolean
+--- @field no_graph? boolean
+--- @field limit? uinteger
+--- @field revisions? string
+--- @field raw_flags? string
+
+---@type jj.cmd.log_opts
+local default_log_opts = { summary = false, reversed = false, no_graph = false, limit = 20, raw_flats = nil }
+
 -- Jujutsu log
 --- @param opts? jj.cmd.log_opts
 function M.log(opts)
@@ -604,6 +623,11 @@ function M.log(opts)
 
 	local cmd = "jj log"
 	local merged_opts = vim.tbl_extend("force", default_log_opts, opts or {})
+
+	-- If a raw has been given simply execute it as is
+	if merged_opts.raw then
+		return terminal.run(string.format("%s %s", cmd, merged_opts.raw), log_keymaps())
+	end
 
 	for key, value in pairs(merged_opts) do
 		key = key:gsub("_", "-")
@@ -807,6 +831,9 @@ function M.j(args)
 		end,
 		redo = function()
 			M.redo()
+		end,
+		log = function()
+			M.log({ raw_flags = remaining_args_str ~= "" and remaining_args_str or nil })
 		end,
 	}
 
