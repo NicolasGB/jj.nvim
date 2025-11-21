@@ -9,24 +9,52 @@ local editor = require("jj.ui.editor")
 local diff = require("jj.diff")
 
 -- Config for cmd module
+--- @class jj.cmd.describe.editor.keymaps
+--- @field close? string|string[] Keymaps to close the editor buffer without saving
+
+--- @class jj.cmd.describe.editor
+--- @field type? "buffer"|"input" Editor mode for describe command: "buffer" (Git-style editor) or "input" (simple input prompt)
+--- @field keymaps? jj.cmd.describe.editor.keymaps Keymaps for the describe editor only when on "buffer" mode.
+
+--- @class jj.cmd.describe
+--- @field editor? jj.cmd.describe.editor Options for the describe message editor
+
+--- @class jj.cmd.log.keymaps
+--- @field checkout? string|string[] Keymaps for the log command buffer, setting a keymap to nil will disable it
+--- @field checkout_immutable? string|string[]
+--- @field describe? string|string[]
+--- @field diff? string|string[]
+--- @field edit? string|string[]
+--- @field new? string|string[]
+--- @field new_after? string|string[]
+--- @field new_after_immutable? string|string[]
+--- @field undo? string|string[]
+--- @field redo? string|string[]
+
+--- @class jj.cmd.status.keymaps
+--- @field open_file? string|string[] Keymaps for the status command buffer, setting a keymap to nil will disable it
+--- @field restore_file? string|string[]
+
+--- @class jj.cmd.keymaps
+--- @field log? jj.cmd.log.keymaps Keymaps for the log command buffer
+--- @field status? jj.cmd.status.keymaps Keymaps for the status command buffer
+--- @field close? string|string[] Keymaps for the close keybind
+
 --- @class jj.cmd.opts
+--- @field describe? jj.cmd.describe
+--- @field keymaps? jj.cmd.keymaps Keymaps for the buffers containing the output of the commands
+
+--- @type jj.cmd.opts
 M.config = {
-	--- @class jj.cmd.describe
 	describe = {
-		--- @class jj.cmd.describe.editor Options for the describe message editor
 		editor = {
-			--- @type "buffer"|"input" Editor mode for describe command: "buffer" (Git-style editor) or "input" (simple input prompt)
 			type = "buffer",
-			--- @class jj.cmd.describe.editor.keymaps Keymaps for the describe editor buffer
 			keymaps = {
-				--- @type string|string[] Keymaps to close the editor buffer without saving
 				close = { "<Esc>", "<C-c>", "q" },
 			},
 		},
 	},
-	--- @class jj.cmd.keymaps Keymaps for the buffers containing the ouptut of the commands
 	keymaps = {
-		--- @class jj.cmd.log.keymaps: { [string]: string|string[] } Keymaps for the log command buffer, setting a keymap to nil will disable it
 		log = {
 			checkout = "<CR>",
 			checkout_immutable = "<S-CR>",
@@ -39,12 +67,10 @@ M.config = {
 			undo = "<S-u>",
 			redo = "<S-r>",
 		},
-		--- @class jj.cmd.status.keymaps: { [string]: string|string[] } Keymaps for the status command buffer, setting a keymap to nil will disable it
 		status = {
 			open_file = "<CR>",
 			restore_file = "<S-x>",
 		},
-		--- @type string|string[] Keymaps for the close keybind
 		close = { "q", "<Esc>" },
 	},
 }
@@ -834,6 +860,15 @@ function M.j(args)
 		end,
 		log = function()
 			M.log({ raw_flags = remaining_args_str ~= "" and remaining_args_str or nil })
+		end,
+		diff = function()
+			M.diff({ current = false })
+		end,
+		status = function()
+			M.status()
+		end,
+		st = function()
+			M.status()
 		end,
 	}
 
