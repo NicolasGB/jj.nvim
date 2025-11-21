@@ -51,8 +51,9 @@ end
 
 ---@param initial_text string[] Lines to initialize the buffer with
 ---@param on_done fun(buf: string[])? Optional callback called with user text on buffer write
+---@param on_unload? fun()? Optional callback called when the buffer is closed
 ---@param keymaps? jj.core.buffer.keymap[] Optional keymaps for the buffer
-function M.open_editor(initial_text, on_done, keymaps)
+function M.open_editor(initial_text, on_done, on_unload, keymaps)
 	-- Initialize highlight groups once
 	init_highlights()
 
@@ -156,6 +157,16 @@ function M.open_editor(initial_text, on_done, keymaps)
 			vim.bo[buf].modified = false
 		end,
 	})
+
+	-- Register the on_close callback
+	if on_unload then
+		vim.api.nvim_create_autocmd("BufWipeout", {
+			buffer = buf,
+			callback = function()
+				on_unload()
+			end,
+		})
+	end
 end
 
 return M

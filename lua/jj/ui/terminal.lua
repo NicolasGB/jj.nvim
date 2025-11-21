@@ -158,6 +158,7 @@ function M.run_floating(cmd)
 			{ modes = { "n", "v" }, lhs = "i", rhs = function() end },
 			{ modes = { "n", "v" }, lhs = "c", rhs = function() end },
 			{ modes = { "n", "v" }, lhs = "a", rhs = function() end },
+			{ modes = { "n", "v" }, lhs = "u", rhs = function() end },
 			{
 				modes = { "n", "v" },
 				lhs = "q",
@@ -291,6 +292,7 @@ function M.run(cmd, keymaps)
 			{ modes = { "n", "v" }, lhs = "i", rhs = function() end },
 			{ modes = { "n", "v" }, lhs = "c", rhs = function() end },
 			{ modes = { "n", "v" }, lhs = "a", rhs = function() end },
+			{ modes = { "n", "v" }, lhs = "u", rhs = function() end },
 			-- Close terminal buffer
 			{
 				modes = { "n", "v" },
@@ -327,14 +329,8 @@ function M.run(cmd, keymaps)
 		end
 	end
 
-	-- Add Enter key mapping for status buffers to open files
-	if cmd[2] == "st" or cmd[2] == "status" then
-		new_command_keymaps = {
-			{ modes = "n", lhs = "<CR>", rhs = handle_status_enter, opts = { desc = "Open file under cursor" } },
-			{ modes = "n", lhs = "X", rhs = handle_status_restore, opts = { desc = "Restore file under cursor" } },
-		}
-	end
-
+	-- Status keymaps are already handled in cmd.lua via status_keymaps()
+	-- No need to duplicate them here
 	if #new_command_keymaps > 0 then
 		buffer.set_keymaps(state.buf, new_command_keymaps)
 		vim.b[state.buf].jj_command_keymaps = new_command_keymaps
