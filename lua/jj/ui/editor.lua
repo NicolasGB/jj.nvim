@@ -4,10 +4,10 @@ local M = {}
 local buffer = require("jj.core.buffer")
 
 --- @class jj.ui.editor.highlights
----@field added table Highlight settings for added lines
----@field modified table Highlight settings for modified lines
----@field deleted table Highlight settings for deleted lines
----@field renamed table Highlight settings for renamed lines
+---@field added? table Highlight settings for added lines
+---@field modified? table Highlight settings for modified lines
+---@field deleted? table Highlight settings for deleted lines
+---@field renamed? table Highlight settings for renamed lines
 
 M.highlights = {
 	added = { fg = "#3fb950", ctermfg = "Green" },
