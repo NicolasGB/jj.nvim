@@ -7,6 +7,8 @@ local utils = require("jj.utils")
 
 --- Jujutsu plugin configuration
 --- @class jj.Config
+--- @field cmd? jj.cmd.opts Options for command module
+--- @field picker? jj.picker.config Options for picker module
 M.config = {
 	-- Default configuration
 	--- @type jj.picker.config
@@ -20,8 +22,6 @@ M.config = {
 		deleted = { fg = "#f85149", ctermfg = "Red" },
 		renamed = { fg = "#d29922", ctermfg = "Yellow" },
 	},
-	--- @type "buffer"|"input" Editor mode for describe command: "buffer" (Git-style editor) or "input" (simple input prompt)
-	describe_editor = "buffer",
 }
 
 --- Setup the plugin
@@ -32,12 +32,8 @@ function M.setup(opts)
 	-- Setup for sub-modules
 	picker.setup(opts and opts.picker or {})
 	editor.setup({ highlights = M.config.highlights })
+	cmd.setup(opts.cmd)
 	utils.setup(opts) -- Keep for future-proofing, even if it's a no-op now
-
-	-- Pass describe_editor config to cmd module
-	if opts and opts.describe_editor then
-		cmd.config.describe_editor = opts.describe_editor
-	end
 
 	cmd.register_command()
 

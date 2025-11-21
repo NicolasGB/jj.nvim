@@ -11,9 +11,88 @@ local diff = require("jj.diff")
 -- Config for cmd module
 --- @class jj.cmd.opts
 M.config = {
-	--- @type "buffer"|"input" Editor mode for describe command: "buffer" (Git-style editor) or "input" (simple input prompt)
-	describe_editor = "buffer", -- "buffer" or "input"
+	--- @class jj.cmd.describe
+	describe = {
+		--- @class jj.cmd.describe.editor Options for the describe message editor
+		editor = {
+			--- @type "buffer"|"input" Editor mode for describe command: "buffer" (Git-style editor) or "input" (simple input prompt)
+			type = "buffer",
+			--- @class jj.cmd.describe.editor.keymaps Keymaps for the describe editor buffer
+			keymaps = {
+				--- @type string|string[] Keymaps to close the editor buffer without saving
+				close = { "<Esc>", "<C-c>", "q" },
+			},
+		},
+	},
+	--- @class jj.cmd.keymaps Keymaps for the buffers containing the ouptut of the commands
+	keymaps = {
+		--- @class jj.cmd.log.keymaps: { [string]: string|string[] } Keymaps for the log command buffer, setting a keymap to nil will disable it
+		log = {
+			checkout = "<CR>",
+			checkout_immutable = "<S-CR>",
+			describe = "d",
+			diff = "<S-d>",
+			edit = "e",
+			new = "n",
+			new_after = "<C-n>",
+			new_after_immutable = "<S-n>",
+			undo = "<S-u>",
+			redo = "<S-r>",
+		},
+		--- @class jj.cmd.status.keymaps: { [string]: string|string[] } Keymaps for the status command buffer, setting a keymap to nil will disable it
+		status = {
+			open_file = "<CR>",
+			restore_file = "<S-x>",
+		},
+		--- @type string|string[] Keymaps for the close keybind
+		close = { "q", "<Esc>" },
+	},
 }
+
+--- Setup the cmd module
+--- @param opts jj.cmd.opts: Options to configure the cmd module
+function M.setup(opts)
+	M.config = vim.tbl_deep_extend("force", M.config, opts or {})
+end
+
+-- Resolve_keymaps_from_specifications
+--- @param cfg table<string, string|string[]> The keymap configuration
+--- @param specs table<string, { desc: string, handler: function|string, args: table }> The keymap
+--- @return jj.core.buffer.keymap[]
+local function resolve_keymaps_from_specs(cfg, specs)
+	local keymaps = {}
+
+	for key, spec in pairs(specs) do
+		local lhs = cfg[key]
+		if lhs then
+			if type(lhs) == "table" then
+				for _, key_lhs in ipairs(lhs) do
+					table.insert(
+						keymaps,
+						{ modes = "n", lhs = key_lhs, rhs = spec.handler, opts = { desc = spec.desc } }
+					)
+				end
+			else
+				table.insert(keymaps, { modes = "n", lhs = lhs, rhs = spec.handler, opts = { desc = spec.desc } })
+			end
+		end
+	end
+
+	return keymaps
+end
+
+-- Resolve close keymaps from config
+--- @return jj.core.buffer.keymap[]
+local function close_keymaps()
+	local cfg = M.config.keymaps.close or {}
+
+	return resolve_keymaps_from_specs({ close = cfg }, {
+		close = {
+			desc = "Close buffer",
+			handler = terminal.close_terminal_buffer,
+		},
+	})
+end
 
 --- @class jj.cmd.describe_opts
 --- @field with_status boolean: Whether or not `jj st` should be displayed in a buffer while describing the commit
@@ -64,8 +143,20 @@ function M.describe(description, revset, opts)
 		revset = "@"
 	end
 
-	-- Use buffer editor mode
-	if M.config.describe_editor == "buffer" then
+	-- Resolve describe editor keymaps from config
+	local function describe_editor_keymaps()
+		local cfg = M.config.describe.editor.keymaps or {}
+		return resolve_keymaps_from_specs(cfg, {
+			close = {
+				desc = "Close describe editor without saving",
+				handler = "<cmd>close!<CR>",
+			},
+		})
+	end
+
+	-- Use buffer editor mode (defaults to "buffer" if not configured)
+	local editor_mode = M.config.describe.editor.type or "buffer"
+	if editor_mode == "buffer" then
 		local cmd = "jj log -r " .. revset .. " --no-graph -T 'coalesce(description, \"\n\")'"
 		local old_description_raw, success = runner.execute_command(cmd, "Failed to get old description")
 		if not old_description_raw or not success then
@@ -81,7 +172,8 @@ function M.describe(description, revset, opts)
 		local status_files = parser.get_status_files(status_result)
 		local old_description = vim.trim(old_description_raw)
 
-		local text = { old_description }
+		local first_line = old_description:match("^[^\n]*") or ""
+		local text = { first_line }
 		table.insert(text, "") -- Empty line to separate from user input
 		table.insert(text, "JJ: Change ID: " .. revset)
 		table.insert(text, "JJ: This commit contains the following changes:")
@@ -101,7 +193,8 @@ function M.describe(description, revset, opts)
 			-- Join lines and trim leading/trailing whitespace
 			local trimmed_description = table.concat(user_lines, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
 			execute_describe(trimmed_description, revset)
-		end)
+		end, describe_editor_keymaps())
+
 		terminal.close_terminal_buffer()
 	else
 		-- Use input mode
@@ -125,6 +218,84 @@ function M.describe(description, revset, opts)
 	end
 end
 
+--- Handle restoring a file from the jj status buffer
+--- Supports both renamed and non-renamed files
+local function handle_status_restore()
+	local file_info = parser.parse_file_info_from_status_line(vim.api.nvim_get_current_line())
+	if not file_info then
+		return
+	end
+
+	if file_info.is_rename then
+		-- For renamed files, remove the new file and restore the old one from parent revision
+		local rm_cmd = "rm " .. vim.fn.shellescape(file_info.new_path)
+		local restore_cmd = "jj restore --from @- " .. vim.fn.shellescape(file_info.old_path)
+
+		local _, rm_success = runner.execute_command(rm_cmd, "Failed to remove renamed file")
+		if rm_success then
+			local _, restore_success = runner.execute_command(restore_cmd, "Failed to restore original file")
+			if restore_success then
+				utils.notify(
+					"Reverted rename: " .. file_info.new_path .. " -> " .. file_info.old_path,
+					vim.log.levels.INFO
+				)
+				require("jj.cmd").status()
+			end
+		end
+	else
+		-- For non-renamed files, use regular restore
+		local restore_cmd = "jj restore " .. vim.fn.shellescape(file_info.old_path)
+
+		local _, success = runner.execute_command(restore_cmd, "Failed to restore")
+		if success then
+			utils.notify("Restored: " .. file_info.old_path, vim.log.levels.INFO)
+			require("jj.cmd").status()
+		end
+	end
+end
+
+--- Handle opening a file from the jj status buffer
+local function handle_status_enter()
+	local file_info = parser.parse_file_info_from_status_line(vim.api.nvim_get_current_line())
+
+	if not file_info then
+		return
+	end
+
+	local filepath = file_info.new_path
+	local stat = vim.uv.fs_stat(filepath)
+	if not stat then
+		utils.notify("File not found: " .. filepath, vim.log.levels.ERROR)
+		return
+	end
+
+	-- Go to the previous window (split above)
+	vim.cmd("wincmd p")
+
+	-- Open the file in that window, replacing current buffer
+	vim.cmd("edit " .. vim.fn.fnameescape(filepath))
+end
+
+-- Resolve status keymaps from config, filtering out nil values
+--- @return jj.core.buffer.keymap[]
+local function status_keymaps()
+	-- Reduce repetition by declaring a specification table.
+	-- Each entry maps the config key name to:
+	local cfg = M.config.keymaps.status or {}
+	local specs = {
+		open_file = {
+			desc = "Open file under cursor",
+			handler = handle_status_enter,
+		},
+		restore_file = {
+			desc = "Restore file under cursor",
+			handler = handle_status_restore,
+		},
+	}
+
+	return resolve_keymaps_from_specs(cfg, specs)
+end
+
 -- Jujutsu status.
 function M.status(opts)
 	if not utils.ensure_jj() then
@@ -140,7 +311,8 @@ function M.status(opts)
 		end
 	else
 		-- Default behavior: show in buffer
-		terminal.run(cmd)
+		local keymaps = { unpack(status_keymaps()), unpack(close_keymaps()) }
+		terminal.run(cmd, keymaps)
 	end
 end
 
@@ -243,6 +415,185 @@ end
 --- @field revisions? string
 
 local default_log_opts = { summary = false, reversed = false, no_graph = false, limit = 20 }
+---
+--- Create a new change relative to the revision under the cursor in a jj log buffer.
+--- Behavior:
+---   flag == nil       -> branch off the current revision
+---   flag == "after"   -> create a new change after the current revision (-A)
+--- If ignore_immut is true, adds --ignore-immutable to the command.
+--- Silently returns if no revision is found or the jj command fails.
+--- On success, notifies and refreshes the log buffer.
+--- @param flag? 'after' Position relative to the current revision; nil to branch off.
+--- @param ignore_immut? boolean Pass --ignore-immutable to jj when true.
+local function handle_log_new(flag, ignore_immut)
+	local line = vim.api.nvim_get_current_line()
+	local revset = parser.get_rev_from_log_line(line)
+	if not revset or revset == "" then
+		return
+	end
+
+	-- Mapping for flag-specific options and messages.
+	local flag_map = {
+		after = {
+			opt = "-A",
+			err = "Error creating new change after: `%s`",
+			ok = "Successfully created change after: `%s`",
+		},
+		default = {
+			opt = "",
+			err = "Error creating new change branching off `%s`",
+			ok = "Successfully created change branching off `%s`",
+		},
+	}
+
+	local cfg = flag_map[flag] or flag_map.default
+
+	-- Build command parts
+	local cmd_parts = { "jj", "new" }
+	if cfg.opt ~= "" then
+		table.insert(cmd_parts, cfg.opt)
+	end
+	table.insert(cmd_parts, revset)
+	if ignore_immut then
+		table.insert(cmd_parts, "--ignore-immutable")
+	end
+
+	local cmd = table.concat(cmd_parts, " ")
+	local _, success = runner.execute_command(cmd, string.format(cfg.err, revset))
+	if not success then
+		return
+	end
+
+	utils.notify(string.format(cfg.ok, revset), vim.log.levels.INFO)
+	-- Refresh the log buffer after creating the change.
+	require("jj.cmd").log()
+end
+
+--- Handle diffing a log line
+local function handle_log_diff()
+	local line = vim.api.nvim_get_current_line()
+	local revset = parser.get_rev_from_log_line(line)
+
+	if revset then
+		local cmd = string.format("jj show %s", revset)
+		terminal.run_floating(cmd)
+	else
+		utils.notify("No valid revision found in the log line", vim.log.levels.ERROR)
+	end
+end
+
+--- Handle describing a log line
+local function handle_log_describe()
+	local line = vim.api.nvim_get_current_line()
+	local revset = parser.get_rev_from_log_line(line)
+	if revset then
+		require("jj.cmd").describe(nil, revset)
+	else
+		utils.notify("No valid revision found in the log line", vim.log.levels.ERROR)
+	end
+end
+
+--- Handle keypress enter on `jj log` buffer to edit a revision.
+--- If ignore_immut is true, adds --ignore-immutable to the command.
+--- Silently returns if no revision is found or the jj command fails.
+--- On success, notifies and refreshes the log buffer.
+--- @param ignore_immut? boolean Pass --ignore-immutable to jj edit when true.
+local function handle_log_enter(ignore_immut)
+	local line = vim.api.nvim_get_current_line()
+	local revset = parser.get_rev_from_log_line(line)
+	if not revset or revset == "" then
+		return
+	end
+
+	-- If we found a revision, edit it.
+
+	-- Build command parts.
+	local cmd_parts = { "jj", "edit" }
+	if ignore_immut then
+		table.insert(cmd_parts, "--ignore-immutable")
+	end
+
+	table.insert(cmd_parts, revset)
+
+	-- Build cmd string
+	local cmd = table.concat(cmd_parts, " ")
+
+	-- Try to execute cmd
+	local _, success = runner.execute_command(cmd, "Error editing change")
+	if not success then
+		return
+	end
+
+	utils.notify(string.format("Editing change: `%s`", revset), vim.log.levels.INFO)
+	-- Close the terminal buffer
+	terminal.close_terminal_buffer()
+end
+
+--- Resolve log keymaps from config, filtering out nil values
+--- @return table<string, string|string[]>
+local function log_keymaps()
+	-- Reduce repetition by declaring a specification table.
+	-- Each entry maps the config key name to:
+	--   desc: human description
+	--   handler: function to call
+	--   args: optional list of arguments passed to handler
+	local cfg = M.config.keymaps.log or {}
+
+	local specs = {
+		close = {
+			desc = "Close log buffer",
+			handler = terminal.close_terminal_buffer,
+		},
+		checkout = {
+			desc = "Checkout revision under cursor",
+			handler = handle_log_enter,
+			args = { false },
+		},
+		checkout_immutable = {
+			desc = "Checkout revision under cursor (ignores immutability)",
+			handler = handle_log_enter,
+			args = { true },
+		},
+		describe = {
+			desc = "Describe revision under cursor",
+			handler = handle_log_describe,
+		},
+		diff = {
+			desc = "Diff revision under cursor",
+			handler = handle_log_diff,
+		},
+		edit = {
+			desc = "Edit revision under cursor",
+			handler = handle_log_enter,
+			args = { false },
+		},
+		new = {
+			desc = "Create new change branching off revision under cursor",
+			handler = handle_log_new,
+			args = { nil, false },
+		},
+		new_after = {
+			desc = "Create new change after revision under cursor",
+			handler = handle_log_new,
+			args = { "after", false },
+		},
+		new_after_immutable = {
+			desc = "Create new change after revision under cursor (ignore immutable)",
+			handler = handle_log_new,
+			args = { "after", true },
+		},
+		undo = {
+			desc = "Undo last change",
+			handler = M.undo,
+		},
+		redo = {
+			desc = "Redo last undone change",
+			handler = M.redo,
+		},
+	}
+
+	return resolve_keymaps_from_specs(cfg, specs)
+end
 
 -- Jujutsu log
 --- @param opts? jj.cmd.log_opts
@@ -265,7 +616,7 @@ function M.log(opts)
 		end
 	end
 
-	terminal.run(cmd)
+	terminal.run(cmd, log_keymaps())
 end
 
 --- @class jj.cmd.diff_opts

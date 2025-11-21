@@ -51,7 +51,8 @@ end
 
 ---@param initial_text string[] Lines to initialize the buffer with
 ---@param on_done fun(buf: string[])? Optional callback called with user text on buffer write
-function M.open_editor(initial_text, on_done)
+---@param keymaps? jj.core.buffer.keymap[] Optional keymaps for the buffer
+function M.open_editor(initial_text, on_done, keymaps)
 	-- Initialize highlight groups once
 	init_highlights()
 
@@ -124,10 +125,7 @@ function M.open_editor(initial_text, on_done)
 		size = math.floor(vim.o.lines / 2),
 		buftype = "acwrite",
 		modifiable = true,
-		keymaps = {
-			{ modes = "n", lhs = "q", rhs = "<cmd>close!<CR>", opts = { desc = "Close describe buffer" } },
-			{ modes = "n", lhs = "<Esc>", rhs = "<cmd>close!<CR>", opts = { desc = "Close describe buffer" } },
-		},
+		keymaps = keymaps,
 	})
 
 	-- Set buffer content
