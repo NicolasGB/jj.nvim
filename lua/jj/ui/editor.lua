@@ -1,6 +1,8 @@
 --- @class jj.ui.editor
 local M = {}
 
+local buffer = require("jj.core.buffer")
+
 --- @class jj.ui.editor.highlights
 ---@field added table Highlight settings for added lines
 ---@field modified table Highlight settings for modified lines
@@ -53,27 +55,11 @@ function M.open_editor(initial_text, on_done)
 	-- Initialize highlight groups once
 	init_highlights()
 
-	-- Create a horizontal split at the bottom, half the screen height
-	local height = math.floor(vim.o.lines / 2)
-	vim.cmd(string.format("%dsplit", height))
-
-	-- Create a new unlisted, scratch buffer
-	local buf = vim.api.nvim_create_buf(false, true)
-	vim.api.nvim_buf_set_name(buf, "jujutsu:///DESCRIBE_EDITMSG")
-	vim.api.nvim_buf_set_lines(buf, 0, -1, false, initial_text)
-	vim.api.nvim_win_set_buf(0, buf)
-
-	-- Configure buffer options
-	vim.bo[buf].buftype = "acwrite" -- Allow custom write handling
-	vim.bo[buf].bufhidden = "wipe" -- Automatically wipe buffer when hidden
-	vim.bo[buf].swapfile = false -- Disable swapfile
-	vim.bo[buf].modifiable = true -- Allow editing
-
 	-- Create a namespace for our highlights
 	local ns_id = vim.api.nvim_create_namespace("jj_describe_highlights")
 
 	-- Function to apply highlights to the buffer
-	local function apply_highlights()
+	local function apply_highlights(buf)
 		-- Clear existing highlights
 		vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
 
@@ -131,13 +117,34 @@ function M.open_editor(initial_text, on_done)
 		end
 	end
 
+	-- Create buffer
+	local buf = buffer.create({
+		name = "jujutsu:///DESCRIBE_EDITMSG",
+		split = "horizontal",
+		size = math.floor(vim.o.lines / 2),
+		buftype = "acwrite",
+		modifiable = true,
+		keymaps = {
+			{ modes = "n", lhs = "q", rhs = "<cmd>close!<CR>", opts = { desc = "Close describe buffer" } },
+			{ modes = "n", lhs = "<Esc>", rhs = "<cmd>close!<CR>", opts = { desc = "Close describe buffer" } },
+		},
+	})
+
+	-- Set buffer content
+	vim.api.nvim_buf_set_lines(buf, 0, -1, false, initial_text)
+
+	-- Set bufhidden after creation
+	vim.bo[buf].bufhidden = "wipe"
+
 	-- Apply highlights initially
-	apply_highlights()
+	apply_highlights(buf)
 
 	-- Reapply highlights when text changes
 	vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
 		buffer = buf,
-		callback = apply_highlights,
+		callback = function()
+			apply_highlights(buf)
+		end,
 	})
 
 	-- Handle :w and :wq commands
@@ -151,22 +158,6 @@ function M.open_editor(initial_text, on_done)
 			vim.bo[buf].modified = false
 		end,
 	})
-
-	-- Add keymap to close the buffer with 'q' in normal mode
-	vim.keymap.set(
-		"n",
-		"q",
-		"<cmd>close!<CR>",
-		{ buffer = buf, noremap = true, silent = true, desc = "Close describe buffer" }
-	)
-
-	-- Add keymap to close the buffer with '<Esc>' in normal mode
-	vim.keymap.set(
-		"n",
-		"<Esc>",
-		"<cmd>close!<CR>",
-		{ buffer = buf, noremap = true, silent = true, desc = "Close describe buffer" }
-	)
 end
 
 return M
