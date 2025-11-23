@@ -293,20 +293,6 @@ function M.run(cmd, keymaps)
 			{ modes = { "n", "v" }, lhs = "c", rhs = function() end },
 			{ modes = { "n", "v" }, lhs = "a", rhs = function() end },
 			{ modes = { "n", "v" }, lhs = "u", rhs = function() end },
-			-- Close terminal buffer
-			{
-				modes = { "n", "v" },
-				lhs = "q",
-				rhs = M.close_terminal_buffer,
-				opts = { desc = "Close the terminal buffer" },
-			},
-			-- Close terminal buffer with ESC
-			{
-				modes = "n",
-				lhs = "<ESC>",
-				rhs = M.close_terminal_buffer,
-				opts = { desc = "Close the terminal buffer" },
-			},
 		})
 
 		vim.b[state.buf].jj_keymaps_set = true

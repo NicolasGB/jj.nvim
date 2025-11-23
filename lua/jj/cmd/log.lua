@@ -216,7 +216,7 @@ function M.log_keymaps()
 		},
 	}
 
-	return cmd.resolve_keymaps_from_specs(cfg, specs)
+	return cmd.merge_keymaps(cmd.resolve_keymaps_from_specs(cfg, specs), cmd.close_keymaps())
 end
 
 return M
