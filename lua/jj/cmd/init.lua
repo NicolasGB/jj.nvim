@@ -5,7 +5,6 @@ local utils = require("jj.utils")
 local runner = require("jj.core.runner")
 local parser = require("jj.core.parser")
 local terminal = require("jj.ui.terminal")
-local editor = require("jj.ui.editor")
 local diff = require("jj.diff")
 local log_module = require("jj.cmd.log")
 local describe_module = require("jj.cmd.describe")
@@ -265,7 +264,7 @@ function M.diff(opts)
 		end
 	end
 
-	terminal.run(cmd)
+	terminal.run(cmd, M.close_keymaps())
 end
 
 -- Jujutsu rebase
@@ -385,13 +384,13 @@ function M.j(args)
 			true
 		)
 		if not success then
-			terminal.run("jj")
+			terminal.run("jj", M.close_keymaps())
 			return
 		end
 
 		local default_cmd = parser.parse_default_cmd(default_cmd_str and default_cmd_str or "")
 		if default_cmd == nil then
-			terminal.run("jj")
+			terminal.run("jj", M.close_keymaps())
 			return
 		end
 		args = default_cmd
@@ -449,7 +448,7 @@ function M.j(args)
 	if handlers[subcommand] then
 		handlers[subcommand]()
 	else
-		terminal.run(cmd)
+		terminal.run(cmd, M.close_keymaps())
 	end
 end
 
