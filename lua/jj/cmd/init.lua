@@ -37,10 +37,15 @@ local status_module = require("jj.cmd.status")
 --- @field open_file? string|string[] Keymaps for the status command buffer, setting a keymap to nil will disable it
 --- @field restore_file? string|string[]
 
+--- @class jj.cmd.floating.keymaps The floating buffer is the one shown when diffing from the log buffer
+--- @field close? string|string[] Keymaps to close the floating buffer
+--- @field hide? string|string[] Keymaps to hide the floating buffer
+
 --- @class jj.cmd.keymaps
 --- @field log? jj.cmd.log.keymaps Keymaps for the log command buffer
 --- @field status? jj.cmd.status.keymaps Keymaps for the status command buffer
 --- @field close? string|string[] Keymaps for the close keybind
+--- @field floating? jj.cmd.floating.keymaps Keymaps for the floating buffer
 
 --- @class jj.cmd.opts
 --- @field describe? jj.cmd.describe
@@ -80,6 +85,10 @@ M.config = {
 			restore_file = "<S-x>",
 		},
 		close = { "q", "<Esc>" },
+		floating = {
+			close = "q",
+			hide = "<Esc>",
+		},
 	},
 }
 
@@ -138,15 +147,32 @@ function M.resolve_keymaps_from_specs(cfg, specs)
 	return keymaps
 end
 
--- Resolve close keymaps from config
+-- Resolve terminal keymaps from config
 --- @return jj.core.buffer.keymap[]
-function M.close_keymaps()
+function M.terminal_keymaps()
 	local cfg = M.config.keymaps.close or {}
 
 	return M.resolve_keymaps_from_specs({ close = cfg }, {
 		close = {
 			desc = "Close buffer",
 			handler = terminal.close_terminal_buffer,
+		},
+	})
+end
+
+-- Resolve floating keymaps from config
+--- @return jj.core.buffer.keymap[]
+function M.floating_keymaps()
+	local cfg = M.config.keymaps.floating or {}
+
+	return M.resolve_keymaps_from_specs(cfg, {
+		close = {
+			desc = "Close floating buffer",
+			handler = terminal.close_floating_buffer,
+		},
+		hide = {
+			desc = "Hide floating buffer",
+			handler = terminal.hide_floating_buffer,
 		},
 	})
 end
@@ -264,7 +290,7 @@ function M.diff(opts)
 		end
 	end
 
-	terminal.run(cmd, M.close_keymaps())
+	terminal.run(cmd, M.terminal_keymaps())
 end
 
 -- Jujutsu rebase
@@ -384,13 +410,13 @@ function M.j(args)
 			true
 		)
 		if not success then
-			terminal.run("jj", M.close_keymaps())
+			terminal.run("jj", M.terminal_keymaps())
 			return
 		end
 
 		local default_cmd = parser.parse_default_cmd(default_cmd_str and default_cmd_str or "")
 		if default_cmd == nil then
-			terminal.run("jj", M.close_keymaps())
+			terminal.run("jj", M.terminal_keymaps())
 			return
 		end
 		args = default_cmd
@@ -416,7 +442,7 @@ function M.j(args)
 			if #remaining_args == 0 then
 				M.edit()
 			else
-				terminal.run(cmd)
+				terminal.run(cmd, M.terminal_keymaps())
 			end
 		end,
 		new = function()
@@ -448,7 +474,7 @@ function M.j(args)
 	if handlers[subcommand] then
 		handlers[subcommand]()
 	else
-		terminal.run(cmd, M.close_keymaps())
+		terminal.run(cmd, M.terminal_keymaps())
 	end
 end
 

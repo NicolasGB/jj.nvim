@@ -107,7 +107,7 @@ function M.handle_log_diff()
 
 	if revset then
 		local cmd = string.format("jj show %s", revset)
-		terminal.run_floating(cmd)
+		terminal.run_floating(cmd, require("jj.cmd").floating_keymaps())
 	else
 		utils.notify("No valid revision found in the log line", vim.log.levels.ERROR)
 	end
@@ -216,7 +216,7 @@ function M.log_keymaps()
 		},
 	}
 
-	return cmd.merge_keymaps(cmd.resolve_keymaps_from_specs(cfg, specs), cmd.close_keymaps())
+	return cmd.merge_keymaps(cmd.resolve_keymaps_from_specs(cfg, specs), cmd.terminal_keymaps())
 end
 
 return M
