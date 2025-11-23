@@ -38,7 +38,7 @@ This plugin aims to be something like vim-fugitive but for driving the jj-vcs CL
 
 ## Enhanced integrations
 
-Here are some cool features you can do with jj.nvim
+Here are some cool features you can do with jj.nvim:
 
 ### Diff any change
 
