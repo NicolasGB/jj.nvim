@@ -402,6 +402,7 @@ function M.j(args)
 		return
 	end
 
+	local cmd = nil
 	if #args == 0 then
 		local default_cmd_str, success = runner.execute_command(
 			"jj config get ui.default-command",
@@ -419,16 +420,18 @@ function M.j(args)
 			terminal.run("jj", M.terminal_keymaps())
 			return
 		end
-		args = default_cmd
+		cmd = default_cmd
 	end
 
 	if type(args) == "string" then
-		args = vim.split(args, "%s+")
+		cmd = vim.split(args, "%s+")
+	elseif cmd == nil then
+		-- If a cmd hasn't been parsed make the cmd the whole args
+		cmd = args
 	end
 
-	local subcommand = args[1]
-	local remaining_args = vim.list_slice(args, 2)
-	local cmd = string.format("jj %s", table.concat(args, " "))
+	local subcommand = cmd[1]
+	local remaining_args = vim.list_slice(cmd, 2)
 	local remaining_args_str = table.concat(remaining_args, " ")
 
 	local handlers = {
@@ -474,6 +477,10 @@ function M.j(args)
 	if handlers[subcommand] then
 		handlers[subcommand]()
 	else
+		-- Prepend 'jj' if cmd is an array and doesn't already start with it
+		if type(cmd) == "table" and cmd[1] ~= "jj" then
+			table.insert(cmd, 1, "jj")
+		end
 		terminal.run(cmd, M.terminal_keymaps())
 	end
 end
