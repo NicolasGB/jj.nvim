@@ -38,12 +38,12 @@ function M.close_terminal_buffer()
 end
 
 --- Close the current terminal buffer if it exists
-local function close_floating_buffer()
+function M.close_floating_buffer()
 	buffer.close(state.floating_buf)
 end
 
 --- Hide the current floating window
-local function hide_floating_window()
+function M.hide_floating_buffer()
 	if not state.floating_buf then
 		return
 	elseif state.floating_buf and vim.api.nvim_buf_is_valid(state.floating_buf) then
@@ -53,7 +53,8 @@ end
 
 --- Run the command in a floating window
 --- @param cmd string The command to run in the floating window
-function M.run_floating(cmd)
+--- @param keymaps jj.core.buffer.keymap[]|nil Additional keymaps to set for this floating buffer
+function M.run_floating(cmd, keymaps)
 	-- Clean up previous state if invalid
 	if state.floating_buf and not vim.api.nvim_buf_is_valid(state.floating_buf) then
 		state.floating_buf = nil
@@ -154,19 +155,21 @@ function M.run_floating(cmd)
 
 	-- Set keymaps only if they haven't been set for this buffer
 	if not vim.b[state.floating_buf].jj_keymaps_set then
-		buffer.set_keymaps(state.floating_buf, {
+		local default_keymaps = {
 			{ modes = { "n", "v" }, lhs = "i", rhs = function() end },
 			{ modes = { "n", "v" }, lhs = "c", rhs = function() end },
 			{ modes = { "n", "v" }, lhs = "a", rhs = function() end },
 			{ modes = { "n", "v" }, lhs = "u", rhs = function() end },
-			{
-				modes = { "n", "v" },
-				lhs = "q",
-				rhs = close_floating_buffer,
-				opts = { desc = "Close the floating buffer" },
-			},
-			{ modes = "n", lhs = "<ESC>", rhs = hide_floating_window, opts = { desc = "Hide the buffer" } },
-		})
+		}
+
+		-- Merge default keymaps with provided keymaps
+		if keymaps and #keymaps > 0 then
+			for _, km in ipairs(keymaps) do
+				table.insert(default_keymaps, km)
+			end
+		end
+
+		buffer.set_keymaps(state.floating_buf, default_keymaps)
 		vim.b[state.floating_buf].jj_keymaps_set = true
 	end
 end
