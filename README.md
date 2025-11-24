@@ -135,6 +135,14 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
     renamed = { fg = "#d29922", ctermfg = "Yellow" },   -- Renamed files
   },
 
+  -- Configure terminal behavior
+  terminal = {
+    -- Cursor render delay in milliseconds (default: 10)
+    -- If cursor column is being reset to 0 when refreshing commands, try increasing this value
+    -- This delay allows the terminal emulator to complete rendering before restoring cursor position
+    cursor_render_delay = 10,
+  },
+
   -- Configure cmd module (describe editor, keymaps)
   cmd = {
     -- Configure describe editor
@@ -305,6 +313,9 @@ jj.diff.hsplit({ rev = "@-2" })   -- Horizontal split against @-2
   config = function()
     local jj = require("jj")
     jj.setup({
+      terminal = {
+        cursor_render_delay = 10, -- Adjust if cursor position isn't restoring correctly
+      },
       cmd = {
         describe = {
           editor = {

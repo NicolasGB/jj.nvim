@@ -124,10 +124,7 @@ function M.describe(description, revset, opts)
 		end, function()
 			if open_log_on_close then
 				vim.schedule(function()
-					vim.o.lazyredraw = true
 					cmd.log({})
-					vim.o.lazyredraw = false
-					vim.cmd("redraw!")
 				end)
 			end
 		end, describe_editor_keymaps())

@@ -297,4 +297,76 @@ function M.start_insert(buf)
 	vim.cmd("startinsert")
 end
 
+--- Get cursor position for a buffer
+--- @param buf number Buffer handle
+--- @return number[]|nil Cursor position as {line, col} or nil if buffer not visible
+function M.get_cursor(buf)
+	if not vim.api.nvim_buf_is_valid(buf) then
+		return nil
+	end
+
+	local winid = vim.fn.bufwinid(buf)
+	if winid == -1 then
+		return nil
+	end
+
+	return vim.api.nvim_win_get_cursor(winid)
+end
+
+--- Clamp cursor position to valid buffer bounds
+--- @param buf number Buffer handle
+--- @param pos number[] Cursor position as {line, col}
+--- @return number[] Clamped position as {line, col}
+local function clamp_cursor_position(buf, pos)
+	-- Validate and clamp position to buffer bounds
+	local line_count = vim.api.nvim_buf_line_count(buf)
+	local target_line = math.max(1, math.min(pos[1], line_count))
+
+	-- Get the actual line content to validate column
+	local line_content = vim.api.nvim_buf_get_lines(buf, target_line - 1, target_line, false)[1] or ""
+	local max_col = #line_content
+	local target_col = math.max(0, math.min(pos[2], max_col))
+
+	return { target_line, target_col }
+end
+
+--- Set cursor position for a buffer
+--- Automatically validates and clamps position to buffer bounds:
+--- - Line number is clamped to [1, line_count]
+--- - Column is clamped to [0, line_length] based on actual line content
+--- For terminal buffers, uses defer_fn to allow terminal rendering to stabilize
+--- @param buf number Buffer handle
+--- @param pos number[] Cursor position as {line, col} (1-indexed line, 0-indexed column)
+--- @param opts? {delay?: number} Optional delay in ms for terminal buffers (default: 10)
+function M.set_cursor(buf, pos, opts)
+	if not vim.api.nvim_buf_is_valid(buf) then
+		return
+	end
+
+	opts = opts or {}
+	local delay = opts.delay or 10
+
+	local winid = vim.fn.bufwinid(buf)
+	if winid == -1 then
+		return
+	end
+
+	-- For terminal buffers, delay to allow rendering to complete
+	-- Must validate position INSIDE the deferred function for terminal buffers
+	-- because the buffer content may not be stable yet
+	if vim.bo[buf].buftype == "terminal" or delay > 0 then
+		vim.defer_fn(function()
+			if not vim.api.nvim_buf_is_valid(buf) or not vim.api.nvim_win_is_valid(winid) then
+				return
+			end
+
+			local clamped_pos = clamp_cursor_position(buf, pos)
+			vim.api.nvim_win_set_cursor(winid, clamped_pos)
+		end, delay)
+	else
+		local clamped_pos = clamp_cursor_position(buf, pos)
+		vim.api.nvim_win_set_cursor(winid, clamped_pos)
+	end
+end
+
 return M

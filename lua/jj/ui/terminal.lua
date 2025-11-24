@@ -1,7 +1,16 @@
 --- @class jj.ui.terminal
 local M = {}
 
+--- Terminal configuration
+--- @class jj.ui.terminal.opts
+--- @field cursor_render_delay integer The delay in ms when cursor rerendering the terminal state (default: 10ms). If you're loosing the column of the cursor try adding more delay. I currently did not find a better way to do so due to async handling of the ouptut in the terminal
+
 local buffer = require("jj.core.buffer")
+
+--- @type jj.ui.terminal.opts
+local opts = {
+	cursor_render_delay = 10,
+}
 
 --- @class jj.ui.terminal.state
 local state = {
@@ -27,10 +36,19 @@ local state = {
 	--- The floating job id for the terminal buffer
 	--- @type integer|nil
 	floating_job_id = nil,
+
+	-- Cursor position
+	cursor_restore_pos = nil,
 }
 
 -- Re-export
 M.state = state
+
+--- Setup function to configure terminal options
+--- @param user_opts jj.ui.terminal.opts Configuration options
+function M.setup(user_opts)
+	opts = vim.tbl_deep_extend("force", opts, user_opts or {})
+end
 
 --- Close the current terminal buffer if it exists
 function M.close_terminal_buffer()
@@ -49,6 +67,27 @@ function M.hide_floating_buffer()
 	elseif state.floating_buf and vim.api.nvim_buf_is_valid(state.floating_buf) then
 		vim.cmd("hide")
 	end
+end
+
+--- Store the current cursor position, the terminal will restore it on the next render
+function M.store_cursor_position()
+	if state.buf then
+		state.cursor_restore_pos = buffer.get_cursor(state.buf)
+	end
+end
+
+--- Restore the stored cursor position
+function M.restore_cursor_position()
+	if not state.cursor_restore_pos or not state.buf then
+		return
+	end
+
+	buffer.set_cursor(
+		state.buf,
+		state.cursor_restore_pos,
+		{ delay = opts.cursor_render_delay and opts.cursor_render_delay or 10 }
+	)
+	state.cursor_restore_pos = nil
 end
 
 --- Run the command in a floating window
@@ -178,6 +217,7 @@ end
 --- If a previous command already existed it smartly reuses the buffer cleaning the previous output
 --- @param cmd string|string[] The command to run in the terminal buffer
 --- @param keymaps jj.core.buffer.keymap[]|nil Additional keymaps to set for this command buffer
+--- @return integer|nil buf The buffer handle, or nil on failure
 function M.run(cmd, keymaps)
 	if type(cmd) == "string" then
 		cmd = { cmd }
@@ -241,7 +281,7 @@ function M.run(cmd, keymaps)
 	state.chan = chan
 
 	-- Move cursor to top before output arrives
-	vim.api.nvim_win_set_cursor(win, { 1, 0 })
+	-- vim.api.nvim_win_set_cursor(win, { 1, 0 })
 
 	-- If the command is a string split it into parts
 	-- to store the subcommand later
@@ -269,12 +309,16 @@ function M.run(cmd, keymaps)
 		end,
 		on_exit = function(_, exit_code)
 			vim.schedule(function()
-				-- Make the buffer not modifiable
-				buffer.set_modifiable(state.buf, false)
-				buffer.stop_insert(state.buf)
 				-- Store the subcommand on successful exit
 				if exit_code == 0 then
 					state.buf_cmd = cmd[2] or nil
+				end
+				-- Make the buffer not modifiable
+				buffer.set_modifiable(state.buf, false)
+				buffer.stop_insert(state.buf)
+				-- Restore cursor position after buffer is ready
+				if state.cursor_restore_pos then
+					M.restore_cursor_position()
 				end
 			end)
 		end,
@@ -326,7 +370,8 @@ function M.run(cmd, keymaps)
 	end
 
 	vim.cmd("stopinsert")
+
+	return state.buf
 end
 
 return M
-
