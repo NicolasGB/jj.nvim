@@ -113,37 +113,38 @@ end
 --- @param line string The log line to parse
 --- @return string|nil The revision ID if found, nil otherwise
 function M.get_rev_from_log_line(line)
-	-- Define jujutsu symbols with their UTF-8 byte sequences
-	local jj_symbols = {
-		diamond = "\226\151\134", -- ◆ U+25C6
-		circle = "\226\151\139", -- ○ U+25CB
-		conflict = "\195\151", -- × U+00D7
+	-- Build pattern to match graph characters and symbols at start of line
+	-- Include: box-drawing chars, whitespace, jujutsu UTF-8 symbols, and ASCII markers
+	local graph_chars = "│┃┆┇┊┋╭╮╰╯├┤┬┴┼─└┘┌┐%s" -- box-drawing + whitespace
+
+	-- Jujutsu UTF-8 symbols (with their byte sequences)
+	local utf8_symbols = {
+		"\226\151\134", -- ◆ U+25C6 (diamond)
+		"\226\151\139", -- ○ U+25CB (circle)
+		"\195\151", -- × U+00D7 (conflict)
 	}
 
-	local revset
+	-- ASCII markers (escaped for pattern matching)
+	local ascii_markers = { "@", "%*", "/", "\\", "%-", "%+", "|" }
 
-	-- Try each symbol pattern
-	for _, symbol in pairs(jj_symbols) do
-		-- Pattern: Lines starting with symbol
-		revset = line:match("^%s*" .. symbol .. "%s+(%w+)")
-		if revset then
-			return revset
-		end
-
-		-- Pattern: Lines with │ followed by symbol (this are the branches)
-		revset = line:match("^│%s*" .. symbol .. "%s+(%w+)")
-		if revset then
-			return revset
-		end
+	-- Build character class for allowed prefix
+	local allowed_prefix = "[" .. graph_chars
+	for _, symbol in ipairs(utf8_symbols) do
+		allowed_prefix = allowed_prefix .. symbol
 	end
-
-	-- Pattern for simple ASCII symbols
-	revset = line:match("^%s*[@]%s+(%w+)")
-	if revset then
-		return revset
+	for _, marker in ipairs(ascii_markers) do
+		allowed_prefix = allowed_prefix .. marker
 	end
+	allowed_prefix = allowed_prefix .. "]+" -- close class, match one or more (not zero)
 
-	return nil
+	-- Match first alphanumeric sequence after graph prefix
+	-- Only match if it's followed by whitespace or end of string (not part of text)
+	local revset = line:match("^" .. allowed_prefix .. "(%w+)%s")
+	if not revset then
+		-- Try matching at end of line without trailing whitespace
+		revset = line:match("^" .. allowed_prefix .. "(%w+)$")
+	end
+	return revset
 end
 
 return M
