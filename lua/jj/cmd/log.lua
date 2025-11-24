@@ -15,7 +15,7 @@ local terminal = require("jj.ui.terminal")
 --- @field raw_flags? string
 
 ---@type jj.cmd.log_opts
-local default_log_opts = { summary = false, reversed = false, no_graph = false, limit = 20, raw_flats = nil }
+local default_log_opts = { summary = false, reversed = false, no_graph = false, limit = 20, raw_flags = nil }
 
 --- Jujutsu log
 --- @param opts? jj.cmd.log_opts Optional command options
@@ -24,12 +24,17 @@ function M.log(opts)
 		return
 	end
 
+	-- If a log was already being displayed before this command we will want to maintain the cursor position
+	if terminal.state.buf_cmd == "log" then
+		terminal.store_cursor_position()
+	end
+
 	local jj_cmd = "jj log"
 	local merged_opts = vim.tbl_extend("force", default_log_opts, opts or {})
 
 	-- If a raw has been given simply execute it as is
-	if merged_opts.raw then
-		return terminal.run(string.format("%s %s", jj_cmd, merged_opts.raw), M.log_keymaps())
+	if merged_opts.raw_flags then
+		return terminal.run(string.format("%s %s", jj_cmd, merged_opts.raw_flags), M.log_keymaps())
 	end
 
 	for key, value in pairs(merged_opts) do
