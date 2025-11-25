@@ -257,7 +257,8 @@ Beyond the `:J` command, you can call functions directly from Lua for more contr
 The `log` function accepts an options table:
 
 ```lua
-jj.log({
+local cmd = require("jj.cmd")
+cmd.log({
   summary = false,      -- Show summary of changes (default: false)
   reversed = false,     -- Reverse the log order (default: false)
   no_graph = false,     -- Hide the graph (default: false)
@@ -266,10 +267,10 @@ jj.log({
 })
 
 -- Examples:
-jj.log({ limit = 50 })                    -- Show 50 entries
-jj.log({ revisions = "'main::@'" })       -- Show commits between main and current
-jj.log({ summary = true, limit = 100 })   -- Show summary with high limit
-jj.log({ raw = "-r 'main::@' --summary --no-graph" }) -- Pass raw flags directly
+cmd.log({ limit = 50 })                    -- Show 50 entries
+cmd.log({ revisions = "'main::@'" })       -- Show commits between main and current
+cmd.log({ summary = true, limit = 100 })   -- Show summary with high limit
+cmd.log({ raw = "-r 'main::@' --summary --no-graph" }) -- Pass raw flags directly
 ```
 
 ### New Command Options
@@ -277,16 +278,17 @@ jj.log({ raw = "-r 'main::@' --summary --no-graph" }) -- Pass raw flags directly
 The `new` function accepts an options table:
 
 ```lua
-jj.new({
-  show_log = false,    -- Display log after creating new change (default: false)
-  with_input = false,  -- Prompt for parent revision (default: false)
-  args = ""           -- Additional arguments to pass to jj new
+local cmd = require("jj.cmd")
+cmd.new({
+  show_log = false,     -- Display log after creating new change (default: false)
+  with_input = false,   -- Prompt for parent revision (default: false)
+  args = ""             -- Additional arguments to pass to jj new
 })
 
 -- Examples:
-jj.new({ show_log = true })                           -- Create new and show log
-jj.new({ show_log = true, with_input = true })        -- Prompt for parent
-jj.new({ args = "--before @" })                       -- Pass custom args
+cmd.new({ show_log = true })                           -- Create new and show log
+cmd.new({ show_log = true, with_input = true })        -- Prompt for parent
+cmd.new({ args = "--before @" })                       -- Pass custom args
 ```
 
 ### Diff Split Views
@@ -294,10 +296,11 @@ jj.new({ args = "--before @" })                       -- Pass custom args
 Use the `diff` module for opening splits:
 
 ```lua
-jj.diff.vsplit()             -- Vertical split diff against parent
-jj.diff.vsplit({ rev = "main" })  -- Vertical split against specific revision
-jj.diff.hsplit()             -- Horizontal split diff
-jj.diff.hsplit({ rev = "@-2" })   -- Horizontal split against @-2
+local diff = require("jj.diff")
+diff.open_diff()                    -- Vertical split diff against parent
+diff.open_diff({ rev = "main" })    -- Vertical split against specific revision
+diff.open_hsplit()                  -- Horizontal split diff
+diff.open_hsplit({ rev = "@-2" })   -- Horizontal split against @-2
 ```
 
 ## Example config
@@ -347,29 +350,32 @@ jj.diff.hsplit({ rev = "@-2" })   -- Horizontal split against @-2
 
 
     -- Core commands
-    vim.keymap.set("n", "<leader>jd", jj.describe, { desc = "JJ describe" })
-    vim.keymap.set("n", "<leader>jl", jj.log, { desc = "JJ log" })
-    vim.keymap.set("n", "<leader>je", jj.edit, { desc = "JJ edit" })
-    vim.keymap.set("n", "<leader>jn", jj.new, { desc = "JJ new" })
-    vim.keymap.set("n", "<leader>js", jj.status, { desc = "JJ status" })
-    vim.keymap.set("n", "<leader>sj", jj.squash, { desc = "JJ squash" })
-    vim.keymap.set("n", "<leader>ju", jj.undo, { desc = "JJ undo" })
-    vim.keymap.set("n", "<leader>jy", jj.redo, { desc = "JJ redo" })
-    vim.keymap.set("n", "<leader>jr", jj.rebase, { desc = "JJ rebase" })
-    vim.keymap.set("n", "<leader>jb", jj.bookmark_create, { desc = "JJ bookmark create" })
-    vim.keymap.set("n", "<leader>jB", jj.bookmark_delete, { desc = "JJ bookmark delete" })
+    local cmd = require("jj.cmd")
+    vim.keymap.set("n", "<leader>jd", cmd.describe, { desc = "JJ describe" })
+    vim.keymap.set("n", "<leader>jl", cmd.log, { desc = "JJ log" })
+    vim.keymap.set("n", "<leader>je", cmd.edit, { desc = "JJ edit" })
+    vim.keymap.set("n", "<leader>jn", cmd.new, { desc = "JJ new" })
+    vim.keymap.set("n", "<leader>js", cmd.status, { desc = "JJ status" })
+    vim.keymap.set("n", "<leader>sj", cmd.squash, { desc = "JJ squash" })
+    vim.keymap.set("n", "<leader>ju", cmd.undo, { desc = "JJ undo" })
+    vim.keymap.set("n", "<leader>jy", cmd.redo, { desc = "JJ redo" })
+    vim.keymap.set("n", "<leader>jr", cmd.rebase, { desc = "JJ rebase" })
+    vim.keymap.set("n", "<leader>jb", cmd.bookmark_create, { desc = "JJ bookmark create" })
+    vim.keymap.set("n", "<leader>jB", cmd.bookmark_delete, { desc = "JJ bookmark delete" })
 
     -- Diff commands
-    vim.keymap.set("n", "<leader>dj", jj.diff.vsplit, { desc = "JJ diff vertical" })
-    vim.keymap.set("n", "<leader>dJ", jj.diff.hsplit, { desc = "JJ diff horizontal" })
+    local diff = require("jj.diff")
+    vim.keymap.set("n", "<leader>df", function() diff.open_vdiff() end, { desc = "JJ diff current buffer" })
+    vim.keymap.set("n", "<leader>dF", function() diff.open_hsplit() end, { desc = "JJ hdiff current buffer" })
 
     -- Pickers
-    vim.keymap.set("n", "<leader>gj", jj.picker.status, { desc = "JJ Picker status" })
-    vim.keymap.set("n", "<leader>gl", jj.picker.file_history, { desc = "JJ Picker file history" })
+    local picker = require("jj.picker")
+    vim.keymap.set("n", "<leader>gj", function() picker.status() end, { desc = "JJ Picker status" })
+    vim.keymap.set("n", "<leader>jgh", function() picker.file_history() end, { desc = "JJ Picker history" })
 
     -- Some functions like `log` can take parameters
     vim.keymap.set("n", "<leader>jL", function()
-      jj.log {
+      cmd.log {
         revisions = "'all()'", -- equivalent to jj log -r ::
       }
     end, { desc = "JJ log all" })
@@ -377,8 +383,8 @@ jj.diff.hsplit({ rev = "@-2" })   -- Horizontal split against @-2
 
     -- This is an alias i use for moving bookmarks its so good
     vim.keymap.set("n", "<leader>jt", function()
-      jj.j "tug"
-      jj.log {}
+      cmd.j "tug"
+      cmd.log {}
     end, { desc = "JJ tug" })
 
   end,
