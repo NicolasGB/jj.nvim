@@ -134,7 +134,8 @@ end
 --- Silently returns if no revision is found or the jj command fails.
 --- On success, notifies and refreshes the log buffer.
 --- @param ignore_immut? boolean Pass --ignore-immutable to jj edit when true.
-function M.handle_log_enter(ignore_immut)
+--- @param close_on_exit? boolean Close the log buffer after editing when true.
+function M.handle_log_edit(ignore_immut, close_on_exit)
 	local line = vim.api.nvim_get_current_line()
 	local revset = parser.get_rev_from_log_line(line)
 	if not revset or revset == "" then
@@ -160,9 +161,13 @@ function M.handle_log_enter(ignore_immut)
 		return
 	end
 
-	utils.notify(string.format("Editing change: `%s`", revset), vim.log.levels.INFO)
 	-- Close the terminal buffer
-	terminal.close_terminal_buffer()
+	if close_on_exit then
+		utils.notify(string.format("Editing change: `%s`", revset), vim.log.levels.INFO)
+		terminal.close_terminal_buffer()
+	else
+		M.log({})
+	end
 end
 
 --- Resolve log keymaps from config, filtering out nil values
@@ -175,18 +180,19 @@ function M.log_keymaps()
 	--   desc: Keybind description
 	--   handler: function to call
 	--   args: optional list of arguments passed to handler
-	local cfg = cmd.config.keymaps.log or {}
+	local keymaps = cmd.config.keymaps.log or {}
+	local close_on_edit = cmd.config.log.close_on_edit or false
 
 	local specs = {
 		edit = {
 			desc = "Checkout revision under cursor",
-			handler = M.handle_log_enter,
-			args = { false },
+			handler = M.handle_log_edit,
+			args = { false, close_on_edit },
 		},
 		edit_immutable = {
 			desc = "Checkout revision under cursor (ignores immutability)",
-			handler = M.handle_log_enter,
-			args = { true },
+			handler = M.handle_log_edit,
+			args = { true, close_on_edit },
 		},
 		describe = {
 			desc = "Describe revision under cursor",
@@ -221,7 +227,7 @@ function M.log_keymaps()
 		},
 	}
 
-	return cmd.merge_keymaps(cmd.resolve_keymaps_from_specs(cfg, specs), cmd.terminal_keymaps())
+	return cmd.merge_keymaps(cmd.resolve_keymaps_from_specs(keymaps, specs), cmd.terminal_keymaps())
 end
 
 return M
