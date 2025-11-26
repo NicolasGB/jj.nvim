@@ -21,6 +21,9 @@ local status_module = require("jj.cmd.status")
 --- @class jj.cmd.describe
 --- @field editor? jj.cmd.describe.editor Options for the describe message editor
 
+--- @class jj.cmd.log
+--- @field close_on_edit? boolean Whether to close the log buffer when editing a change
+
 --- @class jj.cmd.log.keymaps
 --- @field checkout? string|string[] Keymaps for the log command buffer, setting a keymap to nil will disable it
 --- @field checkout_immutable? string|string[]
@@ -49,6 +52,7 @@ local status_module = require("jj.cmd.status")
 
 --- @class jj.cmd.opts
 --- @field describe? jj.cmd.describe
+--- @field log? jj.cmd.log
 --- @field keymaps? jj.cmd.keymaps Keymaps for the buffers containing the output of the commands
 ---
 --- @class jj.cmd.keymap_spec
@@ -67,6 +71,9 @@ M.config = {
 				close = { "<Esc>", "<C-c>", "q" },
 			},
 		},
+	},
+	log = {
+		close_on_edit = false,
 	},
 	keymaps = {
 		log = {
@@ -131,15 +138,20 @@ function M.resolve_keymaps_from_specs(cfg, specs)
 	for key, spec in pairs(specs) do
 		local lhs = cfg[key]
 		if lhs and spec.handler then
+			-- Create the handler, wrapping it with args if provided
+			local handler = spec.handler
+			if spec.args then
+				handler = function()
+					spec.handler(unpack(spec.args))
+				end
+			end
+
 			if type(lhs) == "table" then
 				for _, key_lhs in ipairs(lhs) do
-					table.insert(
-						keymaps,
-						{ modes = "n", lhs = key_lhs, rhs = spec.handler, opts = { desc = spec.desc } }
-					)
+					table.insert(keymaps, { modes = "n", lhs = key_lhs, rhs = handler, opts = { desc = spec.desc } })
 				end
 			else
-				table.insert(keymaps, { modes = "n", lhs = lhs, rhs = spec.handler, opts = { desc = spec.desc } })
+				table.insert(keymaps, { modes = "n", lhs = lhs, rhs = handler, opts = { desc = spec.desc } })
 			end
 		end
 	end
@@ -543,3 +555,4 @@ function M.register_command()
 end
 
 return M
+

@@ -159,6 +159,11 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
       }
     },
 
+    -- Configure log command behavior
+    log = {
+      close_on_edit = false,                -- Close log buffer after editing a change
+    },
+
     -- Configure keymaps for command buffers
     keymaps = {
       -- Log buffer keymaps (set to nil to disable)
