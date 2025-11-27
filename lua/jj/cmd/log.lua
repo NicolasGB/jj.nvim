@@ -198,12 +198,37 @@ end
 
 --- Handle fetching from `jj log` buffer.
 function M.handle_log_fetch()
-	local cmd = "jj git fetch"
-	utils.notify("Fetching from remote...", vim.log.levels.INFO)
-	runner.execute_command_async(cmd, function()
-		utils.notify("Successfully fetched from remote", vim.log.levels.INFO)
-		M.log({})
-	end, "Error fetching from remote")
+	local remotes = utils.get_remotes()
+	if not remotes or #remotes == 0 then
+		utils.notify("No git remotes found to fetch from", vim.log.levels.ERROR)
+		return
+	end
+
+	if #remotes > 1 then
+		-- Prompt to select a remote
+		vim.ui.select(remotes, {
+			prompt = "Select remote to fetch from: ",
+			format_item = function(item)
+				return string.format("%s (%s)", item.name, item.url)
+			end,
+		}, function(choice)
+			if choice then
+				local cmd = string.format("jj git fetch --remote %s", choice.name)
+				runner.execute_command_async(cmd, function()
+					utils.notify(string.format("Fetching from %s...", choice), vim.log.levels.INFO)
+					M.log({})
+				end, "Error fetching from remote")
+			end
+		end)
+	else
+		-- Only one remote, fetch from it directly
+		local cmd = "jj git fetch"
+		utils.notify("Fetching from remote...", vim.log.levels.INFO)
+		runner.execute_command_async(cmd, function()
+			utils.notify("Successfully fetched from remote", vim.log.levels.INFO)
+			M.log({})
+		end, "Error fetching from remote")
+	end
 end
 
 --- Handle pushing from `jj log` buffer.
@@ -249,6 +274,61 @@ function M.handle_log_push_bookmark()
 		utils.notify(string.format("Successfully pushed bookmark for `%s`", revset), vim.log.levels.INFO)
 		M.log({})
 	end, string.format("Error pushing bookmark for `%s`", revset))
+end
+
+--- Handle opening a PR/MR from `jj log` buffer for the revision under cursor
+--- @param list_bookmarks? boolean If true, prompt to select from all bookmarks instead of using current revision
+function M.handle_log_open_pr(list_bookmarks)
+	if list_bookmarks then
+		-- Get all bookmarks
+		local bookmarks = utils.get_all_bookmarks()
+
+		if #bookmarks == 0 then
+			utils.notify("No bookmarks found", vim.log.levels.ERROR)
+			return
+		end
+
+		-- Prompt to select a bookmark
+		vim.ui.select(bookmarks, {
+			prompt = "Select bookmark to open PR for: ",
+		}, function(choice)
+			if choice then
+				utils.open_pr_for_bookmark(choice)
+			end
+		end)
+		-- Return early
+		return
+	end
+
+	-- Default behavior: parse revision and open PR
+	local line = vim.api.nvim_get_current_line()
+	local revset = parser.get_rev_from_log_line(line)
+	if not revset or revset == "" then
+		return
+	end
+
+	-- Get the bookmark for this revision
+	local bookmark, success = runner.execute_command(
+		string.format("jj log -r %s -T 'bookmarks' --no-graph", revset),
+		string.format("Error retrieving bookmark for `%s`", revset),
+		nil,
+		false
+	)
+
+	if not success or not bookmark then
+		return
+	end
+
+	-- Trim and clean the bookmark (remove asterisks and whitespace)
+	bookmark = bookmark:match("^%*?(.-)%*?$"):gsub("%s+", "")
+
+	if bookmark == "" then
+		utils.notify("[OPEN PR] No bookmark found for revision", vim.log.levels.ERROR)
+		return
+	end
+
+	-- Open the PR using the utility function
+	utils.open_pr_for_bookmark(bookmark)
 end
 
 --- Resolve log keymaps from config, filtering out nil values
@@ -324,6 +404,15 @@ function M.log_keymaps()
 		push = {
 			desc = "Push bookmark of revision under cursor to remote",
 			handler = M.handle_log_push_bookmark,
+		},
+		open_pr = {
+			desc = "Open PR/MR for revision under cursor",
+			handler = M.handle_log_open_pr,
+		},
+		open_pr_list = {
+			desc = "Open PR/MR by selecting from all bookmarks",
+			handler = M.handle_log_open_pr,
+			args = { true },
 		},
 	}
 

@@ -39,6 +39,8 @@ local status_module = require("jj.cmd.status")
 --- @field fetch? string|string[]
 --- @field push_all? string|string[]
 --- @field push? string|string[]
+--- @field open_pr? string|string[]
+--- @field open_pr_list? string|string[]
 
 --- @class jj.cmd.status.keymaps
 --- @field open_file? string|string[] Keymaps for the status command buffer, setting a keymap to nil will disable it
@@ -69,6 +71,9 @@ local status_module = require("jj.cmd.status")
 --- @class jj.cmd.push_opts
 --- @field bookmark? string Specific bookmark to push (default: all)
 
+--- @class jj.cmd.open_pr_opts
+--- @field list_bookmarks? boolean Whether to select from all bookmarks instead of current revision
+
 --- @type jj.cmd.opts
 M.config = {
 	describe = {
@@ -97,6 +102,8 @@ M.config = {
 			fetch = "f",
 			push_all = "<S-P>",
 			push = "p",
+			open_pr = "o",
+			open_pr_list = "<S-o>",
 		},
 		status = {
 			open_file = "<CR>",
@@ -441,16 +448,45 @@ function M.fetch()
 		return
 	end
 
+	-- Save the lop one state to refresh
 	local log_open = terminal.state.buf_cmd == "log"
 
-	local cmd = "jj git fetch"
-	utils.notify("Fetching ...", vim.log.levels.INFO, 1000)
-	runner.execute_command_async(cmd, function()
-		utils.notify("Successfully fetched from remote", vim.log.levels.INFO)
-		if log_open then
-			M.log({})
-		end
-	end, "Error fetching from remote")
+	-- Get the list of remotes
+	local remotes = utils.get_remotes()
+	if not remotes or #remotes == 0 then
+		utils.notify("No git remotes found to fetch from", vim.log.levels.ERROR)
+		return
+	end
+
+	if #remotes > 1 then
+		-- Prompt to select a remote
+		vim.ui.select(remotes, {
+			prompt = "Select remote to fetch from: ",
+			format_item = function(item)
+				return string.format("%s (%s)", item.name, item.url)
+			end,
+		}, function(choice)
+			if choice then
+				local cmd = string.format("jj git fetch --remote %s", choice.name)
+				runner.execute_command_async(cmd, function()
+					utils.notify(string.format("Fetching from %s...", choice), vim.log.levels.INFO)
+					if log_open then
+						M.log({})
+					end
+				end, "Error fetching from remote")
+			end
+		end)
+	else
+		-- Only one remote, fetch from it directly
+		local cmd = "jj git fetch"
+		utils.notify("Fetching from remote...", vim.log.levels.INFO)
+		runner.execute_command_async(cmd, function()
+			utils.notify("Successfully fetched from remote", vim.log.levels.INFO)
+			if log_open then
+				M.log({})
+			end
+		end, "Error fetching from remote")
+	end
 end
 
 -- Jujutsu push
@@ -462,6 +498,7 @@ function M.push(opts)
 
 	opts = opts or {}
 
+	-- Save the lop one state to refresh
 	local log_open = terminal.state.buf_cmd == "log"
 
 	local cmd = "jj git push"
@@ -478,6 +515,58 @@ function M.push(opts)
 			M.log({})
 		end
 	end, "Error pushing to remote")
+end
+
+--- Open a PR on the remote from the current change's bookmark
+--- @param opts? jj.cmd.open_pr_opts Options for opening PR
+function M.open_pr(opts)
+	if not utils.ensure_jj() then
+		return
+	end
+
+	opts = opts or {}
+
+	if opts.list_bookmarks then
+		-- Get all bookmarks
+		local bookmarks = utils.get_all_bookmarks()
+
+		if #bookmarks == 0 then
+			utils.notify("No bookmarks found", vim.log.levels.ERROR)
+			return
+		end
+
+		-- Prompt to select a bookmark
+		vim.ui.select(bookmarks, {
+			prompt = "Select bookmark to open PR for: ",
+		}, function(choice)
+			if choice then
+				utils.open_pr_for_bookmark(choice)
+			end
+		end)
+		-- Return early
+		return
+	end
+
+	-- Get the bookmark from the current change (@)
+	local bookmark, success =
+		runner.execute_command("jj log -r @ --no-graph -T 'bookmarks'", "Failed to get current bookmark", nil, true)
+
+	if not success or not bookmark or bookmark:match("^%s*$") then
+		-- If no bookmark on @, try @-
+		bookmark, success =
+			runner.execute_command("jj log -r @- --no-graph -T 'bookmarks'", "Failed to get parent bookmark", nil, true)
+
+		if not success or not bookmark or bookmark:match("^%s*$") then
+			utils.notify("No bookmark found on @ or @- commits. Cannot open PR.", vim.log.levels.ERROR)
+			return
+		end
+	end
+
+	-- Trim and remove asterisks from bookmark
+	bookmark = bookmark:match("^%*?(.-)%*?$"):gsub("%s+", "")
+
+	-- Open the PR using the utility function
+	utils.open_pr_for_bookmark(bookmark)
 end
 
 --- @param args string|string[] jj command arguments
@@ -569,6 +658,13 @@ function M.j(args)
 		fetch = function()
 			M.fetch()
 		end,
+		open_pr = function()
+			if remaining_args_str:match("--list") then
+				M.open_pr({ list_bookmarks = true })
+			else
+				M.open_pr()
+			end
+		end,
 	}
 
 	if handlers[subcommand] then
@@ -612,6 +708,7 @@ function M.register_command()
 				"st",
 				"status",
 				"undo",
+				"open_pr",
 			}
 			local matches = {}
 			for _, cmd in ipairs(subcommands) do
