@@ -68,6 +68,20 @@ You can undo/redo changes directly from the log buffer:
 - `<S-u>` - Undo the last operation
 - `<S-r>` - Redo the last undone operation
 
+### Abandon changes from the log buffer
+
+You can abandon changes directly from the log buffer:
+
+- `a` - Abandon the revision under the cursor
+
+### Fetch and push from the log buffer
+
+You can fetch and push directly from the log buffer:
+
+- `f` - Fetch from remote
+- `<S-p>` - Push all changes to remote
+- `p` - Push bookmark of revision under cursor to remote
+
 ### Open a changed file
 
 Just press enter to open the a file from the `status` output in your current window.
@@ -101,6 +115,9 @@ The plugin provides a `:J` command that accepts jj subcommands:
 :J log
 :J describe "Your change description"
 :J new
+:J push               " Push all changes
+:J push main         " Push only main bookmark
+:J fetch             " Fetch from remote
 :J # This will use your defined default command
 :J <your-alias>
 ```
@@ -178,6 +195,10 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
         new_after_immutable = "<S-n>",      -- Create new change after (ignore immutability)
         undo = "<S-u>",                     -- Undo last operation
         redo = "<S-r>",                     -- Redo last undone operation
+        abandon = "a",                      -- Abandon revision under cursor
+        fetch = "f",                        -- Fetch from remote
+        push = "p",                     -- Push bookmark of revision under cursor
+        push_all = "<S-p>",                     -- Push all changes to remote
       },
       -- Status buffer keymaps (set to nil to disable)
       status = {
@@ -296,6 +317,22 @@ cmd.new({ show_log = true, with_input = true })        -- Prompt for parent
 cmd.new({ args = "--before @" })                       -- Pass custom args
 ```
 
+### Push Command Options
+
+The `push` function accepts an options table:
+
+```lua
+local cmd = require("jj.cmd")
+cmd.push({
+  bookmark = "main"     -- Push specific bookmark (default: all changes)
+})
+
+-- Examples:
+cmd.push()                    -- Push all changes
+cmd.push({ bookmark = "main" }) -- Push only main bookmark
+cmd.push({ bookmark = "feature" }) -- Push only feature bookmark
+```
+
 ### Diff Split Views
 
 Use the `diff` module for opening splits:
@@ -338,6 +375,8 @@ diff.open_hsplit({ rev = "@-2" })   -- Horizontal split against @-2
             checkout = "<CR>",
             describe = "d",
             diff = "<S-d>",
+            abandon = "<S-a>",
+            fetch = "<S-f>",
           },
           status = {
             open_file = "<CR>",
@@ -367,6 +406,9 @@ diff.open_hsplit({ rev = "@-2" })   -- Horizontal split against @-2
     vim.keymap.set("n", "<leader>jr", cmd.rebase, { desc = "JJ rebase" })
     vim.keymap.set("n", "<leader>jb", cmd.bookmark_create, { desc = "JJ bookmark create" })
     vim.keymap.set("n", "<leader>jB", cmd.bookmark_delete, { desc = "JJ bookmark delete" })
+    vim.keymap.set("n", "<leader>ja", cmd.abandon, { desc = "JJ abandon" })
+    vim.keymap.set("n", "<leader>jf", cmd.fetch, { desc = "JJ fetch" })
+    vim.keymap.set("n", "<leader>jp", cmd.push, { desc = "JJ push" })
 
     -- Diff commands
     local diff = require("jj.diff")

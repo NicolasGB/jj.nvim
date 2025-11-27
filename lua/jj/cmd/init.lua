@@ -36,6 +36,9 @@ local status_module = require("jj.cmd.status")
 --- @field undo? string|string[]
 --- @field redo? string|string[]
 --- @field abandon? string|string[]
+--- @field fetch? string|string[]
+--- @field push_all? string|string[]
+--- @field push? string|string[]
 
 --- @class jj.cmd.status.keymaps
 --- @field open_file? string|string[] Keymaps for the status command buffer, setting a keymap to nil will disable it
@@ -54,7 +57,7 @@ local status_module = require("jj.cmd.status")
 --- @class jj.cmd.opts
 --- @field describe? jj.cmd.describe
 --- @field log? jj.cmd.log
---- @field keymaps? jj.cmd.keymaps Keymaps for the buffers containing the output of the commands
+--- @field keymaps? jj.cmd.keymaps Keymaps for the buffers containing the  of the commands
 ---
 --- @class jj.cmd.keymap_spec
 --- @field desc string
@@ -62,6 +65,9 @@ local status_module = require("jj.cmd.status")
 --- @field args? table
 
 --- @alias jj.cmd.keymap_specs table<string, jj.cmd.keymap_spec>
+
+--- @class jj.cmd.push_opts
+--- @field bookmark? string Specific bookmark to push (default: all)
 
 --- @type jj.cmd.opts
 M.config = {
@@ -88,6 +94,9 @@ M.config = {
 			undo = "<S-u>",
 			redo = "<S-r>",
 			abandon = "a",
+			fetch = "f",
+			push_all = "<S-P>",
+			push = "p",
 		},
 		status = {
 			open_file = "<CR>",
@@ -207,12 +216,13 @@ function M.new(opts)
 
 	--- @param cmd string
 	local function execute_new(cmd)
-		runner.execute_command(cmd, "Failed to create new change")
-		utils.notify("Command `new` was succesful.", vim.log.levels.INFO)
-		-- Show the updated log if the user requested it
-		if opts.show_log then
-			M.log()
-		end
+		runner.execute_command_async(cmd, function()
+			utils.notify("Command `new` was succesful.", vim.log.levels.INFO)
+			-- Show the updated log if the user requested it
+			if opts.show_log then
+				M.log()
+			end
+		end, "Failed to create new change")
 	end
 
 	-- If the user wants use input mode
@@ -255,11 +265,9 @@ function M.edit()
 		default = "",
 	}, function(input)
 		if input then
-			local _, success = runner.execute_command(string.format("jj edit %s", input), "Error editing change")
-			if not success then
-				return
-			end
-			M.log({})
+			runner.execute_command_async(string.format("jj edit %s", input), function()
+				M.log({})
+			end, "Error editing change")
 		else
 			terminal.close_terminal_buffer()
 		end
@@ -273,13 +281,12 @@ function M.squash()
 	end
 
 	local cmd = "jj squash"
-	local _, success = runner.execute_command(cmd, "Failed to squash")
-	if success then
+	runner.execute_command_async(cmd, function()
 		utils.notify("Command `squash` was succesful.", vim.log.levels.INFO)
 		if terminal.state.buf_cmd == "log" then
 			M.log()
 		end
-	end
+	end, "Failed to squash")
 end
 
 --- @class jj.cmd.diff_opts
@@ -321,11 +328,10 @@ function M.rebase()
 		if input then
 			local cmd = string.format("jj rebase -d '%s'", input)
 			utils.notify(string.format("Beginning rebase on %s", input), vim.log.levels.INFO)
-			local _, success = runner.execute_command(cmd, "Error rebasing")
-			if success then
+			runner.execute_command_async(cmd, function()
 				utils.notify("Rebase successful.", vim.log.levels.INFO)
 				M.log({})
-			end
+			end, "Error rebasing")
 		else
 			terminal.close_terminal_buffer()
 		end
@@ -344,11 +350,10 @@ function M.bookmark_create()
 	}, function(input)
 		if input then
 			local cmd = string.format("jj b c %s", input)
-			local _, success = runner.execute_command(cmd, "Error creating bookmark")
-			if success then
+			runner.execute_command_async(cmd, function()
 				utils.notify(string.format("Bookmark `%s` created successfully for @", input), vim.log.levels.INFO)
 				M.log({})
-			end
+			end, "Error creating bookmark")
 		else
 			terminal.close_terminal_buffer()
 		end
@@ -367,11 +372,10 @@ function M.bookmark_delete()
 	}, function(input)
 		if input then
 			local cmd = string.format("jj b d %s", input)
-			local _, success = runner.execute_command(cmd, "Error deleting bookmark")
-			if success then
+			runner.execute_command_async(cmd, function()
 				utils.notify(string.format("Bookmark `%s` deleted successfully.", input), vim.log.levels.INFO)
 				M.log({})
-			end
+			end, "Error deleting bookmark")
 		else
 			terminal.close_terminal_buffer()
 		end
@@ -385,13 +389,12 @@ function M.undo()
 	end
 
 	local cmd = "jj undo"
-	local _, success = runner.execute_command(cmd, "Failed to undo")
-	if success then
+	runner.execute_command_async(cmd, function()
 		utils.notify("Command `undo` was succesful.", vim.log.levels.INFO)
 		if terminal.state.buf_cmd == "log" then
 			M.log({})
 		end
-	end
+	end, "Failed to undo")
 end
 
 -- Jujutsu redo
@@ -401,13 +404,12 @@ function M.redo()
 	end
 
 	local cmd = "jj redo"
-	local _, success = runner.execute_command(cmd, "Failed to redo")
-	if success then
+	runner.execute_command_async(cmd, function()
 		utils.notify("Command `redo` was succesful.", vim.log.levels.INFO)
 		if terminal.state.buf_cmd == "log" then
 			M.log({})
 		end
-	end
+	end, "Failed to redo")
 end
 
 -- Jujutsu abandon
@@ -423,16 +425,61 @@ function M.abandon()
 	}, function(input)
 		if input then
 			local cmd = string.format("jj abandon %s", input)
-			local _, success = runner.execute_command(cmd, "Error abandoning change")
-			if success then
+			runner.execute_command_async(cmd, function()
 				utils.notify("Change abandoned successfully.", vim.log.levels.INFO)
 				M.log({})
-			end
+			end, "Error abandoning change")
 		else
 			terminal.close_terminal_buffer()
 		end
 	end)
 end
+
+-- Jujutsu fetch
+function M.fetch()
+	if not utils.ensure_jj() then
+		return
+	end
+
+	local log_open = terminal.state.buf_cmd == "log"
+
+	local cmd = "jj git fetch"
+	utils.notify("Fetching ...", vim.log.levels.INFO, 1000)
+	runner.execute_command_async(cmd, function()
+		utils.notify("Successfully fetched from remote", vim.log.levels.INFO)
+		if log_open then
+			M.log({})
+		end
+	end, "Error fetching from remote")
+end
+
+-- Jujutsu push
+--- @param opts? jj.cmd.push_opts Optional push options
+function M.push(opts)
+	if not utils.ensure_jj() then
+		return
+	end
+
+	opts = opts or {}
+
+	local log_open = terminal.state.buf_cmd == "log"
+
+	local cmd = "jj git push"
+	if opts.bookmark then
+		utils.notify(string.format("Pushing `%s` bookmark ...", opts.bookmark), vim.log.levels.INFO, 1000)
+		cmd = string.format("%s --bookmark %s", cmd, opts.bookmark)
+	else
+		utils.notify(string.format("Pushing `ALL` bookmarks...", opts.bookmark), vim.log.levels.INFO, 1000)
+	end
+
+	runner.execute_command_async(cmd, function()
+		utils.notify("Successfully pushed to remote", vim.log.levels.INFO)
+		if log_open then
+			M.log({})
+		end
+	end, "Error pushing to remote")
+end
+
 --- @param args string|string[] jj command arguments
 function M.j(args)
 	if not utils.ensure_jj() then
@@ -509,6 +556,19 @@ function M.j(args)
 		st = function()
 			M.status()
 		end,
+		abandon = function()
+			M.abandon()
+		end,
+		push = function()
+			if #remaining_args > 0 then
+				M.push({ bookmark = remaining_args[1] })
+			else
+				M.push()
+			end
+		end,
+		fetch = function()
+			M.fetch()
+		end,
 	}
 
 	if handlers[subcommand] then
@@ -535,22 +595,23 @@ function M.register_command()
 		nargs = "*",
 		complete = function(arglead, _, _)
 			local subcommands = {
-				"log",
-				"status",
-				"st",
-				"diff",
-				"describe",
-				"new",
-				"squash",
-				"bookmark",
-				"edit",
 				"abandon",
 				"b",
+				"bookmark",
+				"describe",
+				"diff",
+				"edit",
+				"fetch",
 				"git",
+				"log",
+				"new",
+				"push",
 				"rebase",
-				"abandon",
-				"undo",
 				"redo",
+				"squash",
+				"st",
+				"status",
+				"undo",
 			}
 			local matches = {}
 			for _, cmd in ipairs(subcommands) do
@@ -580,4 +641,3 @@ function M.register_command()
 end
 
 return M
-

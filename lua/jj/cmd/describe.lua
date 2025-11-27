@@ -30,10 +30,9 @@ local function execute_describe(description, revset)
 	cmd = cmd .. " --stdin"
 
 	-- Use --stdin to properly handle multi-line and special characters
-	local _, success = runner.execute_command(cmd, "Failed to describe", description)
-	if success then
+	runner.execute_command_async(cmd, function()
 		utils.notify("Description set.", vim.log.levels.INFO)
-	end
+	end, "Failed to describe", description)
 end
 
 --- Resolve describe editor keymaps from config
@@ -151,3 +150,4 @@ function M.describe(description, revset, opts)
 end
 
 return M
+

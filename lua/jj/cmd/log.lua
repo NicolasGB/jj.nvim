@@ -95,14 +95,11 @@ function M.handle_log_new(flag, ignore_immut)
 	end
 
 	local cmd = table.concat(cmd_parts, " ")
-	local _, success = runner.execute_command(cmd, string.format(cfg.err, revset))
-	if not success then
-		return
-	end
-
-	utils.notify(string.format(cfg.ok, revset), vim.log.levels.INFO)
-	-- Refresh the log buffer after creating the change.
-	require("jj.cmd").log()
+	runner.execute_command_async(cmd, function()
+		utils.notify(string.format(cfg.ok, revset), vim.log.levels.INFO)
+		-- Refresh the log buffer after creating the change.
+		require("jj.cmd").log()
+	end, string.format(cfg.err, revset))
 end
 
 --- Handle diffing a log line
@@ -129,7 +126,7 @@ function M.handle_log_describe()
 	end
 end
 
---- Handle keypress enter on `jj log` buffer to edit a revision.
+--- Handle keypress edit on `jj log` buffer to edit a revision.
 --- If ignore_immut is true, adds --ignore-immutable to the command.
 --- Silently returns if no revision is found or the jj command fails.
 --- On success, notifies and refreshes the log buffer.
@@ -156,8 +153,17 @@ function M.handle_log_edit(ignore_immut, close_on_exit)
 	local cmd = table.concat(cmd_parts, " ")
 
 	-- Try to execute cmd
-	local _, success = runner.execute_command(cmd, "Error editing change")
-	if not success then
+	runner.execute_command_async(cmd, function()
+		-- Close the terminal buffer
+		if close_on_exit then
+			utils.notify(string.format("Editing change: `%s`", revset), vim.log.levels.INFO)
+			terminal.close_terminal_buffer()
+		else
+			M.log({})
+		end
+	end, "Error editing change")
+end
+
 --- Handle abandon `jj log` buffer.
 --- If ignore_immut is true, adds --ignore-immutable to the command.
 --- Silently returns if no revision is found or the jj command fails.
@@ -170,17 +176,11 @@ function M.handle_log_abandon(ignore_immut)
 		return
 	end
 
-	-- Close the terminal buffer
 	-- If we found a revision, abandon it.
-	if close_on_exit then
 
-		utils.notify(string.format("Editing change: `%s`", revset), vim.log.levels.INFO)
 	-- Build command parts.
-		terminal.close_terminal_buffer()
 	local cmd_parts = { "jj", "abandon" }
-	else
 	if ignore_immut then
-		M.log({})
 		table.insert(cmd_parts, "--ignore-immutable")
 	end
 
@@ -193,10 +193,62 @@ function M.handle_log_abandon(ignore_immut)
 	runner.execute_command_async(cmd, function()
 		utils.notify(string.format("Abandoned change: `%s`", revset), vim.log.levels.INFO)
 		M.log({})
-	end, function()
-		utils.notify("Error abandoning change", vim.log.levels.ERROR)
-	end)
+	end, "Error abandoning change")
 end
+
+--- Handle fetching from `jj log` buffer.
+function M.handle_log_fetch()
+	local cmd = "jj git fetch"
+	utils.notify("Fetching from remote...", vim.log.levels.INFO)
+	runner.execute_command_async(cmd, function()
+		utils.notify("Successfully fetched from remote", vim.log.levels.INFO)
+		M.log({})
+	end, "Error fetching from remote")
+end
+
+--- Handle pushing from `jj log` buffer.
+function M.handle_log_push_all()
+	local cmd = "jj git push"
+	utils.notify("Pushing `ALL` bookmarks", vim.log.levels.INFO)
+	runner.execute_command_async(cmd, function()
+		utils.notify("Successfully pushed all to remote", vim.log.levels.INFO)
+		M.log({})
+	end, "Error pushing to remote")
+end
+
+--- Handle log pushing bookmark from current line in `jj log` buffer.
+function M.handle_log_push_bookmark()
+	local line = vim.api.nvim_get_current_line()
+	local revset = parser.get_rev_from_log_line(line)
+	if not revset or revset == "" then
+		return
+	end
+	-- If we found a revfision get it's bookmark and push it
+	local bookmark, success = runner.execute_command(
+		string.format("jj log -r %s -T 'bookmarks' --no-graph", revset),
+		string.format("Error retrieving bookmark for `%s`", revset),
+		nil,
+		false
+	)
+	if not success or not bookmark then
+		return
+	end
+
+	-- If there's a * trim it (bookmarks with modifications have *)
+	bookmark = bookmark:gsub("%*", ""):gsub("^%s+", ""):gsub("%s+$", "")
+
+	if bookmark == "" then
+		utils.notify("No bookmark found for revision", vim.log.levels.ERROR)
+		return
+	end
+
+	-- Push the bookmark from the revset found
+	local cmd = string.format("jj git push --bookmark %s -N", bookmark)
+	utils.notify(string.format("Pushing bookmark `%s`...", bookmark), vim.log.levels.INFO)
+	runner.execute_command_async(cmd, function()
+		utils.notify(string.format("Successfully pushed bookmark for `%s`", revset), vim.log.levels.INFO)
+		M.log({})
+	end, string.format("Error pushing bookmark for `%s`", revset))
 end
 
 --- Resolve log keymaps from config, filtering out nil values
@@ -260,6 +312,18 @@ function M.log_keymaps()
 			-- As of now i'm only exposing the non ignore-immutable version of abandon in the keymaps
 			-- Maybe in the future we can add another keymap for that, if people request it
 			args = { false },
+		},
+		fetch = {
+			desc = "Fetch from remote",
+			handler = M.handle_log_fetch,
+		},
+		push_all = {
+			desc = "Push all to remote",
+			handler = M.handle_log_push_all,
+		},
+		push = {
+			desc = "Push bookmark of revision under cursor to remote",
+			handler = M.handle_log_push_bookmark,
 		},
 	}
 
