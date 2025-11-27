@@ -115,4 +115,143 @@ function M.notify(message, level, timeout)
 	vim.notify(message, level, { title = "JJ", timeout = timeout })
 end
 
+--- URL encode a string for use in URLs
+--- @param str string The string to encode
+--- @return string The URL-encoded string
+function M.url_encode(str)
+	return (str:gsub("([^%w%-_.~])", function(c)
+		return string.format("%%%02X", string.byte(c))
+	end))
+end
+
+--- Get all bookmarks in the repository
+--- @return string[] List of bookmarks, or empty list if none found
+function M.get_all_bookmarks()
+	-- Use a custom template to output just the bookmark names, one per line
+	-- This is more reliable than parsing the default output format
+	local bookmarks_output, success = runner.execute_command(
+		[[jj bookmark list -T 'if(!name.contains("@"), name ++ "\n")']],
+		"Failed to get bookmarks",
+		nil,
+		true
+	)
+
+	if not success or not bookmarks_output then
+		return {}
+	end
+
+	-- Parse bookmarks from template output
+	local bookmarks = {}
+	local seen = {}
+	for line in bookmarks_output:gmatch("[^\n]+") do
+		local bookmark = vim.trim(line)
+		if bookmark ~= "" and not seen[bookmark] then
+			table.insert(bookmarks, bookmark)
+			seen[bookmark] = true
+		end
+	end
+
+	return bookmarks
+end
+
+--- Get git remotes for the current jj repository
+--- @return {name: string, url: string}[]|nil A list of remotes with name and URL
+function M.get_remotes()
+	local remote_list, remote_success =
+		runner.execute_command("jj git remote list", "Failed to get git remote", nil, true)
+
+	if not remote_success or not remote_list then
+		return
+	end
+
+	-- Parse remotes into a table
+	local remotes = {}
+	for line in remote_list:gmatch("[^\n]+") do
+		local name, url = line:match("^(%S+)%s+(.+)$")
+		if name and url then
+			table.insert(remotes, { name = name, url = url })
+		end
+	end
+
+	return remotes
+end
+
+--- Open a PR/MR on the remote for a given bookmark
+--- @param bookmark string The bookmark to create a PR for
+function M.open_pr_for_bookmark(bookmark)
+	-- Get all git remotes
+	local remotes = M.get_remotes()
+
+	if #remotes == 0 then
+		M.notify("No git remotes found", vim.log.levels.ERROR)
+		return
+	end
+
+	-- Helper function to open PR for a given remote URL
+	local function open_pr_with_url(raw_url)
+		-- Remove .git suffix if present
+		raw_url = raw_url:gsub("%.git$", "")
+
+		-- Convert SSH URL to HTTPS and detect platform
+		local repo_url, host
+		if raw_url:match("^git@") then
+			-- Extract host and path from git@host:path
+			host = raw_url:match("^git@([^:]+):")
+			local repo_path = raw_url:match("^git@[^:]+:(.+)$")
+			repo_url = "https://" .. host .. "/" .. repo_path
+		else
+			-- Extract host from https://host/path
+			host = raw_url:match("https?://([^/]+)")
+			repo_url = raw_url
+		end
+
+		-- Construct the appropriate PR/MR URL based on the platform
+		local encoded_bookmark = M.url_encode(bookmark)
+		local pr_url
+
+		if host:match("gitlab") then
+			-- GitLab merge request URL
+			pr_url = repo_url .. "/-/merge_requests/new?merge_request[source_branch]=" .. encoded_bookmark
+		elseif host:match("gitea") or host:match("forgejo") then
+			-- Gitea/Forgejo compare URL
+			pr_url = repo_url .. "/compare/" .. encoded_bookmark
+		else
+			-- Default to GitHub-style compare URL (works for GitHub, Gitea, etc.)
+			pr_url = repo_url .. "/compare/" .. encoded_bookmark .. "?expand=1"
+		end
+
+		-- Open the URL using xdg-open or the system's default browser
+		local open_cmd
+		if vim.fn.has("mac") == 1 then
+			open_cmd = "open"
+		elseif vim.fn.has("win32") == 1 then
+			open_cmd = "start"
+		else
+			open_cmd = "xdg-open"
+		end
+
+		vim.fn.jobstart({ open_cmd, pr_url }, { detach = true })
+		M.notify(string.format("Opening PR for bookmark `%s`", bookmark), vim.log.levels.INFO)
+	end
+
+	-- If only one remote, use it directly
+	if #remotes == 1 then
+		open_pr_with_url(remotes[1].url)
+		return
+	end
+
+	-- Multiple remotes: prompt user to select
+	vim.ui.select(remotes, {
+		prompt = "Select remote to open PR on: ",
+		format_item = function(item)
+			return item.name .. " (" .. item.url .. ")"
+		end,
+	}, function(choice)
+		if choice then
+			open_pr_with_url(choice.url)
+		end
+	end)
+end
+
 return M
+

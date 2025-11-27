@@ -29,10 +29,11 @@ This plugin aims to be something like vim-fugitive but for driving the jj-vcs CL
   - `bookmark create/delete` - Create and delete bookmarks
   - `undo` - Undo the last operation
   - `redo` - Redo the last undone operation
-- Diff commands
+  - `open_pr` - Open a PR/MR on your remote (GitHub, GitLab, Gitea, Forgejo, etc.)
+  - Diff commands
   - `:Jdiff [revision]` - Vertical split diff against a jj revision
   - `:Jhdiff [revision]` - Horizontal split diff
-- Picker for for [Snacks.nvim](https://github.com/folke/snacks.nvim)
+  - Picker for for [Snacks.nvim](https://github.com/folke/snacks.nvim)
   - `jj status` Displays the current changes diffs
   - `jj file_history` Displays a buffer's history changes and allows to edit it's change (including immutable changes)
 
@@ -82,6 +83,19 @@ You can fetch and push directly from the log buffer:
 - `<S-p>` - Push all changes to remote
 - `p` - Push bookmark of revision under cursor to remote
 
+### Open a PR/MR from the log buffer
+
+- `o` - Open a PR/MR for the revision under cursor
+- `<S-o>` - Select a bookmark from all available bookmarks and open a PR/MR
+
+The plugin automatically:
+
+- Extracts the bookmark from the revision
+- Detects your git platform (GitHub, GitLab, Gitea, Forgejo, etc.)
+- Constructs the appropriate PR/MR URL
+- Handles both HTTPS and SSH remote URLs
+- Prompts you to select a remote if you have multiple
+
 ### Open a changed file
 
 Just press enter to open the a file from the `status` output in your current window.
@@ -92,6 +106,14 @@ Just press enter to open the a file from the `status` output in your current win
 Press `<S-x>` on a file from the `status` output and that's it, it's restored.
 
 ![Restore-status](https://github.com/NicolasGB/jj.nvim/raw/main/assets/x-status.gif)
+
+### Open a PR/MR on your remote
+
+Press `p` on a change in the log buffer to open a PR/MR on your remote (GitHub, GitLab, Gitea, Forgejo, etc.).
+
+The plugin automatically detects your git platform and constructs the appropriate PR URL. If you have multiple remotes, you'll be prompted to select which one to use. Works with both HTTPS and SSH URLs.
+
+**This is a jj.nvim exclusive feature** - the ability to seamlessly bridge from your Neovim jj workflow directly to your remote platform's PR/MR interface.
 
 ## Installation
 
@@ -118,6 +140,8 @@ The plugin provides a `:J` command that accepts jj subcommands:
 :J push               " Push all changes
 :J push main         " Push only main bookmark
 :J fetch             " Fetch from remote
+:J open_pr           " Open PR for current change's bookmark
+:J open_pr --list    " Select bookmark from all and open PR
 :J # This will use your defined default command
 :J <your-alias>
 ```
@@ -197,8 +221,10 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
         redo = "<S-r>",                     -- Redo last undone operation
         abandon = "a",                      -- Abandon revision under cursor
         fetch = "f",                        -- Fetch from remote
-        push = "p",                     -- Push bookmark of revision under cursor
-        push_all = "<S-p>",                     -- Push all changes to remote
+        push = "p",                         -- Push bookmark of revision under cursor
+        push_all = "<S-p>",                 -- Push all changes to remote
+        open_pr = "o",                      -- Open PR/MR for revision under cursor
+        open_pr_list = "<S-o>",             -- Open PR/MR by selecting from all bookmarks
       },
       -- Status buffer keymaps (set to nil to disable)
       status = {
@@ -333,6 +359,21 @@ cmd.push({ bookmark = "main" }) -- Push only main bookmark
 cmd.push({ bookmark = "feature" }) -- Push only feature bookmark
 ```
 
+### Open PR/MR Command Options
+
+The `open_pr` function accepts an options table:
+
+```lua
+local cmd = require("jj.cmd")
+cmd.open_pr({
+  list_bookmarks = false    -- Whether to select from all bookmarks (default: false, uses current revision)
+})
+
+-- Examples:
+cmd.open_pr()                          -- Open PR for current change's bookmark
+cmd.open_pr({ list_bookmarks = true }) -- Select bookmark from all and open PR
+```
+
 ### Diff Split Views
 
 Use the `diff` module for opening splits:
@@ -409,6 +450,11 @@ diff.open_hsplit({ rev = "@-2" })   -- Horizontal split against @-2
     vim.keymap.set("n", "<leader>ja", cmd.abandon, { desc = "JJ abandon" })
     vim.keymap.set("n", "<leader>jf", cmd.fetch, { desc = "JJ fetch" })
     vim.keymap.set("n", "<leader>jp", cmd.push, { desc = "JJ push" })
+    vim.keymap.set("n", "<leader>jpr", cmd.open_pr, { desc = "JJ open PR from bookmark in current revision or parent" })
+    vim.keymap.set("n", "<leader>jpl", function()
+        cmd.open_pr { list_bookmarks = true }
+    end, { desc = "JJ open PR listing available bookmarks" })
+
 
     -- Diff commands
     local diff = require("jj.diff")
