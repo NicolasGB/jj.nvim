@@ -235,9 +235,13 @@ end
 function M.handle_log_push_all()
 	local cmd = "jj git push"
 	utils.notify("Pushing `ALL` bookmarks", vim.log.levels.INFO)
-	runner.execute_command_async(cmd, function()
-		utils.notify("Successfully pushed all to remote", vim.log.levels.INFO)
-		M.log({})
+	runner.execute_command_async(cmd, function(output)
+		if output and string.find(output, "Nothing changed%.") then
+			utils.notify("Nothing changed.", vim.log.levels.INFO)
+		else
+			utils.notify("Successfully pushed all to remote", vim.log.levels.INFO)
+			M.log({})
+		end
 	end, "Error pushing to remote")
 end
 
@@ -270,9 +274,13 @@ function M.handle_log_push_bookmark()
 	-- Push the bookmark from the revset found
 	local cmd = string.format("jj git push --bookmark %s -N", bookmark)
 	utils.notify(string.format("Pushing bookmark `%s`...", bookmark), vim.log.levels.INFO)
-	runner.execute_command_async(cmd, function()
-		utils.notify(string.format("Successfully pushed bookmark for `%s`", revset), vim.log.levels.INFO)
-		M.log({})
+	runner.execute_command_async(cmd, function(output)
+		if output and string.find(output, "Nothing changed%.") then
+			utils.notify("Nothing changed.", vim.log.levels.INFO)
+		else
+			utils.notify(string.format("Successfully pushed bookmark for `%s`", revset), vim.log.levels.INFO)
+			M.log({})
+		end
 	end, string.format("Error pushing bookmark for `%s`", revset))
 end
 
@@ -329,6 +337,48 @@ function M.handle_log_open_pr(list_bookmarks)
 
 	-- Open the PR using the utility function
 	utils.open_pr_for_bookmark(bookmark)
+end
+
+-- Create or move bookmark at revision under cursor in `jj log` buffer
+local function handle_log_bookmark()
+	local line = vim.api.nvim_get_current_line()
+	local revset = parser.get_rev_from_log_line(line)
+	if not revset or revset == "" then
+		return
+	end
+
+	-- Get all bookmarks
+	local bookmarks = utils.get_all_bookmarks()
+	table.insert(bookmarks, 1, "[Create new]")
+	-- Prompt to select or create a bookmark
+	vim.ui.select(bookmarks, {
+		prompt = "Select a bookmark to move or create a new: ",
+	}, function(choice)
+		if choice then
+			if choice == "[Create new]" then
+				-- Prompt for new bookmark name
+				vim.ui.input({ prompt = "Enter new bookmark name: " }, function(input)
+					if input and input ~= "" then
+						local cmd = string.format("jj bookmark create %s -r %s", input, revset)
+						runner.execute_command_async(cmd, function()
+							utils.notify(
+								string.format("Created bookmark `%s` at `%s`", input, revset),
+								vim.log.levels.INFO
+							)
+							M.log({})
+						end, "Error creating bookmark")
+					end
+				end)
+			else
+				-- Move existing bookmark to the revision
+				local cmd = string.format("jj bookmark move %s --to %s", choice, revset)
+				runner.execute_command_async(cmd, function()
+					utils.notify(string.format("Moved bookmark `%s` to `%s`", choice, revset), vim.log.levels.INFO)
+					M.log({})
+				end, "Error moving bookmark")
+			end
+		end
+	end)
 end
 
 --- Resolve log keymaps from config, filtering out nil values
@@ -413,6 +463,10 @@ function M.log_keymaps()
 			desc = "Open PR/MR by selecting from all bookmarks",
 			handler = M.handle_log_open_pr,
 			args = { true },
+		},
+		bookmark = {
+			desc = "Create or move bookmark at revision under cursor",
+			handler = handle_log_bookmark,
 		},
 	}
 
