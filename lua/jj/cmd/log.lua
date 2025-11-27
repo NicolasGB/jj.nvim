@@ -158,16 +158,45 @@ function M.handle_log_edit(ignore_immut, close_on_exit)
 	-- Try to execute cmd
 	local _, success = runner.execute_command(cmd, "Error editing change")
 	if not success then
+--- Handle abandon `jj log` buffer.
+--- If ignore_immut is true, adds --ignore-immutable to the command.
+--- Silently returns if no revision is found or the jj command fails.
+--- On success, notifies and refreshes the log buffer.
+--- @param ignore_immut? boolean Pass --ignore-immutable to jj abandon when true.
+function M.handle_log_abandon(ignore_immut)
+	local line = vim.api.nvim_get_current_line()
+	local revset = parser.get_rev_from_log_line(line)
+	if not revset or revset == "" then
 		return
 	end
 
 	-- Close the terminal buffer
+	-- If we found a revision, abandon it.
 	if close_on_exit then
+
 		utils.notify(string.format("Editing change: `%s`", revset), vim.log.levels.INFO)
+	-- Build command parts.
 		terminal.close_terminal_buffer()
+	local cmd_parts = { "jj", "abandon" }
 	else
+	if ignore_immut then
 		M.log({})
+		table.insert(cmd_parts, "--ignore-immutable")
 	end
+
+	table.insert(cmd_parts, revset)
+
+	-- Build cmd string
+	local cmd = table.concat(cmd_parts, " ")
+
+	-- Try to execute cmd
+	runner.execute_command_async(cmd, function()
+		utils.notify(string.format("Abandoned change: `%s`", revset), vim.log.levels.INFO)
+		M.log({})
+	end, function()
+		utils.notify("Error abandoning change", vim.log.levels.ERROR)
+	end)
+end
 end
 
 --- Resolve log keymaps from config, filtering out nil values
@@ -224,6 +253,13 @@ function M.log_keymaps()
 		redo = {
 			desc = "Redo last undone change",
 			handler = cmd.redo,
+		},
+		abandon = {
+			desc = "Abandon revision under cursor",
+			handler = M.handle_log_abandon,
+			-- As of now i'm only exposing the non ignore-immutable version of abandon in the keymaps
+			-- Maybe in the future we can add another keymap for that, if people request it
+			args = { false },
 		},
 	}
 

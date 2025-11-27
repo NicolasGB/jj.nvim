@@ -35,6 +35,7 @@ local status_module = require("jj.cmd.status")
 --- @field new_after_immutable? string|string[]
 --- @field undo? string|string[]
 --- @field redo? string|string[]
+--- @field abandon? string|string[]
 
 --- @class jj.cmd.status.keymaps
 --- @field open_file? string|string[] Keymaps for the status command buffer, setting a keymap to nil will disable it
@@ -86,6 +87,7 @@ M.config = {
 			new_after_immutable = "<S-n>",
 			undo = "<S-u>",
 			redo = "<S-r>",
+			abandon = "a",
 		},
 		status = {
 			open_file = "<CR>",
@@ -408,6 +410,29 @@ function M.redo()
 	end
 end
 
+-- Jujutsu abandon
+function M.abandon()
+	if not utils.ensure_jj() then
+		return
+	end
+
+	M.log({})
+	vim.ui.input({
+		prompt = "Change to abandon: ",
+		default = "",
+	}, function(input)
+		if input then
+			local cmd = string.format("jj abandon %s", input)
+			local _, success = runner.execute_command(cmd, "Error abandoning change")
+			if success then
+				utils.notify("Change abandoned successfully.", vim.log.levels.INFO)
+				M.log({})
+			end
+		else
+			terminal.close_terminal_buffer()
+		end
+	end)
+end
 --- @param args string|string[] jj command arguments
 function M.j(args)
 	if not utils.ensure_jj() then
