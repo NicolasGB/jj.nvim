@@ -83,10 +83,16 @@ You can fetch and push directly from the log buffer:
 - `<S-p>` - Push all changes to remote
 - `p` - Push bookmark of revision under cursor to remote
 
+### Manage bookmarks from the log buffer
+
+- `b` - Create a new bookmark or move an existing one to the revision under cursor
+  - Select from existing bookmarks to move them
+  - Or create a new bookmark at that revision
+
 ### Open a PR/MR from the log buffer
 
 - `o` - Open a PR/MR for the revision under cursor
-- `<S-o>` - Select a bookmark from all available bookmarks and open a PR/MR
+- `<S-o>` - Select a remote from all available bookmarks and open a PR/MR
 
 The plugin automatically:
 
@@ -142,6 +148,7 @@ The plugin provides a `:J` command that accepts jj subcommands:
 :J fetch             " Fetch from remote
 :J open_pr           " Open PR for current change's bookmark
 :J open_pr --list    " Select bookmark from all and open PR
+:J bookmark create/move/delete
 :J # This will use your defined default command
 :J <your-alias>
 ```
@@ -220,6 +227,7 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
         undo = "<S-u>",                     -- Undo last operation
         redo = "<S-r>",                     -- Redo last undone operation
         abandon = "a",                      -- Abandon revision under cursor
+        bookmark = "b",                     -- Create or move bookmark to revision under cursor
         fetch = "f",                        -- Fetch from remote
         push = "p",                         -- Push bookmark of revision under cursor
         push_all = "<S-p>",                 -- Push all changes to remote
@@ -359,6 +367,29 @@ cmd.push({ bookmark = "main" }) -- Push only main bookmark
 cmd.push({ bookmark = "feature" }) -- Push only feature bookmark
 ```
 
+### Bookmark Management Command Options
+
+The `bookmark_create` function creates a new bookmark:
+
+```lua
+local cmd = require("jj.cmd")
+cmd.bookmark_create()  -- Prompts for bookmark name, then prompts the revision
+```
+
+The `bookmark_move` function moves an existing bookmark to a new revision:
+
+```lua
+local cmd = require("jj.cmd")
+cmd.bookmark_move()  -- Select bookmark, then specify new revset
+```
+
+The `bookmark_delete` function deletes a bookmark:
+
+```lua
+local cmd = require("jj.cmd")
+cmd.bookmark_delete()  -- Select bookmark to delete
+```
+
 ### Open PR/MR Command Options
 
 The `open_pr` function accepts an options table:
@@ -445,8 +476,9 @@ diff.open_hsplit({ rev = "@-2" })   -- Horizontal split against @-2
     vim.keymap.set("n", "<leader>ju", cmd.undo, { desc = "JJ undo" })
     vim.keymap.set("n", "<leader>jy", cmd.redo, { desc = "JJ redo" })
     vim.keymap.set("n", "<leader>jr", cmd.rebase, { desc = "JJ rebase" })
-    vim.keymap.set("n", "<leader>jb", cmd.bookmark_create, { desc = "JJ bookmark create" })
-    vim.keymap.set("n", "<leader>jB", cmd.bookmark_delete, { desc = "JJ bookmark delete" })
+    vim.keymap.set("n", "<leader>jbc", cmd.bookmark_create, { desc = "JJ bookmark create" })
+    vim.keymap.set("n", "<leader>jbd", cmd.bookmark_delete, { desc = "JJ bookmark delete" })
+    vim.keymap.set("n", "<leader>jbm", cmd.bookmark_move, { desc = "JJ bookmark move" })
     vim.keymap.set("n", "<leader>ja", cmd.abandon, { desc = "JJ abandon" })
     vim.keymap.set("n", "<leader>jf", cmd.fetch, { desc = "JJ fetch" })
     vim.keymap.set("n", "<leader>jp", cmd.push, { desc = "JJ push" })

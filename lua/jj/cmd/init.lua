@@ -41,6 +41,7 @@ local status_module = require("jj.cmd.status")
 --- @field push? string|string[]
 --- @field open_pr? string|string[]
 --- @field open_pr_list? string|string[]
+--- @field bookmark? string|string[]
 
 --- @class jj.cmd.status.keymaps
 --- @field open_file? string|string[] Keymaps for the status command buffer, setting a keymap to nil will disable it
@@ -104,6 +105,7 @@ M.config = {
 			push = "p",
 			open_pr = "o",
 			open_pr_list = "<S-o>",
+			bookmark = "b",
 		},
 		status = {
 			open_file = "<CR>",
@@ -356,11 +358,60 @@ function M.bookmark_create()
 		prompt = "Bookmark name: ",
 	}, function(input)
 		if input then
-			local cmd = string.format("jj b c %s", input)
-			runner.execute_command_async(cmd, function()
-				utils.notify(string.format("Bookmark `%s` created successfully for @", input), vim.log.levels.INFO)
-				M.log({})
-			end, "Error creating bookmark")
+			-- Get the revset
+			vim.ui.input({
+				prompt = "Revset (default: @): ",
+				default = "@",
+			}, function(revset)
+				revset = revset or "@"
+				local cmd = string.format("jj b c %s %s", input, revset)
+				runner.execute_command_async(cmd, function()
+					utils.notify(
+						string.format("Bookmark `%s` created successfully for %s", input, revset),
+						vim.log.levels.INFO
+					)
+					M.log({})
+				end, "Error creating bookmark")
+			end)
+		else
+			terminal.close_terminal_buffer()
+		end
+	end)
+end
+
+-- Jujutsu bookmark move
+function M.bookmark_move()
+	if not utils.ensure_jj() then
+		return
+	end
+	M.log({})
+	local bookmarks = utils.get_all_bookmarks()
+	if #bookmarks == 0 then
+		utils.notify("No bookmarks found to move", vim.log.levels.ERROR)
+		return
+	end
+
+	vim.ui.select(bookmarks, {
+		prompt = "Select bookmark to move: ",
+	}, function(choice)
+		if choice then
+			vim.ui.input({
+				prompt = "New revset for bookmark '" .. choice .. "': ",
+				default = "@",
+			}, function(revset)
+				if revset then
+					local cmd = string.format("jj b m %s --to %s", choice, revset)
+					runner.execute_command_async(cmd, function()
+						utils.notify(
+							string.format("Bookmark `%s` moved successfully to %s", choice, revset),
+							vim.log.levels.INFO
+						)
+						M.log({})
+					end, "Error moving bookmark")
+				else
+					terminal.close_terminal_buffer()
+				end
+			end)
 		else
 			terminal.close_terminal_buffer()
 		end
@@ -663,6 +714,17 @@ function M.j(args)
 				M.open_pr({ list_bookmarks = true })
 			else
 				M.open_pr()
+			end
+		end,
+		bookmark = function()
+			if remaining_args[1] == "create" or remaining_args[1] == "c" then
+				M.bookmark_create()
+			elseif remaining_args[1] == "move" or remaining_args[1] == "m" then
+				M.bookmark_move()
+			elseif remaining_args[1] == "delete" or remaining_args[1] == "d" then
+				M.bookmark_delete()
+			else
+				terminal.run(cmd, M.terminal_keymaps())
 			end
 		end,
 	}
