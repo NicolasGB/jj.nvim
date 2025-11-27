@@ -108,9 +108,11 @@ end
 ---- Notify function to display messages with a title
 --- @param message string The message to display
 --- @param level? number The log level (default: INFO)
-function M.notify(message, level)
+--- @param timeout number? The timeout duration in milliseconds (default: 3000)
+function M.notify(message, level, timeout)
 	level = level or vim.log.levels.INFO
-	vim.notify(message, level, { title = "JJ", timeout = 3000 })
+	timeout = timeout or 3000
+	vim.notify(message, level, { title = "JJ", timeout = timeout })
 end
 
 return M
