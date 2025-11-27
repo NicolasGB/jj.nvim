@@ -124,13 +124,13 @@ function M.url_encode(str)
 	end))
 end
 
---- Get all bookmarks in the repository
+--- Get all bookmarks in the repository, filters out deleted bookmarks
 --- @return string[] List of bookmarks, or empty list if none found
 function M.get_all_bookmarks()
 	-- Use a custom template to output just the bookmark names, one per line
 	-- This is more reliable than parsing the default output format
 	local bookmarks_output, success = runner.execute_command(
-		[[jj bookmark list -T 'if(!name.contains("@"), name ++ "\n")']],
+		[[jj bookmark list -T 'if(!self.remote(), name ++ if(!self.present(), " (deleted)", "") ++ "\n")']],
 		"Failed to get bookmarks",
 		nil,
 		true
@@ -146,8 +146,11 @@ function M.get_all_bookmarks()
 	for line in bookmarks_output:gmatch("[^\n]+") do
 		local bookmark = vim.trim(line)
 		if bookmark ~= "" and not seen[bookmark] then
-			table.insert(bookmarks, bookmark)
-			seen[bookmark] = true
+			-- Skip bookmarks containing "Hint:" or "(deleted)"
+			if not bookmark:match("Hint:") and not bookmark:match("%(deleted%)") then
+				table.insert(bookmarks, bookmark)
+				seen[bookmark] = true
+			end
 		end
 	end
 
@@ -254,4 +257,3 @@ function M.open_pr_for_bookmark(bookmark)
 end
 
 return M
-
