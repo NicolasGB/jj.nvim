@@ -179,8 +179,10 @@ function M.run_floating(cmd, keymaps)
 		end,
 		on_exit = function(_, _) --[[ exit_code ]]
 			vim.schedule(function()
-				buffer.set_modifiable(state.floating_buf, false)
-				buffer.stop_insert(state.floating_buf)
+				if state.floating_buf and vim.api.nvim_buf_is_valid(state.floating_buf) then
+					buffer.set_modifiable(state.floating_buf, false)
+					buffer.stop_insert(state.floating_buf)
+				end
 			end)
 		end,
 	})
@@ -309,6 +311,10 @@ function M.run(cmd, keymaps)
 		end,
 		on_exit = function(_, exit_code)
 			vim.schedule(function()
+				-- Check buffer still exists (it might have been closed)
+				if not state.buf or not vim.api.nvim_buf_is_valid(state.buf) then
+					return
+				end
 				-- Store the subcommand on successful exit
 				if exit_code == 0 then
 					state.buf_cmd = cmd[2] or nil
