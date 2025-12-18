@@ -4,12 +4,14 @@ local M = {}
 --- @class jj.core.buffer.opts
 --- @field name? string Buffer name
 --- @field split? "horizontal"|"vertical"|"tab"|"current" Split type (default: "horizontal")
+--- @field direction? "left"|"right"|"top"|"bottom" Split direction (left/right for vertical, top/bottom for horizontal)
 --- @field size? number Split size in lines/columns
 --- @field modifiable? boolean Whether buffer is modifiable (default: true)
 --- @field filetype? string Filetype to set
 --- @field buftype? string Buffer type (e.g., "nofile", "acwrite", etc. - optional, defaults to scratch buffer)
 --- @field on_exit? fun(buf: number) Callback when buffer is closed
 --- @field keymaps? jj.core.buffer.keymap[] Keymaps to set on the buffer
+--- @field win_options? table Window-specific options to set
 
 --- @class jj.core.buffer.keymap
 --- @field modes? string|string[] Modes for the keymap (default: "n")
@@ -48,8 +50,14 @@ function M.create(opts)
 
 	-- Handle window/split creation
 	if opts.split == "vertical" then
+		local direction = opts.direction or "right"
 		local width = opts.size or math.floor(vim.o.columns / 2)
-		vim.cmd(string.format("vsplit | vertical resize %d", width))
+		if direction == "left" then
+			vim.cmd("leftabove vsplit")
+		else
+			vim.cmd("vsplit")
+		end
+		vim.cmd(string.format("vertical resize %d", width))
 		win = vim.api.nvim_get_current_win()
 	elseif opts.split == "tab" then
 		vim.cmd("tabnew")
@@ -57,8 +65,11 @@ function M.create(opts)
 	elseif opts.split == "current" then
 		win = vim.api.nvim_get_current_win()
 	else -- horizontal (default)
+		--TODO: do like in vertical
+		local direction = opts.direction or "bottom"
 		local height = opts.size or math.floor(vim.o.lines / 2)
-		vim.cmd(string.format("split | resize %d", height))
+		local move_cmd = direction == "top" and "wincmd k" or "wincmd j"
+		vim.cmd(string.format("split | resize %d | %s", height, move_cmd))
 		win = vim.api.nvim_get_current_win()
 	end
 
@@ -91,6 +102,13 @@ function M.create(opts)
 	-- Set keymaps if provided
 	if opts.keymaps then
 		M.set_keymaps(buf, opts.keymaps)
+	end
+
+	-- Set window options
+	if opts.win_options then
+		for option, value in pairs(opts.win_options) do
+			vim.wo[win][option] = value
+		end
 	end
 
 	-- Set up cleanup autocmd if on_exit callback provided
