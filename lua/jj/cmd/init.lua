@@ -43,6 +43,9 @@ local status_module = require("jj.cmd.status")
 --- @field open_pr_list? string|string[]
 --- @field bookmark? string|string[]
 
+--- @class jj.cmd.bookmark
+--- @field prefix? string Prefix to append when creating a bookmark
+
 --- @class jj.cmd.status.keymaps
 --- @field open_file? string|string[] Keymaps for the status command buffer, setting a keymap to nil will disable it
 --- @field restore_file? string|string[]
@@ -60,6 +63,7 @@ local status_module = require("jj.cmd.status")
 --- @class jj.cmd.opts
 --- @field describe? jj.cmd.describe
 --- @field log? jj.cmd.log
+--- @field bookmark? jj.cmd.bookmark
 --- @field keymaps? jj.cmd.keymaps Keymaps for the buffers containing the  of the commands
 ---
 --- @class jj.cmd.keymap_spec
@@ -87,6 +91,9 @@ M.config = {
 	},
 	log = {
 		close_on_edit = false,
+	},
+	bookmark = {
+		prefix = "",
 	},
 	keymaps = {
 		log = {
@@ -348,14 +355,19 @@ function M.rebase()
 end
 
 -- Jujutsu create bookmark
-function M.bookmark_create()
+--- @param opts? jj.cmd.bookmark The options for the bookmark command
+function M.bookmark_create(opts)
 	if not utils.ensure_jj() then
 		return
 	end
 
+	-- Try and get the bookmark from the params
+	local bookmark_prefix = (opts and opts.prefix) or (M.config.bookmark and M.config.bookmark.prefix) or ""
+
 	M.log({})
 	vim.ui.input({
 		prompt = "Bookmark name: ",
+		default = bookmark_prefix,
 	}, function(input)
 		if input then
 			-- Get the revset

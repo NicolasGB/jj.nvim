@@ -212,6 +212,11 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
       close_on_edit = false,                -- Close log buffer after editing a change
     },
 
+    -- Configure bookmark command
+    bookmark = {
+        prefix = ""
+    },
+
     -- Configure keymaps for command buffers
     keymaps = {
       -- Log buffer keymaps (set to nil to disable)
@@ -373,7 +378,20 @@ The `bookmark_create` function creates a new bookmark:
 
 ```lua
 local cmd = require("jj.cmd")
-cmd.bookmark_create()  -- Prompts for bookmark name, then prompts the revision
+cmd.bookmark_create()                               -- Prompts for bookmark name, then prompts the revision
+cmd.bookmark_create({ prefix = "feature/" })        -- Uses prefix for default bookmark name
+```
+
+You can also set a default bookmark prefix in the config:
+
+```lua
+require("jj").setup({
+  cmd = {
+    bookmark = {
+      prefix = "feature/"  -- Default prefix when creating bookmarks
+    }
+  }
+})
 ```
 
 The `bookmark_move` function moves an existing bookmark to a new revision:
@@ -441,6 +459,9 @@ diff.open_hsplit({ rev = "@-2" })   -- Horizontal split against @-2
               close = { "q", "<Esc>", "<C-c>" },
             }
           }
+        },
+        bookmark = {
+            prefix = "feat/"
         },
         keymaps = {
           log = {
