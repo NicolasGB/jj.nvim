@@ -25,11 +25,10 @@ local status_module = require("jj.cmd.status")
 --- @field close_on_edit? boolean Whether to close the log buffer when editing a change
 
 --- @class jj.cmd.log.keymaps
---- @field checkout? string|string[] Keymaps for the log command buffer, setting a keymap to nil will disable it
---- @field checkout_immutable? string|string[]
+--- @field edit? string|string[] Keymaps for the log command buffer, setting a keymap to nil will disable it
+--- @field edit_immutable? string|string[]
 --- @field describe? string|string[]
 --- @field diff? string|string[]
---- @field edit? string|string[]
 --- @field new? string|string[]
 --- @field new_after? string|string[]
 --- @field new_after_immutable? string|string[]

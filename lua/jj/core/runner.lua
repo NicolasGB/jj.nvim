@@ -9,7 +9,7 @@ local M = {}
 --- @return string|nil output The command output, or nil if failed
 --- @return boolean success Whether the command succeeded
 function M.execute_command(cmd, error_prefix, input, silent)
-	local output = vim.fn.system(cmd, input)
+	local output = vim.fn.system({ "sh", "-c", cmd }, input)
 	local success = vim.v.shell_error == 0
 
 	if not success then
@@ -38,7 +38,7 @@ end
 function M.execute_command_async(cmd, on_success, error_prefix, input, silent)
 	local output_lines = {}
 
-	local job_id = vim.fn.jobstart(cmd, {
+	local job_id = vim.fn.jobstart({ "sh", "-c", cmd }, {
 		on_stdout = function(_, data)
 			for _, line in ipairs(data) do
 				if line ~= "" then
