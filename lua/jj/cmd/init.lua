@@ -375,7 +375,7 @@ function M.bookmark_create(opts)
 				default = "@",
 			}, function(revset)
 				revset = revset or "@"
-				local cmd = string.format("jj b c %s %s", input, revset)
+				local cmd = string.format("jj b c %s -r %s", input, revset)
 				runner.execute_command_async(cmd, function()
 					utils.notify(
 						string.format("Bookmark `%s` created successfully for %s", input, revset),
