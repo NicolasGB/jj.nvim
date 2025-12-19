@@ -8,7 +8,7 @@ local utils = require("jj.utils")
 --- @param path string The file path
 --- @return table lines The file content
 local function get_file_content(rev, path)
-	local cmd = string.format("jj file show -r %s %s", rev, vim.fn.shellescape(path))
+	local cmd = string.format("jj file show -r %s %s", vim.fn.shellescape(rev), vim.fn.shellescape(path))
 	local content = vim.fn.system(cmd)
 	local success = vim.v.shell_error == 0
 	if success then
