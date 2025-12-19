@@ -115,7 +115,7 @@ Press `<S-x>` on a file from the `status` output and that's it, it's restored.
 
 ### Open a PR/MR on your remote
 
-Press `p` on a change in the log buffer to open a PR/MR on your remote (GitHub, GitLab, Gitea, Forgejo, etc.).
+Press `o` on a change in the log buffer to open a PR/MR on your remote (GitHub, GitLab, Gitea, Forgejo, etc.).
 
 The plugin automatically detects your git platform and constructs the appropriate PR URL. If you have multiple remotes, you'll be prompted to select which one to use. Works with both HTTPS and SSH URLs.
 
