@@ -65,11 +65,14 @@ function M.create(opts)
 	elseif opts.split == "current" then
 		win = vim.api.nvim_get_current_win()
 	else -- horizontal (default)
-		--TODO: do like in vertical
 		local direction = opts.direction or "bottom"
 		local height = opts.size or math.floor(vim.o.lines / 2)
-		local move_cmd = direction == "top" and "wincmd k" or "wincmd j"
-		vim.cmd(string.format("split | resize %d | %s", height, move_cmd))
+		if direction == "top" then
+			vim.cmd("topleft split")
+		else
+			vim.cmd("split")
+		end
+		vim.cmd(string.format("horizontal resize %s", height))
 		win = vim.api.nvim_get_current_win()
 	end
 
