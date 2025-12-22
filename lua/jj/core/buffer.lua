@@ -9,6 +9,7 @@ local M = {}
 --- @field modifiable? boolean Whether buffer is modifiable (default: true)
 --- @field filetype? string Filetype to set
 --- @field buftype? string Buffer type (e.g., "nofile", "acwrite", etc. - optional, defaults to scratch buffer)
+--- @field bufhidden? string Buffer hidden behavior (default: "hide")
 --- @field on_exit? fun(buf: number) Callback when buffer is closed
 --- @field keymaps? jj.core.buffer.keymap[] Keymaps to set on the buffer
 --- @field win_options? table Window-specific options to set
@@ -49,6 +50,7 @@ function M.create(opts)
 	local win = nil
 
 	-- Handle window/split creation
+	local buf
 	if opts.split == "vertical" then
 		local direction = opts.direction or "right"
 		local width = opts.size or math.floor(vim.o.columns / 2)
@@ -59,11 +61,17 @@ function M.create(opts)
 		end
 		vim.cmd(string.format("vertical resize %d", width))
 		win = vim.api.nvim_get_current_win()
+		buf = vim.api.nvim_create_buf(false, true)
+		vim.api.nvim_win_set_buf(win, buf)
 	elseif opts.split == "tab" then
 		vim.cmd("tabnew")
 		win = vim.api.nvim_get_current_win()
+		-- Use the buffer that tabnew created
+		buf = vim.api.nvim_get_current_buf()
 	elseif opts.split == "current" then
 		win = vim.api.nvim_get_current_win()
+		buf = vim.api.nvim_create_buf(false, true)
+		vim.api.nvim_win_set_buf(win, buf)
 	else -- horizontal (default)
 		local direction = opts.direction or "bottom"
 		local height = opts.size or math.floor(vim.o.lines / 2)
@@ -72,15 +80,9 @@ function M.create(opts)
 		else
 			vim.cmd("split")
 		end
-		vim.cmd(string.format("horizontal resize %s", height))
+		vim.cmd(string.format("horizontal resize %d", height))
 		win = vim.api.nvim_get_current_win()
-	end
-
-	-- Create buffer
-	local buf = vim.api.nvim_create_buf(false, true)
-
-	-- Set buffer in window if we created/got a window
-	if win then
+		buf = vim.api.nvim_create_buf(false, true)
 		vim.api.nvim_win_set_buf(win, buf)
 	end
 
@@ -96,6 +98,10 @@ function M.create(opts)
 	vim.bo[buf].modifiable = opts.modifiable ~= nil and opts.modifiable or true
 	vim.bo[buf].swapfile = false
 	vim.bo[buf].buflisted = false
+
+	if opts.bufhidden then
+		vim.bo[buf].bufhidden = opts.bufhidden
+	end
 
 	-- Set filetype if provided
 	if opts.filetype then

@@ -147,4 +147,35 @@ function M.get_rev_from_log_line(line)
 	return revset
 end
 
+--- Given an annotation line, parses and returns its components with positions
+--- @param line string The annotation line to parse
+--- @return table A table with {rev = {value = string|nil, pos = {start, end}|nil}, name = {value = string|nil, pos = {start, end}|nil}, date = {value = string|nil, pos = {start, end}|nil}}
+function M.parse_annotation_line(line)
+	local rev, name, date = line:match("^(%S+)%s*|%s*(.-)%s*|%s*(.+)$")
+
+	local result = {
+		rev = { value = rev },
+		name = { value = name },
+		date = { value = date },
+	}
+
+	if rev then
+		local id_start, id_end = line:find("^(%S+)")
+		result.rev.pos = { id_start, id_end }
+	end
+
+	if name then
+		local name_start = line:find("|") + 2
+		local name_end = line:find("|", name_start) - 2 -- Unsure about this one since it can have N whitespaces but we'll see
+		result.name.pos = { name_start, name_end + 1 }
+	end
+
+	if date then
+		local date_start, date_end = line:find("%d%d%d%d%-%d%d%-%d%d%s%d%d:%d%d:%d%d%s[%+%-]%d%d:%d%d")
+		result.date.pos = { date_start, date_end }
+	end
+
+	return result
+end
+
 return M
