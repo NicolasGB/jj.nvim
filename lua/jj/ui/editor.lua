@@ -124,6 +124,7 @@ function M.open_editor(initial_text, on_done, on_unload, keymaps)
 		name = "jujutsu:///DESCRIBE_EDITMSG",
 		split = "horizontal",
 		size = math.floor(vim.o.lines / 2),
+		filetype = "jjdescription",
 		buftype = "acwrite",
 		modifiable = true,
 		keymaps = keymaps,
