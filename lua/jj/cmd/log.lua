@@ -108,7 +108,7 @@ function M.handle_log_diff()
 	local revset = parser.get_rev_from_log_line(line)
 
 	if revset then
-		local cmd = string.format("jj show %s", revset)
+		local cmd = string.format("jj show --no-pager %s", revset)
 		terminal.run_floating(cmd, require("jj.cmd").floating_keymaps())
 	else
 		utils.notify("No valid revision found in the log line", vim.log.levels.ERROR)
