@@ -299,6 +299,16 @@ function M.set_modifiable(buf, modifiable)
 	vim.bo[buf].modifiable = modifiable
 end
 
+--- Set buffer as modified or not
+--- @param buf number Buffer handle
+--- @param modified boolean Whether buffer should be modifiable
+function M.set_modified(buf, modified)
+	if not vim.api.nvim_buf_is_valid(buf) then
+		return
+	end
+	vim.bo[buf].modified = modified
+end
+
 --- Stop insert mode if in the given buffer if the cursor is currently in that buffer
 --- @param buf number Buffer handle
 function M.stop_insert(buf)

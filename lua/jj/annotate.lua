@@ -132,7 +132,7 @@ local function handle_enter()
 	end
 
 	-- Create a new buffer with the filetype gitdiff and the output
-	local buf, _ = buffer.create({
+	local buf, win = buffer.create({
 		name = "jj-diff://" .. vim.fn.fnamemodify(filename, ":t") .. "//" .. parts.rev.value,
 		split = "tab",
 		filetype = "gitdiff",
@@ -142,6 +142,20 @@ local function handle_enter()
 	-- Set the lines
 	local lines = vim.split(output, "\n", { trimempty = true })
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+	buffer.set_modified(buf, false)
+
+	-- Autoclose the tab when leaving it to another buffer
+	vim.api.nvim_create_autocmd("BufLeave", {
+		buffer = buf,
+		callback = function()
+			-- Only close if actually leaving to a different buffer
+			if vim.api.nvim_get_current_buf() ~= buf then
+				if vim.api.nvim_win_is_valid(win) then
+					vim.cmd("tabclose")
+				end
+			end
+		end,
+	})
 end
 
 function M.file()
