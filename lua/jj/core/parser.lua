@@ -52,7 +52,7 @@ end
 
 --- Parse the current line in the jj status buffer to extract file information.
 --- Handles renamed files and regular status lines.
---- @return table|nil A table with {old_path = string, new_path = string, is_rename = boolean}, or nil if parsing fails
+--- @return {old_path : string, new_path : string, is_rename : boolean}|nil A table with , or nil if parsing fails
 function M.parse_file_info_from_status_line(line)
 	-- Handle renamed files: "R path/{old_name => new_name}" or "R old_path => new_path"
 	local rename_pattern_curly = "^R (.*)/{(.*) => ([^}]+)}"
@@ -145,6 +145,37 @@ function M.get_rev_from_log_line(line)
 		revset = line:match("^" .. allowed_prefix .. "(%w+)$")
 	end
 	return revset
+end
+
+--- Given an annotation line, parses and returns its components with positions
+--- @param line string The annotation line to parse
+--- @return table A table with {rev = {value = string|nil, pos = {start, end}|nil}, name = {value = string|nil, pos = {start, end}|nil}, date = {value = string|nil, pos = {start, end}|nil}}
+function M.parse_annotation_line(line)
+	local rev, name, date = line:match("^(%S+)%s*|%s*(.-)%s*|%s*(.+)$")
+
+	local result = {
+		rev = { value = rev },
+		name = { value = name },
+		date = { value = date },
+	}
+
+	if rev then
+		local id_start, id_end = line:find("^(%S+)")
+		result.rev.pos = { id_start, id_end }
+	end
+
+	if name then
+		local name_start = line:find("|") + 2
+		local name_end = line:find("|", name_start) - 2 -- Unsure about this one since it can have N whitespaces but we'll see
+		result.name.pos = { name_start, name_end + 1 }
+	end
+
+	if date then
+		local date_start, date_end = line:find("%d%d%d%d%-%d%d%-%d%d%s%d%d:%d%d:%d%d%s[%+%-]%d%d:%d%d")
+		result.date.pos = { date_start, date_end }
+	end
+
+	return result
 end
 
 return M

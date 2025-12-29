@@ -4,12 +4,15 @@ local M = {}
 --- @class jj.core.buffer.opts
 --- @field name? string Buffer name
 --- @field split? "horizontal"|"vertical"|"tab"|"current" Split type (default: "horizontal")
+--- @field direction? "left"|"right"|"top"|"bottom" Split direction (left/right for vertical, top/bottom for horizontal)
 --- @field size? number Split size in lines/columns
 --- @field modifiable? boolean Whether buffer is modifiable (default: true)
 --- @field filetype? string Filetype to set
 --- @field buftype? string Buffer type (e.g., "nofile", "acwrite", etc. - optional, defaults to scratch buffer)
+--- @field bufhidden? string Buffer hidden behavior (default: "hide")
 --- @field on_exit? fun(buf: number) Callback when buffer is closed
 --- @field keymaps? jj.core.buffer.keymap[] Keymaps to set on the buffer
+--- @field win_options? table Window-specific options to set
 
 --- @class jj.core.buffer.keymap
 --- @field modes? string|string[] Modes for the keymap (default: "n")
@@ -47,26 +50,39 @@ function M.create(opts)
 	local win = nil
 
 	-- Handle window/split creation
+	local buf
 	if opts.split == "vertical" then
+		local direction = opts.direction or "right"
 		local width = opts.size or math.floor(vim.o.columns / 2)
-		vim.cmd(string.format("vsplit | vertical resize %d", width))
+		if direction == "left" then
+			vim.cmd("leftabove vsplit")
+		else
+			vim.cmd("vsplit")
+		end
+		vim.cmd(string.format("vertical resize %d", width))
 		win = vim.api.nvim_get_current_win()
+		buf = vim.api.nvim_create_buf(false, true)
+		vim.api.nvim_win_set_buf(win, buf)
 	elseif opts.split == "tab" then
 		vim.cmd("tabnew")
 		win = vim.api.nvim_get_current_win()
+		-- Use the buffer that tabnew created
+		buf = vim.api.nvim_get_current_buf()
 	elseif opts.split == "current" then
 		win = vim.api.nvim_get_current_win()
+		buf = vim.api.nvim_create_buf(false, true)
+		vim.api.nvim_win_set_buf(win, buf)
 	else -- horizontal (default)
+		local direction = opts.direction or "bottom"
 		local height = opts.size or math.floor(vim.o.lines / 2)
-		vim.cmd(string.format("split | resize %d", height))
+		if direction == "top" then
+			vim.cmd("topleft split")
+		else
+			vim.cmd("split")
+		end
+		vim.cmd(string.format("horizontal resize %d", height))
 		win = vim.api.nvim_get_current_win()
-	end
-
-	-- Create buffer
-	local buf = vim.api.nvim_create_buf(false, true)
-
-	-- Set buffer in window if we created/got a window
-	if win then
+		buf = vim.api.nvim_create_buf(false, true)
 		vim.api.nvim_win_set_buf(win, buf)
 	end
 
@@ -83,6 +99,10 @@ function M.create(opts)
 	vim.bo[buf].swapfile = false
 	vim.bo[buf].buflisted = false
 
+	if opts.bufhidden then
+		vim.bo[buf].bufhidden = opts.bufhidden
+	end
+
 	-- Set filetype if provided
 	if opts.filetype then
 		vim.bo[buf].filetype = opts.filetype
@@ -91,6 +111,13 @@ function M.create(opts)
 	-- Set keymaps if provided
 	if opts.keymaps then
 		M.set_keymaps(buf, opts.keymaps)
+	end
+
+	-- Set window options
+	if opts.win_options then
+		for option, value in pairs(opts.win_options) do
+			vim.wo[win][option] = value
+		end
 	end
 
 	-- Set up cleanup autocmd if on_exit callback provided
@@ -209,6 +236,65 @@ function M.create_float(opts)
 	return buf, win
 end
 
+--- Creates a tooltip floating buffer
+--- @param opts {text: string, timeout?: number, title?: string} Tooltip options
+--- @return number buf Buffer handle
+--- @return number win Window handle
+function M.create_tooltip(opts)
+	opts = opts or {}
+
+	-- Calculate size based on text
+	local text = opts.text or ""
+	local lines = vim.split(text, "\n", { trimempty = false })
+	local max_width = 0
+	for _, line in ipairs(lines) do
+		max_width = math.max(max_width, vim.fn.strdisplaywidth(line))
+	end
+
+	-- Create float with tooltip defaults
+	local buf, win = M.create_float({
+		width = math.min(max_width + 2, vim.o.columns - 4),
+		height = #lines,
+		relative = "cursor",
+		row = 1,
+		col = 0,
+		style = "minimal",
+		border = "rounded",
+		title = opts.title,
+		modifiable = false,
+		buftype = "nofile",
+		bufhidden = "wipe",
+	})
+
+	-- Set the text
+	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+	vim.bo[buf].modified = false
+
+	-- Close when cursor moves in other windows
+	vim.api.nvim_create_autocmd("CursorMoved", {
+		callback = function()
+			if vim.api.nvim_win_is_valid(win) and vim.api.nvim_get_current_win() ~= win then
+				M.close(buf, true)
+			end
+		end,
+	})
+
+	-- Add Esc/q keymap to close tooltip
+	vim.keymap.set("n", "<Esc>", function()
+		if vim.api.nvim_buf_is_valid(buf) then
+			M.close(buf, true)
+		end
+	end, { buffer = buf, silent = true })
+
+	vim.keymap.set("n", "q", function()
+		if vim.api.nvim_buf_is_valid(buf) then
+			M.close(buf, true)
+		end
+	end, { buffer = buf, silent = true })
+
+	return buf, win
+end
+
 --- Close/wipe a buffer safely
 --- @param buf number Buffer handle
 --- @param force? boolean Force close (default: true)
@@ -270,6 +356,16 @@ function M.set_modifiable(buf, modifiable)
 		return
 	end
 	vim.bo[buf].modifiable = modifiable
+end
+
+--- Set buffer as modified or not
+--- @param buf number Buffer handle
+--- @param modified boolean Whether buffer should be modifiable
+function M.set_modified(buf, modified)
+	if not vim.api.nvim_buf_is_valid(buf) then
+		return
+	end
+	vim.bo[buf].modified = modified
 end
 
 --- Stop insert mode if in the given buffer if the cursor is currently in that buffer
