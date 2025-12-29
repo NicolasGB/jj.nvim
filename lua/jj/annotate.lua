@@ -5,6 +5,11 @@ local runner = require("jj.core.runner")
 local buffer = require("jj.core.buffer")
 local parser = require("jj.core.parser")
 
+--TODO: Maybe if annotating on the file is slow we could cache the annotations.
+
+-- Track the last annotation tooltip buffer
+local last_tooltip_buf = nil
+
 --- Sets the highlights for the blame bufer
 --- @param buf integer
 --- @param annotations string[]
@@ -20,7 +25,7 @@ local function setup_blame_highlighting(buf, annotations)
 	for i, line in ipairs(annotations) do
 		-- Parse:  "wmkslu | NicolasGB  | 2025-11-23"
 		local id_start, id_end, change_id = line:find("^(%S+)")
-		local name_start, name_end = line:find("|%s*(. -)%s*|")
+		local name_start, _ = line:find("|%s*(. -)%s*|")
 		local date_start, date_end = line:find("%d%d%d%d%-%d%d%-%d%d%s%d%d:%d%d:%d%d%s[%+%-]%d%d:%d%d")
 
 		if change_id then
@@ -284,7 +289,79 @@ function M.file()
 	})
 end
 
--- Annotates the current line
-function M.line() end
+--- Annotates the current line
+function M.line()
+	if not utils.ensure_jj() then
+		return
+	end
+
+	-- If tooltip exists and is valid, just focus it
+	if last_tooltip_buf and vim.api.nvim_buf_is_valid(last_tooltip_buf) then
+		local win = vim.fn.bufwinid(last_tooltip_buf)
+		if win ~= -1 then
+			vim.api.nvim_set_current_win(win)
+			return
+		end
+	end
+
+	local template =
+		'join(" | ", commit.change_id().short(6), commit.author().name(), commit.author().timestamp().format("%Y-%m-%d %H:%M:%S %Z")) ++ "\n"'
+
+	local filename = vim.api.nvim_buf_get_name(0)
+	if filename == "" then
+		utils.notify("Could not extract file from buffer", vim.log.levels.ERROR)
+		return
+	end
+
+	local line_num = vim.fn.line(".")
+	local raw_output, success = runner.execute_command(
+		string.format("jj file annotate %s -T '%s'", filename, template),
+		"Failed to annotate line"
+	)
+	if not success or not raw_output then
+		return
+	end
+
+	local all_annotations = vim.split(raw_output, "\n", { trimempty = true })
+	local annotation_line = all_annotations[line_num]
+	if not annotation_line or annotation_line == "" then
+		utils.notify("Could not get annotation for line", vim.log.levels.WARN)
+		return
+	end
+
+	-- Get the description of the current rev
+	local parsed_line = parser.parse_annotation_line(annotation_line)
+	if not parsed_line then
+		utils.notify("Could not extract revset from annotation line", vim.log.levels.ERROR)
+		return
+	end
+
+	local desc, ok = runner.execute_command(
+		string.format("jj log -r %s -T 'self.description()' --no-graph", parsed_line.rev.value),
+		"Failed getting description"
+	)
+	if not ok or not desc then
+		return
+	end
+
+	local text = vim.trim(annotation_line .. "\n" .. desc)
+	local buf, _ = buffer.create_tooltip({
+		text = text,
+	})
+
+	setup_blame_highlighting(buf, { text })
+
+	-- Store the buffer to enter it if re-executed
+	last_tooltip_buf = buf
+	-- Add autcmd to clean the cache when the buffer gets closed
+
+	vim.api.nvim_create_autocmd("BufWipeout", {
+		buffer = buf,
+		once = true,
+		callback = function()
+			last_tooltip_buf = nil
+		end,
+	})
+end
 
 return M

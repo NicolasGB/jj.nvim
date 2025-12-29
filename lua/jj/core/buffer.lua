@@ -270,15 +270,27 @@ function M.create_tooltip(opts)
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 	vim.bo[buf].modified = false
 
-	-- Auto-close after timeout (default 3000ms, 0 to disable)
-	local timeout = opts.timeout or 3000
-	if timeout > 0 then
-		vim.defer_fn(function()
-			if vim.api.nvim_buf_is_valid(buf) then
+	-- Close when cursor moves in other windows
+	vim.api.nvim_create_autocmd("CursorMoved", {
+		callback = function()
+			if vim.api.nvim_win_is_valid(win) and vim.api.nvim_get_current_win() ~= win then
 				M.close(buf, true)
 			end
-		end, timeout)
-	end
+		end,
+	})
+
+	-- Add Esc/q keymap to close tooltip
+	vim.keymap.set("n", "<Esc>", function()
+		if vim.api.nvim_buf_is_valid(buf) then
+			M.close(buf, true)
+		end
+	end, { buffer = buf, silent = true })
+
+	vim.keymap.set("n", "q", function()
+		if vim.api.nvim_buf_is_valid(buf) then
+			M.close(buf, true)
+		end
+	end, { buffer = buf, silent = true })
 
 	return buf, win
 end

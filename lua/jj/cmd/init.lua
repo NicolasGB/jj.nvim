@@ -742,6 +742,9 @@ function M.j(args)
 		annotate = function()
 			require("jj.annotate").file()
 		end,
+		annotate_line = function()
+			require("jj.annotate").line()
+		end,
 	}
 
 	if handlers[subcommand] then
@@ -787,6 +790,7 @@ function M.register_command()
 				"undo",
 				"open_pr",
 				"annotate",
+				"annotate_line",
 			}
 			local matches = {}
 			for _, cmd in ipairs(subcommands) do
