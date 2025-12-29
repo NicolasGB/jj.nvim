@@ -236,6 +236,53 @@ function M.create_float(opts)
 	return buf, win
 end
 
+--- Creates a tooltip floating buffer
+--- @param opts {text: string, timeout?: number, title?: string} Tooltip options
+--- @return number buf Buffer handle
+--- @return number win Window handle
+function M.create_tooltip(opts)
+	opts = opts or {}
+
+	-- Calculate size based on text
+	local text = opts.text or ""
+	local lines = vim.split(text, "\n", { trimempty = false })
+	local max_width = 0
+	for _, line in ipairs(lines) do
+		max_width = math.max(max_width, vim.fn.strdisplaywidth(line))
+	end
+
+	-- Create float with tooltip defaults
+	local buf, win = M.create_float({
+		width = math.min(max_width + 2, vim.o.columns - 4),
+		height = #lines,
+		relative = "cursor",
+		row = 1,
+		col = 0,
+		style = "minimal",
+		border = "rounded",
+		title = opts.title,
+		modifiable = false,
+		buftype = "nofile",
+		bufhidden = "wipe",
+	})
+
+	-- Set the text
+	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+	vim.bo[buf].modified = false
+
+	-- Auto-close after timeout (default 3000ms, 0 to disable)
+	local timeout = opts.timeout or 3000
+	if timeout > 0 then
+		vim.defer_fn(function()
+			if vim.api.nvim_buf_is_valid(buf) then
+				M.close(buf, true)
+			end
+		end, timeout)
+	end
+
+	return buf, win
+end
+
 --- Close/wipe a buffer safely
 --- @param buf number Buffer handle
 --- @param force? boolean Force close (default: true)

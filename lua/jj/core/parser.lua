@@ -52,7 +52,7 @@ end
 
 --- Parse the current line in the jj status buffer to extract file information.
 --- Handles renamed files and regular status lines.
---- @return table|nil A table with {old_path = string, new_path = string, is_rename = boolean}, or nil if parsing fails
+--- @return {old_path : string, new_path : string, is_rename : boolean}|nil A table with , or nil if parsing fails
 function M.parse_file_info_from_status_line(line)
 	-- Handle renamed files: "R path/{old_name => new_name}" or "R old_path => new_path"
 	local rename_pattern_curly = "^R (.*)/{(.*) => ([^}]+)}"

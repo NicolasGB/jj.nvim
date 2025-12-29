@@ -158,6 +158,7 @@ local function handle_enter()
 	})
 end
 
+--- Annotates the current file
 function M.file()
 	if not utils.ensure_jj() then
 		return
@@ -282,5 +283,8 @@ function M.file()
 		{ modes = { "n", "v" }, lhs = "<CR>", rhs = handle_enter, { desc = "Show diff" } },
 	})
 end
+
+-- Annotates the current line
+function M.line() end
 
 return M
