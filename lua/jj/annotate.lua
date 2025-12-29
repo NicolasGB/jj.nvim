@@ -344,7 +344,11 @@ function M.line()
 		return
 	end
 
-	local text = vim.trim(annotation_line .. "\n" .. desc)
+	local text = annotation_line
+	if desc ~= "" then
+		text = vim.trim(annotation_line .. ":" .. "\n" .. desc)
+	end
+
 	local buf, _ = buffer.create_tooltip({
 		text = text,
 	})

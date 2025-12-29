@@ -435,6 +435,43 @@ diff.open_hsplit()                  -- Horizontal split diff
 diff.open_hsplit({ rev = "@-2" })   -- Horizontal split against @-2
 ```
 
+### Annotations
+
+View file blame and line history using the annotate module. Can be invoked via command or Lua API.
+
+**Via `:J` command:**
+
+```sh
+:J annotate         " Show blame/annotations for entire file in vertical split
+:J annotate_line    " Show annotation for current line in floating buffer
+```
+
+**Via Lua API:**
+
+```lua
+local annotate = require("jj.annotate")
+annotate.file()    -- Show blame/annotations for entire file in vertical split
+annotate.line()    -- Show annotation for current line in a tooltip
+```
+
+The file annotation displays a vertical split showing:
+
+- Change ID (colored uniquely per commit)
+- Author name
+- Timestamp
+
+Press `<CR>` on any annotation line to view the diff for that change.
+
+The line annotation displays a floating tooltip with the current line's annotation and the commit description.
+
+Example keymaps:
+
+```lua
+local annotate = require("jj.annotate")
+vim.keymap.set("n", "<leader>ja", annotate.file, { desc = "JJ annotate file" })
+vim.keymap.set("n", "<leader>jA", annotate.line, { desc = "JJ annotate line" })
+```
+
 ## Example config
 
 ```lua
