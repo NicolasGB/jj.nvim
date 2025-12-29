@@ -30,7 +30,8 @@ This plugin aims to be something like vim-fugitive but for driving the jj-vcs CL
   - `undo` - Undo the last operation
   - `redo` - Redo the last undone operation
   - `open_pr` - Open a PR/MR on your remote (GitHub, GitLab, Gitea, Forgejo, etc.)
-- Diff commands
+  - `annotate` / `annotate_line` - View file blame and line history with change ID, author, and timestamp
+  - Diff commands
   - `:Jdiff [revision]` - Vertical split diff against a jj revision
   - `:Jhdiff [revision]` - Horizontal split diff
 - Picker for for [Snacks.nvim](https://github.com/folke/snacks.nvim)
