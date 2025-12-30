@@ -10,9 +10,7 @@ local buffer = require("jj.core.buffer")
 ---@field renamed? table Highlight settings for renamed lines
 
 M.highlights = {
-	added = { fg = "#3fb950", ctermfg = "Green" },
-	modified = { fg = "#56d4dd", ctermfg = "Cyan" },
-	deleted = { fg = "#f85149", ctermfg = "Red" },
+	-- Only init this one by default since it's not handled natively by neovim
 	renamed = { fg = "#d29922", ctermfg = "Yellow" },
 }
 M.highlights_initialized = false
@@ -23,11 +21,23 @@ local function init_highlights()
 		return
 	end
 
-	vim.api.nvim_set_hl(0, "JJComment", { link = "Comment" })
-	vim.api.nvim_set_hl(0, "JJAdded", M.highlights.added)
-	vim.api.nvim_set_hl(0, "JJModified", M.highlights.modified)
-	vim.api.nvim_set_hl(0, "JJDeleted", M.highlights.deleted)
-	vim.api.nvim_set_hl(0, "JJRenamed", M.highlights.renamed)
+	-- Override the highlight groups if user provided custom settings
+	if M.highlights.added then
+		vim.api.nvim_set_hl(0, "Added", M.highlights.added)
+	end
+
+	if M.highlights.modified then
+		vim.api.nvim_set_hl(0, "Changed", M.highlights.modified)
+	end
+
+	if M.highlights.deleted then
+		vim.api.nvim_set_hl(0, "Removed", M.highlights.deleted)
+	end
+
+	-- this one will always be executed since the default nvim highlight group does not exist for renames
+	if M.highlights.renamed then
+		vim.api.nvim_set_hl(0, "jjRenamed", M.highlights.renamed)
+	end
 
 	M.highlights_initialized = true
 end
@@ -73,26 +83,14 @@ function M.open_editor(initial_text, on_done, on_unload, keymaps)
 
 			-- First, check if line starts with JJ: and highlight it as comment
 			if line:match("^JJ:") then
-				-- Highlight the "JJ:" prefix as comment (first 3 characters)
-				vim.api.nvim_buf_set_extmark(buf, ns_id, line_idx, 0, {
-					end_col = 3,
-					hl_group = "JJComment",
-				})
-
-				-- Then check for status indicators and highlight the rest of the line
-				local status_pos = line:find("[MADRC] ", 4) -- Find status after "JJ:"
+				-- Then check for rename status indicator
+				local status_pos = line:find("[R] ", 4) -- Find status after "JJ:"
 				if status_pos then
 					local status = line:sub(status_pos, status_pos) -- Get the status character
 					local hl_group = nil
 
-					if status == "A" or status == "C" then
-						hl_group = "JJAdded"
-					elseif status == "M" then
-						hl_group = "JJModified"
-					elseif status == "D" then
-						hl_group = "JJDeleted"
-					elseif status == "R" then
-						hl_group = "JJRenamed"
+					if status == "R" then
+						hl_group = "jjRenamed"
 					end
 
 					if hl_group then
@@ -101,19 +99,7 @@ function M.open_editor(initial_text, on_done, on_unload, keymaps)
 							end_col = #line,
 							hl_group = hl_group,
 						})
-					else
-						-- No status, keep rest as comment
-						vim.api.nvim_buf_set_extmark(buf, ns_id, line_idx, 3, {
-							end_col = #line,
-							hl_group = "JJComment",
-						})
 					end
-				else
-					-- No status indicator, highlight rest of line as comment
-					vim.api.nvim_buf_set_extmark(buf, ns_id, line_idx, 3, {
-						end_col = #line,
-						hl_group = "JJComment",
-					})
 				end
 			end
 		end
