@@ -356,8 +356,9 @@ local function handle_log_bookmark()
 	}, function(choice)
 		if choice then
 			if choice == "[Create new]" then
+				local prefix = require("jj.cmd").config.bookmark.prefix or ""
 				-- Prompt for new bookmark name
-				vim.ui.input({ prompt = "Enter new bookmark name: " }, function(input)
+				vim.ui.input({ prompt = "Enter new bookmark name: ", default = prefix }, function(input)
 					if input and input ~= "" then
 						local cmd = string.format("jj bookmark create %s -r %s", input, revset)
 						runner.execute_command_async(cmd, function()
