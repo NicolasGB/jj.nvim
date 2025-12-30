@@ -340,7 +340,7 @@ function M.handle_log_open_pr(list_bookmarks)
 end
 
 -- Create or move bookmark at revision under cursor in `jj log` buffer
-local function handle_log_bookmark()
+function M.handle_log_bookmark()
 	local line = vim.api.nvim_get_current_line()
 	local revset = parser.get_rev_from_log_line(line)
 	if not revset or revset == "" then
@@ -467,7 +467,7 @@ function M.log_keymaps()
 		},
 		bookmark = {
 			desc = "Create or move bookmark at revision under cursor",
-			handler = handle_log_bookmark,
+			handler = M.handle_log_bookmark,
 		},
 	}
 
