@@ -110,15 +110,15 @@ local function log_history(file_path)
 		if not_empty and not root and not elided then
 			-- Pattern: [symbol] [rev] [author] [time] [commit_id] [description]
 			-- Example: @  w ngou0210 10 seconds ago e (no description set)
-			-- Split at the first space after the symbol
-			local first_space = line:find("%s")
-			if not first_space then
+			-- Split at the first double space which signifies the end of the symbols
+			local first_spaces = line:find("%s%s")
+			if not first_spaces then
 				goto continue
 			end
 			-- Split the line into parts
 			-- The first part is the symbol, the second part is the revision, the third part is the author,
-			local symbol = line:sub(1, first_space - 1)
-			local rest_of_line = line:sub(first_space + 1)
+			local symbol = line:sub(1, first_spaces - 1)
+			local rest_of_line = line:sub(first_spaces + 1)
 
 			local rev, author, time_part, commit_id, description =
 				rest_of_line:match("^%s*(%S+)%s+(%S+)%s+(.-)%s+([%w]+)%s+(.*)$")
