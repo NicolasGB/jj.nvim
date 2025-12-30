@@ -5,6 +5,7 @@ local utils = require("jj.utils")
 local runner = require("jj.core.runner")
 local parser = require("jj.core.parser")
 local terminal = require("jj.ui.terminal")
+
 local diff = require("jj.diff")
 local log_module = require("jj.cmd.log")
 local describe_module = require("jj.cmd.describe")
@@ -738,6 +739,12 @@ function M.j(args)
 				terminal.run(cmd, M.terminal_keymaps())
 			end
 		end,
+		annotate = function()
+			require("jj.annotate").file()
+		end,
+		annotate_line = function()
+			require("jj.annotate").line()
+		end,
 	}
 
 	if handlers[subcommand] then
@@ -782,6 +789,8 @@ function M.register_command()
 				"status",
 				"undo",
 				"open_pr",
+				"annotate",
+				"annotate_line",
 			}
 			local matches = {}
 			for _, cmd in ipairs(subcommands) do
