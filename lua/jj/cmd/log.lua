@@ -5,6 +5,7 @@ local utils = require("jj.utils")
 local runner = require("jj.core.runner")
 local parser = require("jj.core.parser")
 local terminal = require("jj.ui.terminal")
+local buffer = require("jj.core.buffer")
 
 --- @class jj.cmd.log_opts
 --- @field summary? boolean
@@ -422,15 +423,24 @@ function M.handle_log_rebase()
 		end
 
 		local lines = vim.api.nvim_buf_get_lines(terminal.state.buf, start_line - 1, end_line, false)
-		local revsets = {}
+		local revsets = parser.get_all_revsets(lines)
+		if not revsets or #revsets == 0 then
+			utils.notify("No valid revisions found in selected lines", vim.log.levels.ERROR)
+			return
+		end
 
-		-- TODO: Collect revsets from selected lines
-
-		vim.b.jj_rebase_revsets = table.concat(revsets, ",")
+		vim.b.jj_rebase_revsets = table.concat(revsets, " | ")
 		-- Transition to rebase mode
 
 		-- TODO: Set highlight for selected lines in rebase mode
+		utils.notify(
+			string.format("Rebasing bookmark(s) for revsets: `%s`", vim.b.jj_rebase_revsets),
+			vim.log.levels.INFO
+		)
 
+		-- Exit visual mode
+		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "n", true)
+		-- Transition to rebase mode
 		M.transition_mode("rebase")
 	end
 end
@@ -627,7 +637,7 @@ end
 --- @param mode "onto" | "after" | "before" Rebase mode
 function M.handle_rebase_execute(mode)
 	-- Get all revsets in the format "xx xy xz"
-	local revsets = vim.b.jj_rebase_revsets:gsub(",", " | ")
+	local revsets = vim.b.jj_rebase_revsets
 	local destination_revset = get_revset()
 	if not destination_revset or destination_revset == "" then
 		return
