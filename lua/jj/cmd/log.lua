@@ -17,6 +17,29 @@ local terminal = require("jj.ui.terminal")
 ---@type jj.cmd.log_opts
 local default_log_opts = { summary = false, reversed = false, no_graph = false, limit = 20, raw_flags = nil }
 
+--- Gets revset from current line or parent in case we're on a description node (QOL improvement).
+--- Attempts to parse the revision from the current line. If not found and we're not on
+--- the first line, falls back to parsing the previous line.
+--- @return string|nil The revset if found in either current line or previous line, nil otherwise
+local function get_revset()
+	-- Try to extract revset from current line
+	local line = vim.api.nvim_get_current_line()
+	local revset = parser.get_rev_from_log_line(line)
+
+	-- Fallback: check previous line if current line didn't yield a revset
+	-- This handles cases where cursor is on a wrapped/description line
+	if not revset then
+		local current_line_num = vim.api.nvim_win_get_cursor(0)[1]
+		if current_line_num > 1 then
+			-- Get the previous line (buf_get_lines is 0-indexed, so we subtract 2)
+			local prev_line = vim.api.nvim_buf_get_lines(0, current_line_num - 2, current_line_num - 1, false)[1]
+			revset = parser.get_rev_from_log_line(prev_line)
+		end
+	end
+
+	return revset
+end
+
 --- Jujutsu log
 --- @param opts? jj.cmd.log_opts Optional command options
 function M.log(opts)
@@ -62,8 +85,8 @@ end
 --- @param flag? 'after' Position relative to the current revision; nil to branch off.
 --- @param ignore_immut? boolean Pass --ignore-immutable to jj when true.
 function M.handle_log_new(flag, ignore_immut)
-	local line = vim.api.nvim_get_current_line()
-	local revset = parser.get_revset(line)
+	
+	local revset = get_revset()
 	if not revset or revset == "" then
 		return
 	end
@@ -104,8 +127,8 @@ end
 
 --- Handle diffing a log line
 function M.handle_log_diff()
-	local line = vim.api.nvim_get_current_line()
-	local revset = parser.get_revset(line)
+	
+	local revset = get_revset()
 
 	if revset then
 		local cmd = string.format("jj show --no-pager %s", revset)
@@ -117,8 +140,8 @@ end
 
 --- Handle describing a log line
 function M.handle_log_describe()
-	local line = vim.api.nvim_get_current_line()
-	local revset = parser.get_revset(line)
+	
+	local revset = get_revset()
 	if revset then
 		require("jj.cmd").describe(nil, revset)
 	else
@@ -133,8 +156,8 @@ end
 --- @param ignore_immut? boolean Pass --ignore-immutable to jj edit when true.
 --- @param close_on_exit? boolean Close the log buffer after editing when true.
 function M.handle_log_edit(ignore_immut, close_on_exit)
-	local line = vim.api.nvim_get_current_line()
-	local revset = parser.get_revset(line)
+	
+	local revset = get_revset()
 	if not revset or revset == "" then
 		return
 	end
@@ -170,8 +193,8 @@ end
 --- On success, notifies and refreshes the log buffer.
 --- @param ignore_immut? boolean Pass --ignore-immutable to jj abandon when true.
 function M.handle_log_abandon(ignore_immut)
-	local line = vim.api.nvim_get_current_line()
-	local revset = parser.get_revset(line)
+	
+	local revset = get_revset()
 	if not revset or revset == "" then
 		return
 	end
@@ -247,8 +270,8 @@ end
 
 --- Handle log pushing bookmark from current line in `jj log` buffer.
 function M.handle_log_push_bookmark()
-	local line = vim.api.nvim_get_current_line()
-	local revset = parser.get_revset(line)
+	
+	local revset = get_revset()
 	if not revset or revset == "" then
 		return
 	end
@@ -309,8 +332,7 @@ function M.handle_log_open_pr(list_bookmarks)
 	end
 
 	-- Default behavior: parse revision and open PR
-	local line = vim.api.nvim_get_current_line()
-	local revset = parser.get_revset(line)
+	local revset = get_revset()
 	if not revset or revset == "" then
 		return
 	end
@@ -341,8 +363,8 @@ end
 
 -- Create or move bookmark at revision under cursor in `jj log` buffer
 function M.handle_log_bookmark()
-	local line = vim.api.nvim_get_current_line()
-	local revset = parser.get_revset(line)
+	
+	local revset = get_revset()
 	if not revset or revset == "" then
 		return
 	end
