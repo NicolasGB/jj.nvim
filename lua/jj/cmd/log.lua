@@ -24,7 +24,7 @@ local default_log_opts = { summary = false, reversed = false, no_graph = false, 
 local function get_revset()
 	-- Try to extract revset from current line
 	local line = vim.api.nvim_get_current_line()
-	local revset = parser.get_rev_from_log_line(line)
+	local revset = parser.get_revset(line)
 
 	-- Fallback: check previous line if current line didn't yield a revset
 	-- This handles cases where cursor is on a wrapped/description line
@@ -33,7 +33,7 @@ local function get_revset()
 		if current_line_num > 1 then
 			-- Get the previous line (buf_get_lines is 0-indexed, so we subtract 2)
 			local prev_line = vim.api.nvim_buf_get_lines(0, current_line_num - 2, current_line_num - 1, false)[1]
-			revset = parser.get_rev_from_log_line(prev_line)
+			revset = parser.get_revset(prev_line)
 		end
 	end
 
@@ -85,7 +85,6 @@ end
 --- @param flag? 'after' Position relative to the current revision; nil to branch off.
 --- @param ignore_immut? boolean Pass --ignore-immutable to jj when true.
 function M.handle_log_new(flag, ignore_immut)
-	
 	local revset = get_revset()
 	if not revset or revset == "" then
 		return
@@ -127,7 +126,6 @@ end
 
 --- Handle diffing a log line
 function M.handle_log_diff()
-	
 	local revset = get_revset()
 
 	if revset then
@@ -140,7 +138,6 @@ end
 
 --- Handle describing a log line
 function M.handle_log_describe()
-	
 	local revset = get_revset()
 	if revset then
 		require("jj.cmd").describe(nil, revset)
@@ -156,7 +153,6 @@ end
 --- @param ignore_immut? boolean Pass --ignore-immutable to jj edit when true.
 --- @param close_on_exit? boolean Close the log buffer after editing when true.
 function M.handle_log_edit(ignore_immut, close_on_exit)
-	
 	local revset = get_revset()
 	if not revset or revset == "" then
 		return
@@ -193,7 +189,6 @@ end
 --- On success, notifies and refreshes the log buffer.
 --- @param ignore_immut? boolean Pass --ignore-immutable to jj abandon when true.
 function M.handle_log_abandon(ignore_immut)
-	
 	local revset = get_revset()
 	if not revset or revset == "" then
 		return
@@ -270,7 +265,6 @@ end
 
 --- Handle log pushing bookmark from current line in `jj log` buffer.
 function M.handle_log_push_bookmark()
-	
 	local revset = get_revset()
 	if not revset or revset == "" then
 		return
@@ -363,7 +357,6 @@ end
 
 -- Create or move bookmark at revision under cursor in `jj log` buffer
 function M.handle_log_bookmark()
-	
 	local revset = get_revset()
 	if not revset or revset == "" then
 		return
@@ -455,47 +448,57 @@ function M.log_keymaps()
 	local keymaps = cmd.config.keymaps.log or {}
 	local close_on_edit = cmd.config.log.close_on_edit or false
 
+	--- @type jj.cmd.keymap_specs
 	local specs = {
 		edit = {
 			desc = "Checkout revision under cursor",
 			handler = M.handle_log_edit,
 			args = { false, close_on_edit },
+			modes = { "n" },
 		},
 		edit_immutable = {
 			desc = "Checkout revision under cursor (ignores immutability)",
 			handler = M.handle_log_edit,
 			args = { true, close_on_edit },
+			modes = { "n" },
 		},
 		describe = {
 			desc = "Describe revision under cursor",
 			handler = M.handle_log_describe,
+			modes = { "n" },
 		},
 		diff = {
 			desc = "Diff revision under cursor",
 			handler = M.handle_log_diff,
+			modes = { "n" },
 		},
 		new = {
 			desc = "Create new change branching off revision under cursor",
 			handler = M.handle_log_new,
 			args = { nil, false },
+			modes = { "n" },
 		},
 		new_after = {
 			desc = "Create new change after revision under cursor",
 			handler = M.handle_log_new,
 			args = { "after", false },
+			modes = { "n" },
 		},
 		new_after_immutable = {
 			desc = "Create new change after revision under cursor (ignore immutable)",
 			handler = M.handle_log_new,
 			args = { "after", true },
+			modes = { "n" },
 		},
 		undo = {
 			desc = "Undo last change",
 			handler = cmd.undo,
+			modes = { "n" },
 		},
 		redo = {
 			desc = "Redo last undone change",
 			handler = cmd.redo,
+			modes = { "n" },
 		},
 		abandon = {
 			desc = "Abandon revision under cursor",
@@ -503,35 +506,43 @@ function M.log_keymaps()
 			-- As of now i'm only exposing the non ignore-immutable version of abandon in the keymaps
 			-- Maybe in the future we can add another keymap for that, if people request it
 			args = { false },
+			modes = { "n" },
 		},
 		fetch = {
 			desc = "Fetch from remote",
 			handler = M.handle_log_fetch,
+			modes = { "n" },
 		},
 		push_all = {
 			desc = "Push all to remote",
 			handler = M.handle_log_push_all,
+			modes = { "n" },
 		},
 		push = {
 			desc = "Push bookmark of revision under cursor to remote",
 			handler = M.handle_log_push_bookmark,
+			modes = { "n" },
 		},
 		open_pr = {
 			desc = "Open PR/MR for revision under cursor",
 			handler = M.handle_log_open_pr,
+			modes = { "n" },
 		},
 		open_pr_list = {
 			desc = "Open PR/MR by selecting from all bookmarks",
 			handler = M.handle_log_open_pr,
 			args = { true },
+			modes = { "n" },
 		},
 		bookmark = {
 			desc = "Create or move bookmark at revision under cursor",
 			handler = M.handle_log_bookmark,
+			modes = { "n" },
 		},
 		rebase = {
 			desc = "Rebase bookmark(s)",
 			handler = M.handle_log_rebase,
+			modes = { "n", "v" },
 		},
 	}
 
@@ -544,25 +555,30 @@ function M.rebase_keymaps()
 	local cmd = require("jj.cmd")
 	local keymaps = cmd.config.keymaps.log.rebase_mode or {}
 
+	--- @type jj.cmd.keymap_specs
 	local spec = {
 		onto = {
 			desc = "Rebase onto (-O) the revision under cursor",
 			handler = M.handle_rebase_execute,
 			args = { "onto" },
+			modes = { "n" },
 		},
 		after = {
 			desc = "Rebase revset(s) after (-A) the revision under cursor",
 			handler = M.handle_rebase_execute,
 			args = { "after" },
+			modes = { "n" },
 		},
 		before = {
 			desc = "Rebase revset(s) before (-B) the revision under cursor",
 			handler = M.handle_rebase_execute,
 			args = { "before" },
+			modes = { "n" },
 		},
 		exit_mode = {
 			desc = "Exit rebase to normal mode",
 			handler = M.handle_rebase_mode_exit,
+			modes = { "n" },
 		},
 	}
 
@@ -611,7 +627,7 @@ end
 --- @param mode "onto" | "after" | "before" Rebase mode
 function M.handle_rebase_execute(mode)
 	-- Get all revsets in the format "xx xy xz"
-	local revsets = vim.b.jj_rebase_revsets:gsub(",", " ")
+	local revsets = vim.b.jj_rebase_revsets:gsub(",", " | ")
 	local destination_revset = get_revset()
 	if not destination_revset or destination_revset == "" then
 		return
@@ -624,7 +640,7 @@ function M.handle_rebase_execute(mode)
 		mode_flat = "-B"
 	end
 
-	local cmd = string.format("jj rebase -r %s %s %s", revsets, mode_flat, destination_revset)
+	local cmd = string.format("jj rebase -r '%s' %s %s", revsets, mode_flat, destination_revset)
 	runner.execute_command_async(cmd, function()
 		utils.notify(
 			string.format("Rebased `%s` %s `%s` successfully", revsets, mode, destination_revset),

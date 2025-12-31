@@ -76,6 +76,7 @@ local status_module = require("jj.cmd.status")
 --- @class jj.cmd.keymap_spec
 --- @field desc string
 --- @field handler function|string
+--- @field modes string[]
 --- @field args? table
 
 --- @alias jj.cmd.keymap_specs table<string, jj.cmd.keymap_spec>
@@ -177,6 +178,7 @@ function M.resolve_keymaps_from_specs(cfg, specs)
 	local keymaps = {}
 
 	for key, spec in pairs(specs) do
+		-- Get the lhs of the keymap from the given config
 		local lhs = cfg[key]
 		if lhs and spec.handler then
 			-- Create the handler, wrapping it with args if provided
@@ -189,10 +191,13 @@ function M.resolve_keymaps_from_specs(cfg, specs)
 
 			if type(lhs) == "table" then
 				for _, key_lhs in ipairs(lhs) do
-					table.insert(keymaps, { modes = "n", lhs = key_lhs, rhs = handler, opts = { desc = spec.desc } })
+					table.insert(
+						keymaps,
+						{ modes = spec.modes, lhs = key_lhs, rhs = handler, opts = { desc = spec.desc } }
+					)
 				end
 			else
-				table.insert(keymaps, { modes = "n", lhs = lhs, rhs = handler, opts = { desc = spec.desc } })
+				table.insert(keymaps, { modes = spec.modes, lhs = lhs, rhs = handler, opts = { desc = spec.desc } })
 			end
 		end
 	end
