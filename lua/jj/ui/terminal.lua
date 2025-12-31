@@ -282,9 +282,6 @@ function M.run(cmd, keymaps)
 	end
 	state.chan = chan
 
-	-- Move cursor to top before output arrives
-	-- vim.api.nvim_win_set_cursor(win, { 1, 0 })
-
 	-- If the command is a string split it into parts
 	-- to store the subcommand later
 	if #cmd == 1 then
@@ -378,6 +375,44 @@ function M.run(cmd, keymaps)
 	vim.cmd("stopinsert")
 
 	return state.buf
+end
+
+--- Replace keymaps for normal terminal
+--- @param keymaps jj.core.buffer.keymap[] New keymaps to set
+function M.replace_terminal_keymaps(keymaps)
+	if not state.buf or not vim.api.nvim_buf_is_valid(state.buf) then
+		return
+	end
+
+	-- Remove previous keymaps if any
+	if vim.b[state.buf].jj_command_keymaps then
+		buffer.remove_keymaps(state.buf, vim.b[state.buf].jj_command_keymaps)
+		vim.b[state.buf].jj_command_keymaps = nil
+	end
+
+	-- Set new keymaps
+	if keymaps and #keymaps > 0 then
+		buffer.set_keymaps(state.buf, keymaps)
+		vim.b[state.buf].jj_command_keymaps = keymaps
+	end
+end
+
+--- Replace keymaps for floating terminal
+--- @param keymaps jj.core.buffer.keymap[] New keymaps to set
+function M.replace_floating_keymaps(keymaps)
+	if not state.floating_buf or not vim.api.nvim_buf_is_valid(state.floating_buf) then
+		return
+	end
+	-- Remove previous keymaps if any
+	if vim.b[state.floating_buf].jj_command_keymaps then
+		buffer.remove_keymaps(state.floating_buf, vim.b[state.floating_buf].jj_command_keymaps)
+		vim.b[state.floating_buf].jj_command_keymaps = nil
+	end
+	-- Set new keymaps
+	if keymaps and #keymaps > 0 then
+		buffer.set_keymaps(state.floating_buf, keymaps)
+		vim.b[state.floating_buf].jj_command_keymaps = keymaps
+	end
 end
 
 return M

@@ -42,6 +42,13 @@ local status_module = require("jj.cmd.status")
 --- @field open_pr? string|string[]
 --- @field open_pr_list? string|string[]
 --- @field bookmark? string|string[]
+--- @field rebase_mode? jj.cmd.rebase.keymaps
+
+--- @class jj.cmd.rebase.keymaps
+--- @field onto? string|string[]
+--- @field after? string|string[]
+--- @field before? string|string[]
+--- @field exit_mode? string|string[]
 
 --- @class jj.cmd.bookmark
 --- @field prefix? string Prefix to append when creating a bookmark
@@ -113,6 +120,13 @@ M.config = {
 			open_pr = "o",
 			open_pr_list = "<S-o>",
 			bookmark = "b",
+			rebase = "r",
+			rebase_mode = {
+				onto = { "<CR>", "o" },
+				after = { "a", "A" },
+				before = { "b", "B" },
+				exit_mode = { "<Esc>", "<C-c>" },
+			},
 		},
 		status = {
 			open_file = "<CR>",

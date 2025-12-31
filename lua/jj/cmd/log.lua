@@ -404,6 +404,44 @@ function M.handle_log_bookmark()
 	end)
 end
 
+--- Rebase bookmark(s)
+function M.handle_log_rebase()
+	local mode = vim.fn.mode()
+
+	-- If normal mode get the revset under cursor and enter rebase mode
+	if mode == "n" then
+		local revset = get_revset()
+		if not revset or revset == "" then
+			return
+		end
+		-- Store the revset in buffer variable for rebase mode
+		vim.b.jj_rebase_revsets = revset
+		-- TODO: Set highlight for selected lines in rebase mode
+		-- Transition to rebase mode
+		M.transition_mode("rebase")
+		utils.notify(string.format("Rebasing bookmark(s) for revset: `%s`", revset), vim.log.levels.INFO)
+	elseif mode == "v" or mode == "V" then
+		-- Get selected lines
+		local start_line = vim.fn.line("v")
+		local end_line = vim.fn.line(".")
+		if start_line > end_line then
+			start_line, end_line = end_line, start_line
+		end
+
+		local lines = vim.api.nvim_buf_get_lines(terminal.state.buf, start_line - 1, end_line, false)
+		local revsets = {}
+
+		-- TODO: Collect revsets from selected lines
+
+		vim.b.jj_rebase_revsets = table.concat(revsets, ",")
+		-- Transition to rebase mode
+
+		-- TODO: Set highlight for selected lines in rebase mode
+
+		M.transition_mode("rebase")
+	end
+end
+
 --- Resolve log keymaps from config, filtering out nil values
 --- @return jj.core.buffer.keymap[]
 function M.log_keymaps()
@@ -491,9 +529,113 @@ function M.log_keymaps()
 			desc = "Create or move bookmark at revision under cursor",
 			handler = M.handle_log_bookmark,
 		},
+		rebase = {
+			desc = "Rebase bookmark(s)",
+			handler = M.handle_log_rebase,
+		},
 	}
 
 	return cmd.merge_keymaps(cmd.resolve_keymaps_from_specs(keymaps, specs), cmd.terminal_keymaps())
+end
+
+--- Rebase mode keymaps
+--- @return jj.core.buffer.keymap[]
+function M.rebase_keymaps()
+	local cmd = require("jj.cmd")
+	local keymaps = cmd.config.keymaps.log.rebase_mode or {}
+
+	local spec = {
+		onto = {
+			desc = "Rebase onto (-O) the revision under cursor",
+			handler = M.handle_rebase_execute,
+			args = { "onto" },
+		},
+		after = {
+			desc = "Rebase revset(s) after (-A) the revision under cursor",
+			handler = M.handle_rebase_execute,
+			args = { "after" },
+		},
+		before = {
+			desc = "Rebase revset(s) before (-B) the revision under cursor",
+			handler = M.handle_rebase_execute,
+			args = { "before" },
+		},
+		exit_mode = {
+			desc = "Exit rebase to normal mode",
+			handler = M.handle_rebase_mode_exit,
+		},
+	}
+
+	return cmd.resolve_keymaps_from_specs(keymaps, spec)
+end
+
+--- Get keymaps for a specific mode
+--- @param mode string Mode name
+--- @return jj.core.buffer.keymap[]
+function M.get_keymaps_for_mode(mode)
+	if mode == "normal" then
+		return M.log_keymaps()
+	elseif mode == "rebase" then
+		return M.rebase_keymaps()
+	end
+	return {}
+end
+
+--- Transition between buffer modes by swapping keymaps
+--- @param target_mode string Target mode name (e.g., "normal", "rebase")
+function M.transition_mode(target_mode)
+	-- Get the mode keymaps
+	if target_mode == vim.b.jj_mode then
+		return
+	end
+
+	-- Get new keymaps for target mode
+	local new_keymaps = M.get_keymaps_for_mode(target_mode)
+	terminal.replace_terminal_keymaps(new_keymaps)
+
+	-- Update buffer mode state
+	vim.b.jj_mode = target_mode
+end
+
+--- Handle rebase mode exit
+function M.handle_rebase_mode_exit()
+	utils.notify("Rebase operation cancelled", vim.log.levels.WARN)
+	utils.notify(vim.inspect(vim.b.jj_rebase_revsets), vim.log.levels.WARN)
+	-- Clear stored revsets
+	vim.b.jj_rebase_revsets = nil
+
+	M.transition_mode("normal")
+end
+
+--- Handle rebase execution with mode
+--- @param mode "onto" | "after" | "before" Rebase mode
+function M.handle_rebase_execute(mode)
+	-- Get all revsets in the format "xx xy xz"
+	local revsets = vim.b.jj_rebase_revsets:gsub(",", " ")
+	local destination_revset = get_revset()
+	if not destination_revset or destination_revset == "" then
+		return
+	end
+
+	local mode_flat = "-o"
+	if mode == "after" then
+		mode_flat = "-A"
+	elseif mode == "before" then
+		mode_flat = "-B"
+	end
+
+	local cmd = string.format("jj rebase -r %s %s %s", revsets, mode_flat, destination_revset)
+	runner.execute_command_async(cmd, function()
+		utils.notify(
+			string.format("Rebased `%s` %s `%s` successfully", revsets, mode, destination_revset),
+			vim.log.levels.INFO
+		)
+		vim.b.jj_rebase_revsets = nil
+
+		M.transition_mode("normal")
+		-- Refresh log
+		M.log({})
+	end, "Error during rebase onto")
 end
 
 return M
