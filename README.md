@@ -90,6 +90,31 @@ You can fetch and push directly from the log buffer:
   - Select from existing bookmarks to move them
   - Or create a new bookmark at that revision
 
+### Rebase changes from the log buffer
+
+Enter an interactive rebase mode directly from the log buffer to rebase one or more changes:
+
+- `r` - Enter rebase mode targeting the revision under cursor (in normal mode) or selected revisions (in visual mode)
+
+Once in rebase mode, the interface highlights your selection and the current rebase destination:
+
+- Selected changes are highlighted in your configured `selected_hl` color (default: dark magenta)
+- The cursor position (potential rebase destination) is highlighted in your configured `targeted_hl` color (default: green)
+- Move the cursor to preview different rebase destinations with live highlighting
+
+From rebase mode, choose how to rebase:
+
+- `<CR>` or `o` - Rebase onto (`-o`) the revision under cursor
+- `a` or `A` - Rebase after (`-A`) the revision under cursor
+- `b` or `B` - Rebase before (`-B`) the revision under cursor
+- `<Esc>` or `<C-c>` - Exit rebase mode without making changes
+
+**Visual mode selection:** Select multiple revisions in visual mode before pressing `r` to rebase them all at once. The plugin extracts each selected revision and rebases them together.
+
+**Single revision:** In normal mode, place your cursor on a single revision and press `r` to rebase just that change.
+
+![Rebase-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/rebase.gif)
+
 ### Open a PR/MR from the log buffer
 
 - `o` - Open a PR/MR for the revision under cursor
@@ -103,6 +128,8 @@ The plugin automatically:
 - Handles both HTTPS and SSH remote URLs
 - Prompts you to select a remote if you have multiple
 
+**This is a jj.nvim exclusive feature** - the ability to seamlessly bridge from your Neovim jj workflow directly to your remote platform's PR/MR interface.
+
 ### Open a changed file
 
 Just press enter to open the a file from the `status` output in your current window.
@@ -113,14 +140,6 @@ Just press enter to open the a file from the `status` output in your current win
 Press `<S-x>` on a file from the `status` output and that's it, it's restored.
 
 ![Restore-status](https://github.com/NicolasGB/jj.nvim/raw/main/assets/x-status.gif)
-
-### Open a PR/MR on your remote
-
-Press `o` on a change in the log buffer to open a PR/MR on your remote (GitHub, GitLab, Gitea, Forgejo, etc.).
-
-The plugin automatically detects your git platform and constructs the appropriate PR URL. If you have multiple remotes, you'll be prompted to select which one to use. Works with both HTTPS and SSH URLs.
-
-**This is a jj.nvim exclusive feature** - the ability to seamlessly bridge from your Neovim jj workflow directly to your remote platform's PR/MR interface.
 
 ## Installation
 
@@ -210,7 +229,9 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
 
     -- Configure log command behavior
     log = {
-      close_on_edit = false,                -- Close log buffer after editing a change
+      close_on_edit = false,                                     -- Close log buffer after editing a change
+      selected_hl = { bg = "#3d2c52", ctermbg = "DarkMagenta" }, -- Highlight for selected changes when rebasing/squashing (squash not yet implemented)
+	  targeted_hl = { fg = "#5a9e6f", ctermfg = "Green" },       -- Highlight for targeted change when rebasing/squashing (squash not yet implemented)
     },
 
     -- Configure bookmark command
@@ -239,6 +260,13 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
         push_all = "<S-p>",                 -- Push all changes to remote
         open_pr = "o",                      -- Open PR/MR for revision under cursor
         open_pr_list = "<S-o>",             -- Open PR/MR by selecting from all bookmarks
+        rebase = "r",                       -- Enter rebase mode targeting revision under cursor or selected revisions
+        rebase_mode = {
+            onto = { "<CR>", "o" },           -- Select revision under cursor as rebase destination
+            after = { "a", "A" },             -- Rebase after revision under cursor
+            before = { "b", "B" },            -- Rebase before revision under cursor
+            exit_mode = { "<Esc>", "<C-c>" }, -- Exit rebase mode
+        },
       },
       -- Status buffer keymaps (set to nil to disable)
       status = {

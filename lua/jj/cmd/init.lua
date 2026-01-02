@@ -25,6 +25,10 @@ local status_module = require("jj.cmd.status")
 --- @class jj.cmd.log
 --- @field close_on_edit? boolean Whether to close the log buffer when editing a change
 
+--- @class jj.cmd.log.highlights Highlights for the log buffer
+--- @field selected? table Highlights for the selected revisions in log buffer (when rebasing/squashing)
+--- @field targeted? table Highlights for the targeted revision in log buffer (when rebasing/squashing)
+
 --- @class jj.cmd.log.keymaps
 --- @field edit? string|string[] Keymaps for the log command buffer, setting a keymap to nil will disable it
 --- @field edit_immutable? string|string[]
@@ -42,6 +46,13 @@ local status_module = require("jj.cmd.status")
 --- @field open_pr? string|string[]
 --- @field open_pr_list? string|string[]
 --- @field bookmark? string|string[]
+--- @field rebase_mode? jj.cmd.rebase.keymaps
+
+--- @class jj.cmd.rebase.keymaps
+--- @field onto? string|string[]
+--- @field after? string|string[]
+--- @field before? string|string[]
+--- @field exit_mode? string|string[]
 
 --- @class jj.cmd.bookmark
 --- @field prefix? string Prefix to append when creating a bookmark
@@ -69,6 +80,7 @@ local status_module = require("jj.cmd.status")
 --- @class jj.cmd.keymap_spec
 --- @field desc string
 --- @field handler function|string
+--- @field modes string[]
 --- @field args? table
 
 --- @alias jj.cmd.keymap_specs table<string, jj.cmd.keymap_spec>
@@ -113,6 +125,13 @@ M.config = {
 			open_pr = "o",
 			open_pr_list = "<S-o>",
 			bookmark = "b",
+			rebase = "r",
+			rebase_mode = {
+				onto = { "<CR>", "o" },
+				after = { "a", "A" },
+				before = { "b", "B" },
+				exit_mode = { "<Esc>", "<C-c>" },
+			},
 		},
 		status = {
 			open_file = "<CR>",
@@ -130,6 +149,8 @@ M.config = {
 --- @param opts jj.cmd.opts: Options to configure the cmd module
 function M.setup(opts)
 	M.config = vim.tbl_deep_extend("force", M.config, opts or {})
+
+	require("jj.cmd.log").init_log_highlights()
 end
 
 -- Reexport log function
@@ -163,6 +184,7 @@ function M.resolve_keymaps_from_specs(cfg, specs)
 	local keymaps = {}
 
 	for key, spec in pairs(specs) do
+		-- Get the lhs of the keymap from the given config
 		local lhs = cfg[key]
 		if lhs and spec.handler then
 			-- Create the handler, wrapping it with args if provided
@@ -175,10 +197,13 @@ function M.resolve_keymaps_from_specs(cfg, specs)
 
 			if type(lhs) == "table" then
 				for _, key_lhs in ipairs(lhs) do
-					table.insert(keymaps, { modes = "n", lhs = key_lhs, rhs = handler, opts = { desc = spec.desc } })
+					table.insert(
+						keymaps,
+						{ modes = spec.modes, lhs = key_lhs, rhs = handler, opts = { desc = spec.desc } }
+					)
 				end
 			else
-				table.insert(keymaps, { modes = "n", lhs = lhs, rhs = handler, opts = { desc = spec.desc } })
+				table.insert(keymaps, { modes = spec.modes, lhs = lhs, rhs = handler, opts = { desc = spec.desc } })
 			end
 		end
 	end
@@ -195,6 +220,7 @@ function M.terminal_keymaps()
 		close = {
 			desc = "Close buffer",
 			handler = terminal.close_terminal_buffer,
+			modes = { "n" },
 		},
 	})
 end
@@ -208,10 +234,12 @@ function M.floating_keymaps()
 		close = {
 			desc = "Close floating buffer",
 			handler = terminal.close_floating_buffer,
+			modes = { "n" },
 		},
 		hide = {
 			desc = "Hide floating buffer",
 			handler = terminal.hide_floating_buffer,
+			modes = { "n" },
 		},
 	})
 end

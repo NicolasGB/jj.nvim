@@ -9,16 +9,26 @@ local terminal = require("jj.ui.terminal")
 --- @field cmd? jj.cmd.opts Options for command module
 --- @field picker? jj.picker.config Options for picker module
 --- @field terminal? jj.ui.terminal.opts Options for the terminal
---- @field highlights? jj.ui.editor.highlights Highlight configuration for describe buffer
+--- @field highlights? jj.highlights Options for the highlights
 
+--- @class jj.highlights
+--- @field editor? jj.ui.editor.highlights Highlight configuration for describe buffer
+--- @field log? jj.cmd.log.highlights Highlight configuration for the log buffer
+
+---@type jj.Config
 M.config = {
-	-- Default configuration
-	--- @type jj.picker.config
 	picker = {
 		snacks = {},
 	},
-	--- @type jj.ui.editor.highlights Highlight configuration for describe buffer
-	highlights = {},
+	highlights = {
+		editor = {
+			renamed = { fg = "#d29922", ctermfg = "Yellow" },
+		},
+		log = {
+			selected = { bg = "#3d2c52", ctermbg = "DarkMagenta" },
+			targeted = { fg = "#5a9e6f", ctermfg = "Green" },
+		},
+	},
 }
 
 --- Setup the plugin
@@ -28,7 +38,7 @@ function M.setup(opts)
 
 	-- Setup for sub-modules
 	picker.setup(opts and opts.picker or {})
-	editor.setup({ highlights = M.config.highlights })
+	editor.setup({ highlights = M.config.highlights.editor })
 	cmd.setup(opts and opts.cmd or {})
 	terminal.setup(opts and opts.terminal or {})
 

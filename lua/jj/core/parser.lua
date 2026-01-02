@@ -112,7 +112,7 @@ end
 --- Extract revision ID from a jujutsu log line
 --- @param line string The log line to parse
 --- @return string|nil The revision ID if found, nil otherwise
-function M.get_rev_from_log_line(line)
+function M.get_revset(line)
 	-- Build pattern to match graph characters and symbols at start of line
 	-- Include: box-drawing chars, whitespace, jujutsu UTF-8 symbols, and ASCII markers
 	local graph_chars = "│┃┆┇┊┋╭╮╰╯├┤┬┴┼─└┘┌┐%s" -- box-drawing + whitespace
@@ -145,6 +145,21 @@ function M.get_rev_from_log_line(line)
 		revset = line:match("^" .. allowed_prefix .. "(%w+)$")
 	end
 	return revset
+end
+
+--- Given a string with N lines find all revsets in them
+--- @param lines string[] An array of lines to parse
+--- @return string[]|nil An array of revsets found, or nil if none found
+function M.get_all_revsets(lines)
+	local revsets = {}
+	for _, line in pairs(lines) do
+		local revset = M.get_revset(line)
+		if revset then
+			table.insert(revsets, revset)
+		end
+	end
+
+	return #revsets > 0 and revsets or nil
 end
 
 --- Given an annotation line, parses and returns its components with positions

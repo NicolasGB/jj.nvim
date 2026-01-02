@@ -6,6 +6,14 @@ local runner = require("jj.core.runner")
 local parser = require("jj.core.parser")
 local terminal = require("jj.ui.terminal")
 
+local log_selected_hl_group = "JJLogSelectedHlGroup"
+local log_selected_ns_id = vim.api.nvim_create_namespace(log_selected_hl_group)
+local log_rebase_target_hl_group = "JJLogRebaseTargetHlGroup"
+local log_rebase_target_ns_id = vim.api.nvim_create_namespace(log_rebase_target_hl_group)
+local rebase_mode_autocmd_id = nil
+local last_rebase_target_line = nil
+local HIGHLIGHT_RANGE = 2 -- Revision line + description line
+
 --- @class jj.cmd.log_opts
 --- @field summary? boolean
 --- @field reversed? boolean
@@ -16,6 +24,147 @@ local terminal = require("jj.ui.terminal")
 
 ---@type jj.cmd.log_opts
 local default_log_opts = { summary = false, reversed = false, no_graph = false, limit = 20, raw_flags = nil }
+
+--- Init log highlight groups
+function M.init_log_highlights()
+	local cfg = require("jj").config.highlights.log
+	if not cfg then
+		return
+	end
+
+	vim.api.nvim_set_hl(0, log_selected_hl_group, cfg.selected)
+	vim.api.nvim_set_hl(0, log_rebase_target_hl_group, cfg.targeted)
+end
+
+--- Find the revision line under cursor, handling description lines
+local function get_revset_line()
+	local buf = terminal.state.buf or vim.api.nvim_get_current_buf()
+	local current_line_num = vim.api.nvim_win_get_cursor(0)[1] - 1
+	local line = vim.api.nvim_get_current_line()
+	local revset_line = current_line_num
+
+	if not parser.get_revset(line) and current_line_num > 0 then
+		revset_line = current_line_num - 1
+		line = vim.api.nvim_buf_get_lines(buf, revset_line, revset_line + 1, false)[1]
+	end
+
+	return revset_line, parser.get_revset(line)
+end
+
+--- Gets revset from current line or parent in case we're on a description.
+--- @return string|nil The revset if found in either current line or previous line, nil otherwise
+local function get_revset()
+	local _, rev = get_revset_line()
+	return rev
+end
+
+--- If a line is selected in visual mode, get the all the needed marks
+--- from selected lines to highlight them during operations like rebase.
+--- Otherwise, get the mark from the current line.
+--- @return {line: uinteger, col: uinteger, end_line: uinteger, end_col: uinteger}[]|nil List of marks
+local function get_highlight_marks()
+	local marks = {}
+	local mode = vim.fn.mode()
+	local buf = terminal.state.buf
+	if not buf then
+		utils.notify("No open log buffer", vim.log.levels.ERROR)
+		return
+	end
+
+	if mode == "v" or mode == "V" then
+		-- Visual mode: get selected lines
+		local start_line = vim.fn.line("v")
+		local end_line = vim.fn.line(".")
+		if start_line > end_line then
+			start_line, end_line = end_line, start_line
+		end
+
+		local lines = vim.api.nvim_buf_get_lines(buf, start_line - 1, end_line, false)
+		for i, line in ipairs(lines) do
+			-- If the current line has a revset highlight it with the following one (which is the description)
+			if parser.get_revset(line) then
+				-- Compute the actual line number
+				local mark_lstart = start_line + i - 2 -- marks expect 0 api since, start-line and ipars are both 1 indexed we need to remove 2 to transform to 0-index (For future self)
+				local mark_lend = start_line + i - 1 -- We highlight start + description so we actually want to stop at the next line included
+				local next_line = lines[i + 1] -- Get the next line contents
+				if not next_line then
+					-- Only fetch if it's the last selected line and has a revset
+					local next_line_num = start_line + i
+					next_line = vim.api.nvim_buf_get_lines(buf, next_line_num - 1, next_line_num, false)[1] or ""
+				end
+
+				table.insert(marks, {
+					line = mark_lstart,
+					col = 0, -- Maybe at some  point will make the parser say where the data starts but one thing at the time
+					end_line = mark_lend,
+					end_col = #next_line,
+				})
+			end
+		end
+	else
+		--
+		-- Normal mode: current or previous line
+		local revset_line, rev = get_revset_line()
+		if rev then
+			-- Get the next line (description)
+			local next_line = vim.api.nvim_buf_get_lines(buf, revset_line + 1, revset_line + 2, false)[1] or ""
+			table.insert(marks, {
+				line = revset_line,
+				col = 0,
+				end_line = revset_line + 1,
+				end_col = #next_line,
+			})
+		end
+	end
+
+	return marks
+end
+
+--- Apply highlight to target revision
+local function apply_target_highlight(buf, revset_line, hl_group)
+	vim.api.nvim_buf_set_extmark(
+		buf,
+		log_rebase_target_ns_id,
+		revset_line,
+		0,
+		{ end_line = revset_line + HIGHLIGHT_RANGE, hl_group = hl_group }
+	)
+	last_rebase_target_line = revset_line
+end
+
+--- Clear previous target highlight
+local function clear_target_highlight(buf)
+	if last_rebase_target_line ~= nil then
+		vim.api.nvim_buf_clear_namespace(
+			buf,
+			log_rebase_target_ns_id,
+			last_rebase_target_line,
+			last_rebase_target_line + HIGHLIGHT_RANGE
+		)
+	end
+	last_rebase_target_line = nil
+end
+
+--- Update rebase target highlight on cursor movement
+local function update_rebase_target_highlight()
+	local buf = terminal.state.buf
+	if not buf then
+		return
+	end
+
+	clear_target_highlight(buf)
+
+	local revset_line, rev = get_revset_line()
+	if not rev then
+		return
+	end
+
+	-- Only highlight if rev is not in selection
+	local is_in_selection = vim.b.jj_rebase_revsets and string.find(vim.b.jj_rebase_revsets, rev, 1, true)
+	if not is_in_selection then
+		apply_target_highlight(buf, revset_line, log_rebase_target_hl_group)
+	end
+end
 
 --- Jujutsu log
 --- @param opts? jj.cmd.log_opts Optional command options
@@ -62,8 +211,7 @@ end
 --- @param flag? 'after' Position relative to the current revision; nil to branch off.
 --- @param ignore_immut? boolean Pass --ignore-immutable to jj when true.
 function M.handle_log_new(flag, ignore_immut)
-	local line = vim.api.nvim_get_current_line()
-	local revset = parser.get_rev_from_log_line(line)
+	local revset = get_revset()
 	if not revset or revset == "" then
 		return
 	end
@@ -104,8 +252,7 @@ end
 
 --- Handle diffing a log line
 function M.handle_log_diff()
-	local line = vim.api.nvim_get_current_line()
-	local revset = parser.get_rev_from_log_line(line)
+	local revset = get_revset()
 
 	if revset then
 		local cmd = string.format("jj show --no-pager %s", revset)
@@ -117,8 +264,7 @@ end
 
 --- Handle describing a log line
 function M.handle_log_describe()
-	local line = vim.api.nvim_get_current_line()
-	local revset = parser.get_rev_from_log_line(line)
+	local revset = get_revset()
 	if revset then
 		require("jj.cmd").describe(nil, revset)
 	else
@@ -133,8 +279,7 @@ end
 --- @param ignore_immut? boolean Pass --ignore-immutable to jj edit when true.
 --- @param close_on_exit? boolean Close the log buffer after editing when true.
 function M.handle_log_edit(ignore_immut, close_on_exit)
-	local line = vim.api.nvim_get_current_line()
-	local revset = parser.get_rev_from_log_line(line)
+	local revset = get_revset()
 	if not revset or revset == "" then
 		return
 	end
@@ -170,8 +315,7 @@ end
 --- On success, notifies and refreshes the log buffer.
 --- @param ignore_immut? boolean Pass --ignore-immutable to jj abandon when true.
 function M.handle_log_abandon(ignore_immut)
-	local line = vim.api.nvim_get_current_line()
-	local revset = parser.get_rev_from_log_line(line)
+	local revset = get_revset()
 	if not revset or revset == "" then
 		return
 	end
@@ -247,8 +391,7 @@ end
 
 --- Handle log pushing bookmark from current line in `jj log` buffer.
 function M.handle_log_push_bookmark()
-	local line = vim.api.nvim_get_current_line()
-	local revset = parser.get_rev_from_log_line(line)
+	local revset = get_revset()
 	if not revset or revset == "" then
 		return
 	end
@@ -309,8 +452,7 @@ function M.handle_log_open_pr(list_bookmarks)
 	end
 
 	-- Default behavior: parse revision and open PR
-	local line = vim.api.nvim_get_current_line()
-	local revset = parser.get_rev_from_log_line(line)
+	local revset = get_revset()
 	if not revset or revset == "" then
 		return
 	end
@@ -341,8 +483,7 @@ end
 
 -- Create or move bookmark at revision under cursor in `jj log` buffer
 function M.handle_log_bookmark()
-	local line = vim.api.nvim_get_current_line()
-	local revset = parser.get_rev_from_log_line(line)
+	local revset = get_revset()
 	if not revset or revset == "" then
 		return
 	end
@@ -382,6 +523,69 @@ function M.handle_log_bookmark()
 	end)
 end
 
+--- Rebase bookmark(s)
+function M.handle_log_rebase()
+	local buf = terminal.state.buf
+	if not buf then
+		utils.notify("No open log buffer", vim.log.levels.ERROR)
+		return
+	end
+
+	local revsets_str = nil
+	local mode = vim.fn.mode()
+
+	-- Get revsets based on mode
+	if mode == "n" then
+		revsets_str = get_revset()
+	elseif mode == "v" or mode == "V" then
+		local start_line = vim.fn.line("v")
+		local end_line = vim.fn.line(".")
+		if start_line > end_line then
+			start_line, end_line = end_line, start_line
+		end
+
+		local lines = vim.api.nvim_buf_get_lines(buf, start_line - 1, end_line, false)
+		local revsets = parser.get_all_revsets(lines)
+		if not revsets or #revsets == 0 then
+			utils.notify("No valid revisions found in selected lines", vim.log.levels.ERROR)
+			return
+		end
+
+		revsets_str = table.concat(revsets, " | ")
+		-- Exit visual mode before transition
+		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "n", true)
+	else
+		return
+	end
+
+	-- Validate revsets
+	if not revsets_str or revsets_str == "" then
+		return
+	end
+
+	vim.b.jj_rebase_revsets = revsets_str
+
+	-- Set highlights
+	local marks = get_highlight_marks()
+	if not marks or #marks == 0 then
+		utils.notify("No valid revisions found to highlight during rebase", vim.log.levels.ERROR)
+		return
+	end
+
+	for _, mark in ipairs(marks) do
+		vim.api.nvim_buf_set_extmark(
+			buf,
+			log_selected_ns_id,
+			mark.line,
+			mark.col,
+			{ end_line = mark.end_line, end_col = mark.end_col, hl_group = log_selected_hl_group }
+		)
+	end
+
+	M.transition_mode("rebase")
+	utils.notify("Rebase `started`.", vim.log.levels.INFO, 500)
+end
+
 --- Resolve log keymaps from config, filtering out nil values
 --- @return jj.core.buffer.keymap[]
 function M.log_keymaps()
@@ -395,47 +599,57 @@ function M.log_keymaps()
 	local keymaps = cmd.config.keymaps.log or {}
 	local close_on_edit = cmd.config.log.close_on_edit or false
 
+	--- @type jj.cmd.keymap_specs
 	local specs = {
 		edit = {
 			desc = "Checkout revision under cursor",
 			handler = M.handle_log_edit,
 			args = { false, close_on_edit },
+			modes = { "n" },
 		},
 		edit_immutable = {
 			desc = "Checkout revision under cursor (ignores immutability)",
 			handler = M.handle_log_edit,
 			args = { true, close_on_edit },
+			modes = { "n" },
 		},
 		describe = {
 			desc = "Describe revision under cursor",
 			handler = M.handle_log_describe,
+			modes = { "n" },
 		},
 		diff = {
 			desc = "Diff revision under cursor",
 			handler = M.handle_log_diff,
+			modes = { "n" },
 		},
 		new = {
 			desc = "Create new change branching off revision under cursor",
 			handler = M.handle_log_new,
 			args = { nil, false },
+			modes = { "n" },
 		},
 		new_after = {
 			desc = "Create new change after revision under cursor",
 			handler = M.handle_log_new,
 			args = { "after", false },
+			modes = { "n" },
 		},
 		new_after_immutable = {
 			desc = "Create new change after revision under cursor (ignore immutable)",
 			handler = M.handle_log_new,
 			args = { "after", true },
+			modes = { "n" },
 		},
 		undo = {
 			desc = "Undo last change",
 			handler = cmd.undo,
+			modes = { "n" },
 		},
 		redo = {
 			desc = "Redo last undone change",
 			handler = cmd.redo,
+			modes = { "n" },
 		},
 		abandon = {
 			desc = "Abandon revision under cursor",
@@ -443,35 +657,173 @@ function M.log_keymaps()
 			-- As of now i'm only exposing the non ignore-immutable version of abandon in the keymaps
 			-- Maybe in the future we can add another keymap for that, if people request it
 			args = { false },
+			modes = { "n" },
 		},
 		fetch = {
 			desc = "Fetch from remote",
 			handler = M.handle_log_fetch,
+			modes = { "n" },
 		},
 		push_all = {
 			desc = "Push all to remote",
 			handler = M.handle_log_push_all,
+			modes = { "n" },
 		},
 		push = {
 			desc = "Push bookmark of revision under cursor to remote",
 			handler = M.handle_log_push_bookmark,
+			modes = { "n" },
 		},
 		open_pr = {
 			desc = "Open PR/MR for revision under cursor",
 			handler = M.handle_log_open_pr,
+			modes = { "n" },
 		},
 		open_pr_list = {
 			desc = "Open PR/MR by selecting from all bookmarks",
 			handler = M.handle_log_open_pr,
 			args = { true },
+			modes = { "n" },
 		},
 		bookmark = {
 			desc = "Create or move bookmark at revision under cursor",
 			handler = M.handle_log_bookmark,
+			modes = { "n" },
+		},
+		rebase = {
+			desc = "Rebase bookmark(s)",
+			handler = M.handle_log_rebase,
+			modes = { "n", "v" },
 		},
 	}
 
 	return cmd.merge_keymaps(cmd.resolve_keymaps_from_specs(keymaps, specs), cmd.terminal_keymaps())
+end
+
+--- Rebase mode keymaps
+--- @return jj.core.buffer.keymap[]
+function M.rebase_keymaps()
+	local cmd = require("jj.cmd")
+	local keymaps = cmd.config.keymaps.log.rebase_mode or {}
+
+	--- @type jj.cmd.keymap_specs
+	local spec = {
+		onto = {
+			desc = "Rebase onto (-O) the revision under cursor",
+			handler = M.handle_rebase_execute,
+			args = { "onto" },
+			modes = { "n" },
+		},
+		after = {
+			desc = "Rebase revset(s) after (-A) the revision under cursor",
+			handler = M.handle_rebase_execute,
+			args = { "after" },
+			modes = { "n" },
+		},
+		before = {
+			desc = "Rebase revset(s) before (-B) the revision under cursor",
+			handler = M.handle_rebase_execute,
+			args = { "before" },
+			modes = { "n" },
+		},
+		exit_mode = {
+			desc = "Exit rebase to normal mode",
+			handler = M.handle_rebase_mode_exit,
+			modes = { "n" },
+		},
+	}
+
+	return cmd.resolve_keymaps_from_specs(keymaps, spec)
+end
+
+--- Get keymaps for a specific mode
+--- @param mode string Mode name
+--- @return jj.core.buffer.keymap[]
+function M.get_keymaps_for_mode(mode)
+	if mode == "normal" then
+		return M.log_keymaps()
+	elseif mode == "rebase" then
+		return M.rebase_keymaps()
+	end
+	return {}
+end
+
+--- Transition between buffer modes by swapping keymaps
+--- @param target_mode string Target mode name (e.g., "normal", "rebase")
+function M.transition_mode(target_mode)
+	-- Get the mode keymaps
+	if target_mode == vim.b.jj_mode then
+		return
+	end
+
+	-- Get new keymaps for target mode
+	local new_keymaps = M.get_keymaps_for_mode(target_mode)
+	terminal.replace_terminal_keymaps(new_keymaps)
+
+	-- Set up or tear down rebase mode autocmd
+	if target_mode == "rebase" then
+		rebase_mode_autocmd_id = vim.api.nvim_create_autocmd("CursorMoved", {
+			buffer = terminal.state.buf,
+			callback = update_rebase_target_highlight,
+		})
+		-- Highlight initial position
+		update_rebase_target_highlight()
+	elseif rebase_mode_autocmd_id then
+		vim.api.nvim_del_autocmd(rebase_mode_autocmd_id)
+		rebase_mode_autocmd_id = nil
+		-- Clear target highlight
+		local buf = terminal.state.buf or 0
+		vim.api.nvim_buf_clear_namespace(buf, log_rebase_target_ns_id, 0, -1)
+		last_rebase_target_line = nil
+	end
+
+	-- Update buffer mode state
+	vim.b.jj_mode = target_mode
+end
+
+--- Handle rebase mode exit
+function M.handle_rebase_mode_exit()
+	-- Clear stored revsets
+	vim.b.jj_rebase_revsets = nil
+
+	M.transition_mode("normal")
+	-- Clear highlights
+	local buf = terminal.state.buf or 0
+	vim.api.nvim_buf_clear_namespace(buf, log_selected_ns_id, 0, -1)
+
+	utils.notify("Rebase operation `canceled`", vim.log.levels.INFO, 500)
+end
+
+--- Handle rebase execution with mode
+--- @param mode "onto" | "after" | "before" Rebase mode
+function M.handle_rebase_execute(mode)
+	-- Get all revsets in the format "xx xy xz"
+	local revsets = vim.b.jj_rebase_revsets
+	local destination_revset = get_revset()
+	if not destination_revset or destination_revset == "" then
+		return
+	end
+
+	local mode_flat = "-o"
+	if mode == "after" then
+		mode_flat = "-A"
+	elseif mode == "before" then
+		mode_flat = "-B"
+	end
+
+	utils.notify(string.format("Rebasing...", revsets, mode, destination_revset), vim.log.levels.INFO, 500)
+	local cmd = string.format("jj rebase -r '%s' %s %s", revsets, mode_flat, destination_revset)
+	runner.execute_command_async(cmd, function()
+		utils.notify(
+			string.format("Rebased `%s` %s `%s` successfully", revsets, mode, destination_revset),
+			vim.log.levels.INFO
+		)
+		vim.b.jj_rebase_revsets = nil
+
+		M.transition_mode("normal")
+		-- Refresh log
+		M.log({})
+	end, "Error during rebase onto")
 end
 
 return M
