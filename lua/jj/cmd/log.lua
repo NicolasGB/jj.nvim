@@ -27,13 +27,13 @@ local default_log_opts = { summary = false, reversed = false, no_graph = false, 
 
 --- Init log highlight groups
 function M.init_log_highlights()
-	local cfg = require("jj.cmd").config.log
+	local cfg = require("jj").config.highlights.log
 	if not cfg then
 		return
 	end
 
-	vim.api.nvim_set_hl(0, log_selected_hl_group, cfg.selected_hl)
-	vim.api.nvim_set_hl(0, log_rebase_target_hl_group, cfg.targeted_hl)
+	vim.api.nvim_set_hl(0, log_selected_hl_group, cfg.selected)
+	vim.api.nvim_set_hl(0, log_rebase_target_hl_group, cfg.targeted)
 end
 
 --- Find the revision line under cursor, handling description lines
@@ -811,6 +811,7 @@ function M.handle_rebase_execute(mode)
 		mode_flat = "-B"
 	end
 
+	utils.notify(string.format("Rebasing...", revsets, mode, destination_revset), vim.log.levels.INFO, 500)
 	local cmd = string.format("jj rebase -r '%s' %s %s", revsets, mode_flat, destination_revset)
 	runner.execute_command_async(cmd, function()
 		utils.notify(

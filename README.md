@@ -113,6 +113,8 @@ From rebase mode, choose how to rebase:
 
 **Single revision:** In normal mode, place your cursor on a single revision and press `r` to rebase just that change.
 
+![Rebase-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/rebase.gif)
+
 ### Open a PR/MR from the log buffer
 
 - `o` - Open a PR/MR for the revision under cursor
