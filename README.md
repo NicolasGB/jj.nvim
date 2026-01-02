@@ -231,10 +231,16 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
 
   -- Customize syntax highlighting colors for the describe buffer
   highlights = {
-    added = { fg = "#3fb950", ctermfg = "Green" },      -- Added files
-    modified = { fg = "#56d4dd", ctermfg = "Cyan" },    -- Modified files
-    deleted = { fg = "#f85149", ctermfg = "Red" },      -- Deleted files
-    renamed = { fg = "#d29922", ctermfg = "Yellow" },   -- Renamed files
+    editor = {
+        added = { fg = "#3fb950", ctermfg = "Green" },      -- Added files
+        modified = { fg = "#56d4dd", ctermfg = "Cyan" },    -- Modified files
+        deleted = { fg = "#f85149", ctermfg = "Red" },      -- Deleted files
+        renamed = { fg = "#d29922", ctermfg = "Yellow" },   -- Renamed files
+    },
+    log = {
+        selected = { bg = "#3d2c52", ctermbg = "DarkMagenta" },
+        targeted = { fg = "#5a9e6f", ctermfg = "Green" },
+    }
   },
 
   -- Configure terminal behavior
@@ -264,8 +270,6 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
     -- Configure log command behavior
     log = {
       close_on_edit = false,                                     -- Close log buffer after editing a change
-      selected_hl = { bg = "#3d2c52", ctermbg = "DarkMagenta" }, -- Highlight for selected changes when rebasing/squashing (squash not yet implemented)
-	  targeted_hl = { fg = "#5a9e6f", ctermfg = "Green" },       -- Highlight for targeted change when rebasing/squashing (squash not yet implemented)
     },
 
     -- Configure bookmark command
