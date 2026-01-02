@@ -5,7 +5,9 @@ local utils = require("jj.utils")
 local runner = require("jj.core.runner")
 local parser = require("jj.core.parser")
 local terminal = require("jj.ui.terminal")
-local buffer = require("jj.core.buffer")
+
+local log_selected_hl_group = "JJLogSelectedHlGroup"
+local log_selected_ns_id = vim.api.nvim_create_namespace(log_selected_hl_group)
 
 --- @class jj.cmd.log_opts
 --- @field summary? boolean
@@ -39,6 +41,87 @@ local function get_revset()
 	end
 
 	return revset
+end
+
+--- If a line is selected in visual mode, get the all the needed marks
+--- from selected lines to highlight them during operations like rebase.
+--- Otherwise, get the mark from the current line.
+--- @return {line: uinteger, col: uinteger, end_line: uinteger, end_col: uinteger}[]|nil List of marks
+local function get_highlight_marks()
+	local marks = {}
+	local mode = vim.fn.mode()
+	local buf = terminal.state.buf
+	if not buf then
+		utils.notify("No open log buffer", vim.log.levels.ERROR)
+		return
+	end
+
+	if mode == "v" or mode == "V" then
+		-- Visual mode: get selected lines
+		local start_line = vim.fn.line("v")
+		local end_line = vim.fn.line(".")
+		if start_line > end_line then
+			start_line, end_line = end_line, start_line
+		end
+
+		local lines = vim.api.nvim_buf_get_lines(buf, start_line - 1, end_line, false)
+		for i, line in ipairs(lines) do
+			-- If the current line has a revset highlight it with the following one (which is the description)
+			if parser.get_revset(line) then
+				-- Compute the actual line number
+				local mark_lstart = start_line + i - 2 -- marks expect 0 api since, start-line and ipars are both 1 indexed we need to remove 2 to transfomr to 0-index (For future self)
+				local mark_lend = start_line + i - 1 -- We highlight start + description so we actually want to stop at the next line included
+				local next_line = lines[i + 1] -- Get the next line contents
+				if not next_line then
+					-- Only fetch if it's the last selected line and has a revset
+					local next_line_num = start_line + i
+					next_line = vim.api.nvim_buf_get_lines(buf, next_line_num - 1, next_line_num, false)[1] or ""
+				end
+
+				table.insert(marks, {
+					line = mark_lstart,
+					col = 0, -- Maybe at some  point will make the parser say where the data starts but one thing at the time
+					end_line = mark_lend,
+					end_col = #next_line,
+				})
+			end
+		end
+	else
+		-- Normal mode: current or previous line
+		local current_line_num = vim.api.nvim_win_get_cursor(0)[1]
+		local line = vim.api.nvim_get_current_line()
+		local line_num = current_line_num
+
+		-- Se if cursor is already on a revset line otherwise fetch it's n-1
+		if not parser.get_revset(line) and current_line_num > 1 then
+			line_num = current_line_num - 1
+			line = vim.api.nvim_buf_get_lines(buf, line_num - 1, line_num, false)[1]
+		end
+
+		-- Now try and find the revset for highlighting
+		if parser.get_revset(line) then
+			-- Get the next line (description)
+			local next_line = vim.api.nvim_buf_get_lines(buf, line_num, line_num + 1, false)[1] or ""
+			table.insert(marks, {
+				line = line_num - 1,
+				col = 0,
+				end_line = line_num,
+				end_col = #next_line,
+			})
+		end
+	end
+
+	return marks
+end
+
+--- Init log highlight groups
+function M.init_log_highlights()
+	local cfg = require("jj.cmd").config.log
+	if not cfg then
+		return
+	end
+
+	vim.api.nvim_set_hl(0, log_selected_hl_group, cfg.selected_hl)
 end
 
 --- Jujutsu log
@@ -402,6 +485,31 @@ end
 function M.handle_log_rebase()
 	local mode = vim.fn.mode()
 
+	local buf = terminal.state.buf
+	if not buf then
+		utils.notify("No open log buffer", vim.log.levels.ERROR)
+		return
+	end
+
+	local function set_highlights()
+		local marks = get_highlight_marks()
+		if not marks or #marks == 0 then
+			-- We should never enter here but just in case
+			utils.notify("No valid revisions found to highlight during rebase", vim.log.levels.ERROR)
+			return
+		end
+
+		for _, mark in ipairs(marks) do
+			vim.api.nvim_buf_set_extmark(
+				buf,
+				log_selected_ns_id,
+				mark.line,
+				mark.col,
+				{ end_line = mark.end_line, end_col = mark.end_col, hl_group = log_selected_hl_group }
+			)
+		end
+	end
+
 	-- If normal mode get the revset under cursor and enter rebase mode
 	if mode == "n" then
 		local revset = get_revset()
@@ -410,10 +518,11 @@ function M.handle_log_rebase()
 		end
 		-- Store the revset in buffer variable for rebase mode
 		vim.b.jj_rebase_revsets = revset
-		-- TODO: Set highlight for selected lines in rebase mode
+		-- Set highlights
+		set_highlights()
+
 		-- Transition to rebase mode
 		M.transition_mode("rebase")
-		utils.notify(string.format("Rebasing bookmark(s) for revset: `%s`", revset), vim.log.levels.INFO)
 	elseif mode == "v" or mode == "V" then
 		-- Get selected lines
 		local start_line = vim.fn.line("v")
@@ -432,17 +541,16 @@ function M.handle_log_rebase()
 		vim.b.jj_rebase_revsets = table.concat(revsets, " | ")
 		-- Transition to rebase mode
 
-		-- TODO: Set highlight for selected lines in rebase mode
-		utils.notify(
-			string.format("Rebasing bookmark(s) for revsets: `%s`", vim.b.jj_rebase_revsets),
-			vim.log.levels.INFO
-		)
+		-- Set highlights
+		set_highlights()
 
 		-- Exit visual mode
 		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "n", true)
 		-- Transition to rebase mode
 		M.transition_mode("rebase")
 	end
+
+	utils.notify("Rebase `started`.", vim.log.levels.INFO, 500)
 end
 
 --- Resolve log keymaps from config, filtering out nil values
@@ -625,12 +733,15 @@ end
 
 --- Handle rebase mode exit
 function M.handle_rebase_mode_exit()
-	utils.notify("Rebase operation cancelled", vim.log.levels.WARN)
-	utils.notify(vim.inspect(vim.b.jj_rebase_revsets), vim.log.levels.WARN)
 	-- Clear stored revsets
 	vim.b.jj_rebase_revsets = nil
 
 	M.transition_mode("normal")
+	-- Clear highlights
+	local buf = terminal.state.buf or 0
+	vim.api.nvim_buf_clear_namespace(buf, log_selected_ns_id, 0, -1)
+
+	utils.notify("Rebase operation `canceled`", vim.log.levels.INFO, 500)
 end
 
 --- Handle rebase execution with mode

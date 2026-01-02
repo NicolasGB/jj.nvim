@@ -24,6 +24,7 @@ local status_module = require("jj.cmd.status")
 
 --- @class jj.cmd.log
 --- @field close_on_edit? boolean Whether to close the log buffer when editing a change
+--- @field selected_hl? table Highlights for the selected revisions in log buffer (when rebasing/squashing)
 
 --- @class jj.cmd.log.keymaps
 --- @field edit? string|string[] Keymaps for the log command buffer, setting a keymap to nil will disable it
@@ -99,6 +100,7 @@ M.config = {
 	},
 	log = {
 		close_on_edit = false,
+		selected_hl = { fg = "#a987b9", ctermfg = "Magenta" },
 	},
 	bookmark = {
 		prefix = "",
@@ -145,6 +147,8 @@ M.config = {
 --- @param opts jj.cmd.opts: Options to configure the cmd module
 function M.setup(opts)
 	M.config = vim.tbl_deep_extend("force", M.config, opts or {})
+
+	require("jj.cmd.log").init_log_highlights()
 end
 
 -- Reexport log function
@@ -214,6 +218,7 @@ function M.terminal_keymaps()
 		close = {
 			desc = "Close buffer",
 			handler = terminal.close_terminal_buffer,
+			modes = { "n" },
 		},
 	})
 end
@@ -227,10 +232,12 @@ function M.floating_keymaps()
 		close = {
 			desc = "Close floating buffer",
 			handler = terminal.close_floating_buffer,
+			modes = { "n" },
 		},
 		hide = {
 			desc = "Hide floating buffer",
 			handler = terminal.hide_floating_buffer,
+			modes = { "n" },
 		},
 	})
 end
