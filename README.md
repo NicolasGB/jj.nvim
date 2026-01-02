@@ -4,13 +4,42 @@
 
 > **Note:** This project is pre-v1. Breaking changes may occur in the configuration, API, and features until v1.0.0 is released.
 
-A Neovim plugin for [Jujutsu (jj)](https://github.com/jj-vcs/jj) version control system.
-
-## About
-
-This plugin aims to be something like vim-fugitive but for driving the jj-vcs CLI. The goal is to eventually provide features similar to git status, diffs, and pickers for managing Jujutsu repositories directly from Neovim.
+`jj.nvim` brings [Jujutsu (jj)](https://github.com/jj-vcs/jj) to your editor. Execute jj commands directly from Neovim with rich UI integration, custom editors for commit messages, interactive diff viewing from the log, live rebasing with preview, status browsing with file restoration, and one-click PR/MR opening. It's jj for Neovim without leaving your workflow.
 
 ![Demo](https://github.com/NicolasGB/jj.nvim/raw/main/assets/demo.gif)
+
+## Table of Contents
+
+- [Current Features](#current-features)
+- [Enhanced Integrations](#enhanced-integrations)
+  - [Diff any change](#diff-any-change)
+  - [Edit changes](#edit-changes)
+  - [Create new changes from the log buffer](#create-new-changes-from-the-log-buffer)
+  - [Undo/Redo from the log buffer](#undoredo-from-the-log-buffer)
+  - [Abandon changes from the log buffer](#abandon-changes-from-the-log-buffer)
+  - [Fetch and push from the log buffer](#fetch-and-push-from-the-log-buffer)
+  - [Manage bookmarks from the log buffer](#manage-bookmarks-from-the-log-buffer)
+  - [Rebase changes from the log buffer](#rebase-changes-from-the-log-buffer)
+  - [Open a PR/MR from the log buffer](#open-a-prmr-from-the-log-buffer)
+  - [Open a changed file](#open-a-changed-file)
+  - [Restore a changed file](#restore-a-changed-file)
+- [Installation](#installation)
+- [Cmdline Usage](#cmdline-usage)
+  - [Diff Commands](#diff-commands)
+- [Default Config](#default-config)
+- [Configuration Examples](#configuration-examples)
+  - [New Command Options](#new-command-options)
+  - [Push Command Options](#push-command-options)
+  - [Bookmark Management Command Options](#bookmark-management-command-options)
+  - [Open PR/MR Command Options](#open-prmr-command-options)
+  - [Diff Split Views](#diff-split-views)
+  - [Annotations](#annotations)
+- [Example config](#example-config)
+- [Requirements](#requirements)
+- [Contributing](#contributing)
+- [Documentation](#documentation)
+- [FAQ](#faq)
+- [License](#license)
 
 ## Current Features
 
@@ -145,12 +174,17 @@ Press `<S-x>` on a file from the `status` output and that's it, it's restored.
 
 Using [lazy.nvim](https://github.com/folke/lazy.nvim):
 
+Using the latest stable release:
+
 ```lua
 {
-  "nicolasgb/jj.nvim",
-  config = function()
-    require("jj").setup({})
-  end,
+    "nicolasgb/jj.nvim",
+    version = "*", -- Use latest stable release
+    -- Or from the main branch (uncomment the branch line and comment the version line)
+    -- branch = "main",
+    config = function()
+        require("jj").setup({})
+    end,
 }
 ```
 
@@ -366,6 +400,8 @@ cmd.log({ revisions = "'main::@'" })       -- Show commits between main and curr
 cmd.log({ summary = true, limit = 100 })   -- Show summary with high limit
 cmd.log({ raw = "-r 'main::@' --summary --no-graph" }) -- Pass raw flags directly
 ```
+
+## Configuration Examples
 
 ### New Command Options
 
