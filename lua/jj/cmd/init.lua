@@ -100,7 +100,7 @@ M.config = {
 	},
 	log = {
 		close_on_edit = false,
-		selected_hl = { fg = "#a987b9", ctermfg = "Magenta" },
+		selected_hl = { bg = "#3d2c52", ctermbg = "DarkMagenta" },
 	},
 	bookmark = {
 		prefix = "",

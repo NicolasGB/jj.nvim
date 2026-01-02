@@ -69,7 +69,7 @@ local function get_highlight_marks()
 			-- If the current line has a revset highlight it with the following one (which is the description)
 			if parser.get_revset(line) then
 				-- Compute the actual line number
-				local mark_lstart = start_line + i - 2 -- marks expect 0 api since, start-line and ipars are both 1 indexed we need to remove 2 to transfomr to 0-index (For future self)
+				local mark_lstart = start_line + i - 2 -- marks expect 0 api since, start-line and ipars are both 1 indexed we need to remove 2 to transform to 0-index (For future self)
 				local mark_lend = start_line + i - 1 -- We highlight start + description so we actually want to stop at the next line included
 				local next_line = lines[i + 1] -- Get the next line contents
 				if not next_line then
@@ -483,73 +483,64 @@ end
 
 --- Rebase bookmark(s)
 function M.handle_log_rebase()
-	local mode = vim.fn.mode()
-
 	local buf = terminal.state.buf
 	if not buf then
 		utils.notify("No open log buffer", vim.log.levels.ERROR)
 		return
 	end
 
-	local function set_highlights()
-		local marks = get_highlight_marks()
-		if not marks or #marks == 0 then
-			-- We should never enter here but just in case
-			utils.notify("No valid revisions found to highlight during rebase", vim.log.levels.ERROR)
-			return
-		end
+	local revsets_str = nil
+	local mode = vim.fn.mode()
 
-		for _, mark in ipairs(marks) do
-			vim.api.nvim_buf_set_extmark(
-				buf,
-				log_selected_ns_id,
-				mark.line,
-				mark.col,
-				{ end_line = mark.end_line, end_col = mark.end_col, hl_group = log_selected_hl_group }
-			)
-		end
-	end
-
-	-- If normal mode get the revset under cursor and enter rebase mode
+	-- Get revsets based on mode
 	if mode == "n" then
-		local revset = get_revset()
-		if not revset or revset == "" then
-			return
-		end
-		-- Store the revset in buffer variable for rebase mode
-		vim.b.jj_rebase_revsets = revset
-		-- Set highlights
-		set_highlights()
-
-		-- Transition to rebase mode
-		M.transition_mode("rebase")
+		revsets_str = get_revset()
 	elseif mode == "v" or mode == "V" then
-		-- Get selected lines
 		local start_line = vim.fn.line("v")
 		local end_line = vim.fn.line(".")
 		if start_line > end_line then
 			start_line, end_line = end_line, start_line
 		end
 
-		local lines = vim.api.nvim_buf_get_lines(terminal.state.buf, start_line - 1, end_line, false)
+		local lines = vim.api.nvim_buf_get_lines(buf, start_line - 1, end_line, false)
 		local revsets = parser.get_all_revsets(lines)
 		if not revsets or #revsets == 0 then
 			utils.notify("No valid revisions found in selected lines", vim.log.levels.ERROR)
 			return
 		end
 
-		vim.b.jj_rebase_revsets = table.concat(revsets, " | ")
-		-- Transition to rebase mode
-
-		-- Set highlights
-		set_highlights()
-
-		-- Exit visual mode
+		revsets_str = table.concat(revsets, " | ")
+		-- Exit visual mode before transition
 		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "n", true)
-		-- Transition to rebase mode
-		M.transition_mode("rebase")
+	else
+		return
 	end
 
+	-- Validate revsets
+	if not revsets_str or revsets_str == "" then
+		return
+	end
+
+	vim.b.jj_rebase_revsets = revsets_str
+
+	-- Set highlights
+	local marks = get_highlight_marks()
+	if not marks or #marks == 0 then
+		utils.notify("No valid revisions found to highlight during rebase", vim.log.levels.ERROR)
+		return
+	end
+
+	for _, mark in ipairs(marks) do
+		vim.api.nvim_buf_set_extmark(
+			buf,
+			log_selected_ns_id,
+			mark.line,
+			mark.col,
+			{ end_line = mark.end_line, end_col = mark.end_col, hl_group = log_selected_hl_group }
+		)
+	end
+
+	M.transition_mode("rebase")
 	utils.notify("Rebase `started`.", vim.log.levels.INFO, 500)
 end
 
