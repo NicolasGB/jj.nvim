@@ -2,6 +2,7 @@
 local M = {}
 
 local utils = require("jj.utils")
+local buffer = require("jj.core.buffer")
 
 --- Get the content of a file at a specific revision
 --- @param rev string The revision
@@ -56,6 +57,14 @@ function M.open_diff(split_fun, opts)
 		return
 	end
 
+	-- Get previus cursor position
+	local prev_buf = vim.api.nvim_get_current_buf()
+	local prev_cur_pos = buffer.get_cursor(prev_buf)
+	-- If no previous cursor position, set to start of file
+	if prev_cur_pos == nil then
+		prev_cur_pos = { 1, 0 }
+	end
+
 	-- Ensure opts is a table to avoid indexing nil
 	opts = opts or {}
 	local rev = opts.rev or "@-"
@@ -65,6 +74,14 @@ function M.open_diff(split_fun, opts)
 	split_fun({ mods = { split = "aboveleft" } })
 	M.open_revision(rev, path)
 	vim.cmd.diffthis()
+
+	-- Add an autocomnd to restore the buffer position to the previous one when exiting diff
+	vim.api.nvim_create_autocmd("BufWipeout", {
+		buffer = vim.api.nvim_get_current_buf(),
+		callback = function()
+			buffer.set_cursor(prev_buf, prev_cur_pos)
+		end,
+	})
 end
 
 -- Open a vertical diff split for a specific revision of the current file
