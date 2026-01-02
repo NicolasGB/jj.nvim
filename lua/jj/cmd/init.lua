@@ -25,6 +25,7 @@ local status_module = require("jj.cmd.status")
 --- @class jj.cmd.log
 --- @field close_on_edit? boolean Whether to close the log buffer when editing a change
 --- @field selected_hl? table Highlights for the selected revisions in log buffer (when rebasing/squashing)
+--- @field targeted_hl? table Highlights for the targeted revision in log buffer (when rebasing/squashing)
 
 --- @class jj.cmd.log.keymaps
 --- @field edit? string|string[] Keymaps for the log command buffer, setting a keymap to nil will disable it
@@ -101,6 +102,7 @@ M.config = {
 	log = {
 		close_on_edit = false,
 		selected_hl = { bg = "#3d2c52", ctermbg = "DarkMagenta" },
+		targeted_hl = { fg = "#5a9e6f", ctermfg = "Green" },
 	},
 	bookmark = {
 		prefix = "",

@@ -8,6 +8,11 @@ local terminal = require("jj.ui.terminal")
 
 local log_selected_hl_group = "JJLogSelectedHlGroup"
 local log_selected_ns_id = vim.api.nvim_create_namespace(log_selected_hl_group)
+local log_rebase_target_hl_group = "JJLogRebaseTargetHlGroup"
+local log_rebase_target_ns_id = vim.api.nvim_create_namespace(log_rebase_target_hl_group)
+local rebase_mode_autocmd_id = nil
+local last_rebase_target_line = nil
+local HIGHLIGHT_RANGE = 2 -- Revision line + description line
 
 --- @class jj.cmd.log_opts
 --- @field summary? boolean
@@ -20,27 +25,37 @@ local log_selected_ns_id = vim.api.nvim_create_namespace(log_selected_hl_group)
 ---@type jj.cmd.log_opts
 local default_log_opts = { summary = false, reversed = false, no_graph = false, limit = 20, raw_flags = nil }
 
---- Gets revset from current line or parent in case we're on a description node (QOL improvement).
---- Attempts to parse the revision from the current line. If not found and we're not on
---- the first line, falls back to parsing the previous line.
---- @return string|nil The revset if found in either current line or previous line, nil otherwise
-local function get_revset()
-	-- Try to extract revset from current line
-	local line = vim.api.nvim_get_current_line()
-	local revset = parser.get_revset(line)
-
-	-- Fallback: check previous line if current line didn't yield a revset
-	-- This handles cases where cursor is on a wrapped/description line
-	if not revset then
-		local current_line_num = vim.api.nvim_win_get_cursor(0)[1]
-		if current_line_num > 1 then
-			-- Get the previous line (buf_get_lines is 0-indexed, so we subtract 2)
-			local prev_line = vim.api.nvim_buf_get_lines(0, current_line_num - 2, current_line_num - 1, false)[1]
-			revset = parser.get_revset(prev_line)
-		end
+--- Init log highlight groups
+function M.init_log_highlights()
+	local cfg = require("jj.cmd").config.log
+	if not cfg then
+		return
 	end
 
-	return revset
+	vim.api.nvim_set_hl(0, log_selected_hl_group, cfg.selected_hl)
+	vim.api.nvim_set_hl(0, log_rebase_target_hl_group, cfg.targeted_hl)
+end
+
+--- Find the revision line under cursor, handling description lines
+local function get_revset_line()
+	local buf = terminal.state.buf or vim.api.nvim_get_current_buf()
+	local current_line_num = vim.api.nvim_win_get_cursor(0)[1] - 1
+	local line = vim.api.nvim_get_current_line()
+	local revset_line = current_line_num
+
+	if not parser.get_revset(line) and current_line_num > 0 then
+		revset_line = current_line_num - 1
+		line = vim.api.nvim_buf_get_lines(buf, revset_line, revset_line + 1, false)[1]
+	end
+
+	return revset_line, parser.get_revset(line)
+end
+
+--- Gets revset from current line or parent in case we're on a description.
+--- @return string|nil The revset if found in either current line or previous line, nil otherwise
+local function get_revset()
+	local _, rev = get_revset_line()
+	return rev
 end
 
 --- If a line is selected in visual mode, get the all the needed marks
@@ -87,25 +102,16 @@ local function get_highlight_marks()
 			end
 		end
 	else
+		--
 		-- Normal mode: current or previous line
-		local current_line_num = vim.api.nvim_win_get_cursor(0)[1]
-		local line = vim.api.nvim_get_current_line()
-		local line_num = current_line_num
-
-		-- Se if cursor is already on a revset line otherwise fetch it's n-1
-		if not parser.get_revset(line) and current_line_num > 1 then
-			line_num = current_line_num - 1
-			line = vim.api.nvim_buf_get_lines(buf, line_num - 1, line_num, false)[1]
-		end
-
-		-- Now try and find the revset for highlighting
-		if parser.get_revset(line) then
+		local revset_line, rev = get_revset_line()
+		if rev then
 			-- Get the next line (description)
-			local next_line = vim.api.nvim_buf_get_lines(buf, line_num, line_num + 1, false)[1] or ""
+			local next_line = vim.api.nvim_buf_get_lines(buf, revset_line + 1, revset_line + 2, false)[1] or ""
 			table.insert(marks, {
-				line = line_num - 1,
+				line = revset_line,
 				col = 0,
-				end_line = line_num,
+				end_line = revset_line + 1,
 				end_col = #next_line,
 			})
 		end
@@ -114,14 +120,50 @@ local function get_highlight_marks()
 	return marks
 end
 
---- Init log highlight groups
-function M.init_log_highlights()
-	local cfg = require("jj.cmd").config.log
-	if not cfg then
+--- Apply highlight to target revision
+local function apply_target_highlight(buf, revset_line, hl_group)
+	vim.api.nvim_buf_set_extmark(
+		buf,
+		log_rebase_target_ns_id,
+		revset_line,
+		0,
+		{ end_line = revset_line + HIGHLIGHT_RANGE, hl_group = hl_group }
+	)
+	last_rebase_target_line = revset_line
+end
+
+--- Clear previous target highlight
+local function clear_target_highlight(buf)
+	if last_rebase_target_line ~= nil then
+		vim.api.nvim_buf_clear_namespace(
+			buf,
+			log_rebase_target_ns_id,
+			last_rebase_target_line,
+			last_rebase_target_line + HIGHLIGHT_RANGE
+		)
+	end
+	last_rebase_target_line = nil
+end
+
+--- Update rebase target highlight on cursor movement
+local function update_rebase_target_highlight()
+	local buf = terminal.state.buf
+	if not buf then
 		return
 	end
 
-	vim.api.nvim_set_hl(0, log_selected_hl_group, cfg.selected_hl)
+	clear_target_highlight(buf)
+
+	local revset_line, rev = get_revset_line()
+	if not rev then
+		return
+	end
+
+	-- Only highlight if rev is not in selection
+	local is_in_selection = vim.b.jj_rebase_revsets and string.find(vim.b.jj_rebase_revsets, rev, 1, true)
+	if not is_in_selection then
+		apply_target_highlight(buf, revset_line, log_rebase_target_hl_group)
+	end
 end
 
 --- Jujutsu log
@@ -717,6 +759,23 @@ function M.transition_mode(target_mode)
 	-- Get new keymaps for target mode
 	local new_keymaps = M.get_keymaps_for_mode(target_mode)
 	terminal.replace_terminal_keymaps(new_keymaps)
+
+	-- Set up or tear down rebase mode autocmd
+	if target_mode == "rebase" then
+		rebase_mode_autocmd_id = vim.api.nvim_create_autocmd("CursorMoved", {
+			buffer = terminal.state.buf,
+			callback = update_rebase_target_highlight,
+		})
+		-- Highlight initial position
+		update_rebase_target_highlight()
+	elseif rebase_mode_autocmd_id then
+		vim.api.nvim_del_autocmd(rebase_mode_autocmd_id)
+		rebase_mode_autocmd_id = nil
+		-- Clear target highlight
+		local buf = terminal.state.buf or 0
+		vim.api.nvim_buf_clear_namespace(buf, log_rebase_target_ns_id, 0, -1)
+		last_rebase_target_line = nil
+	end
 
 	-- Update buffer mode state
 	vim.b.jj_mode = target_mode
