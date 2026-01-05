@@ -127,7 +127,7 @@ local function apply_target_highlight(buf, revset_line, hl_group)
 		log_rebase_target_ns_id,
 		revset_line,
 		0,
-		{ end_line = revset_line + HIGHLIGHT_RANGE, hl_group = hl_group }
+		{ end_line = revset_line + HIGHLIGHT_RANGE, end_col = 0, hl_group = hl_group }
 	)
 	last_rebase_target_line = revset_line
 end
@@ -176,6 +176,9 @@ function M.log(opts)
 	-- If a log was already being displayed before this command we will want to maintain the cursor position
 	if terminal.state.buf_cmd == "log" then
 		terminal.store_cursor_position()
+		-- Make sure to clear highlights before rerunning since the previous log buffer might have some
+		vim.api.nvim_buf_clear_namespace(terminal.state.buf, log_selected_ns_id, 0, -1)
+		vim.api.nvim_buf_clear_namespace(terminal.state.buf, log_rebase_target_ns_id, 0, -1)
 	end
 
 	local jj_cmd = "jj log"
@@ -636,7 +639,7 @@ function M.log_keymaps()
 			modes = { "n" },
 		},
 		new_after_immutable = {
-			desc = "Create new change after revision under cursor (ignore immutable)",
+			desc = "Create new change after revision under cursor (ignores immutability)",
 			handler = M.handle_log_new,
 			args = { "after", true },
 			modes = { "n" },
@@ -726,6 +729,24 @@ function M.rebase_keymaps()
 			args = { "before" },
 			modes = { "n" },
 		},
+		onto_immutable = {
+			desc = "Rebase onto (-O) the revision under cursor (ignores immutability)",
+			handler = M.handle_rebase_execute,
+			args = { "onto", true },
+			modes = { "n" },
+		},
+		after_immutable = {
+			desc = "Rebase revset(s) after (-A) the revision under cursor (ignores immutability)",
+			handler = M.handle_rebase_execute,
+			args = { "after", true },
+			modes = { "n" },
+		},
+		before_immutable = {
+			desc = "Rebase revset(s) before (-B) the revision under cursor (ignores immutability)",
+			handler = M.handle_rebase_execute,
+			args = { "before", true },
+			modes = { "n" },
+		},
 		exit_mode = {
 			desc = "Exit rebase to normal mode",
 			handler = M.handle_rebase_mode_exit,
@@ -790,13 +811,15 @@ function M.handle_rebase_mode_exit()
 	-- Clear highlights
 	local buf = terminal.state.buf or 0
 	vim.api.nvim_buf_clear_namespace(buf, log_selected_ns_id, 0, -1)
+	vim.api.nvim_buf_clear_namespace(buf, log_rebase_target_ns_id, 0, -1)
 
-	utils.notify("Rebase operation `canceled`", vim.log.levels.INFO, 500)
+	utils.notify("Rebase `canceled`", vim.log.levels.INFO, 500)
 end
 
 --- Handle rebase execution with mode
 --- @param mode "onto" | "after" | "before" Rebase mode
-function M.handle_rebase_execute(mode)
+--- @param ignore_immut boolean? Wether or not to ignore immutability
+function M.handle_rebase_execute(mode, ignore_immut)
 	-- Get all revsets in the format "xx xy xz"
 	local revsets = vim.b.jj_rebase_revsets
 	local destination_revset = get_revset()
@@ -813,12 +836,24 @@ function M.handle_rebase_execute(mode)
 
 	utils.notify(string.format("Rebasing...", revsets, mode, destination_revset), vim.log.levels.INFO, 500)
 	local cmd = string.format("jj rebase -r '%s' %s %s", revsets, mode_flat, destination_revset)
+
+	-- If ignore_immut is true, add the flag
+	-- This is not currently exposed in keymaps but could be in the future
+	if ignore_immut then
+		cmd = cmd .. " --ignore-immutable"
+	end
+
 	runner.execute_command_async(cmd, function()
 		utils.notify(
 			string.format("Rebased `%s` %s `%s` successfully", revsets, mode, destination_revset),
 			vim.log.levels.INFO
 		)
 		vim.b.jj_rebase_revsets = nil
+
+		-- Clear all highlighting before transitioning
+		local buf = terminal.state.buf or 0
+		vim.api.nvim_buf_clear_namespace(buf, log_selected_ns_id, 0, -1)
+		vim.api.nvim_buf_clear_namespace(buf, log_rebase_target_ns_id, 0, -1)
 
 		M.transition_mode("normal")
 		-- Refresh log

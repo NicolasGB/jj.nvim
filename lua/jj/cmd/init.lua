@@ -52,6 +52,9 @@ local status_module = require("jj.cmd.status")
 --- @field onto? string|string[]
 --- @field after? string|string[]
 --- @field before? string|string[]
+--- @field onto_immutable? string|string[]
+--- @field after_immutable? string|string[]
+--- @field before_immutable? string|string[]
 --- @field exit_mode? string|string[]
 
 --- @class jj.cmd.bookmark
@@ -128,8 +131,11 @@ M.config = {
 			rebase = "r",
 			rebase_mode = {
 				onto = { "<CR>", "o" },
-				after = { "a", "A" },
-				before = { "b", "B" },
+				after = "a",
+				before = "b",
+				onto_immutable = { "<S-CR>", "<S-o>" },
+				after_immutable = "<S-a>",
+				before_immutable = "<S-b>",
 				exit_mode = { "<Esc>", "<C-c>" },
 			},
 		},

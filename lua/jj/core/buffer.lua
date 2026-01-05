@@ -447,9 +447,9 @@ function M.set_cursor(buf, pos, opts)
 		return
 	end
 
-	-- For terminal buffers, delay to allow rendering to complete
-	-- Must validate position INSIDE the deferred function for terminal buffers
-	-- because the buffer content may not be stable yet
+	-- For terminal buffers, we delay cursor positioning to allow async rendering to complete.
+	-- The position is validated inside the deferred function because buffer content
+	-- may not be stable at function call time
 	if vim.bo[buf].buftype == "terminal" or delay > 0 then
 		vim.defer_fn(function()
 			if not vim.api.nvim_buf_is_valid(buf) or not vim.api.nvim_win_is_valid(winid) then
