@@ -134,8 +134,11 @@ Once in rebase mode, the interface highlights your selection and the current reb
 From rebase mode, choose how to rebase:
 
 - `<CR>` or `o` - Rebase onto (`-o`) the revision under cursor
-- `a` or `A` - Rebase after (`-A`) the revision under cursor
-- `b` or `B` - Rebase before (`-B`) the revision under cursor
+- `a` - Rebase after (`-A`) the revision under cursor
+- `b` - Rebase before (`-B`) the revision under cursor
+- `<S-CR>` or `<S-o>` - Rebase onto (`-o`) ignoring immutability
+- `<S-a>` - Rebase after (`-A`) ignoring immutability
+- `<S-b>` - Rebase before (`-B`) ignoring immutability
 - `<Esc>` or `<C-c>` - Exit rebase mode without making changes
 
 **Visual mode selection:** Select multiple revisions in visual mode before pressing `r` to rebase them all at once. The plugin extracts each selected revision and rebases them together.
@@ -300,9 +303,12 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
         open_pr_list = "<S-o>",             -- Open PR/MR by selecting from all bookmarks
         rebase = "r",                       -- Enter rebase mode targeting revision under cursor or selected revisions
         rebase_mode = {
-            onto = { "<CR>", "o" },           -- Select revision under cursor as rebase destination
+            onto = { "<CR>", "o" },           -- Select revision under cursor as rebase onto destination
             after = { "a", "A" },             -- Rebase after revision under cursor
             before = { "b", "B" },            -- Rebase before revision under cursor
+            onto_immutable = { "<S-CR>", "<S-o>" }, -- Select revision  as a rebase onto destination (ignore immutability)
+            after_immutable = "<S-a>",              -- Rebase after revision under cursor (ignore immutability)
+            before_immutable = "<S-b>",             -- Rebase before revision under cursor (ignore immutability)
             exit_mode = { "<Esc>", "<C-c>" }, -- Exit rebase mode
         },
       },
