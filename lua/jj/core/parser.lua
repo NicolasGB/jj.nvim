@@ -127,6 +127,30 @@ function M.get_revset(line)
 	-- ASCII markers (escaped for pattern matching)
 	local ascii_markers = { "@", "%*", "/", "\\", "%-", "%+", "|" }
 
+	-- MUST have at least one commit marker symbol to be a valid commit line
+	-- Otherwise it's a description/message line, not a commit marker line
+	local has_marker_symbol = false
+
+	-- Check for UTF-8 symbols
+	for _, symbol in ipairs(utf8_symbols) do
+		if line:find(symbol) then
+			has_marker_symbol = true
+			break
+		end
+	end
+
+	-- Also check for ASCII markers (@ only) at start of line or after graph chars
+	if not has_marker_symbol then
+		-- Check for @ that appears early in the line
+		if line:match("^[%s│┃┆┇┊┋╭╮╰╯├┤┬┴┼─└┘┌┐|\\]*[@]") then
+			has_marker_symbol = true
+		end
+	end
+
+	if not has_marker_symbol then
+		return nil
+	end
+
 	-- Build character class for allowed prefix
 	local allowed_prefix = "[" .. graph_chars
 	for _, symbol in ipairs(utf8_symbols) do

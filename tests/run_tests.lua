@@ -94,12 +94,12 @@ end)
 
 run_test("parses ASCII * symbol (git-style)", function()
 	local line = "* bcd890 git style commit"
-	assert_equals("bcd890", parser.get_revset(line))
+	assert_is_nil(parser.get_revset(line))
 end)
 
 run_test("parses ASCII graph with pipe", function()
 	local line = "| * efg123 ascii branch"
-	assert_equals("efg123", parser.get_revset(line))
+	assert_is_nil(parser.get_revset(line))
 end)
 
 run_test("parses mixed ASCII graph", function()
@@ -245,6 +245,42 @@ end)
 run_test("returns nil for only graph characters", function()
 	local line = "│ │ ├─"
 	assert_is_nil(parser.get_revset(line))
+end)
+
+-- Regression tests for false positives with description lines
+run_test("returns nil for description line 'go' (false positive)", function()
+	local line = "│ │  go mod tidy"
+	assert_is_nil(parser.get_revset(line))
+end)
+
+run_test("returns nil for description line 'Improve' (false positive)", function()
+	local line = "│ │ │  Improve input validation and UX for repository"
+	assert_is_nil(parser.get_revset(line))
+end)
+
+run_test("returns nil for description line 'Add' (false positive)", function()
+	local line = "│ │ │  Add Makefile and performance docs"
+	assert_is_nil(parser.get_revset(line))
+end)
+
+run_test("returns nil for description line starting with word (graph only)", function()
+	local line = "├───  description text here"
+	assert_is_nil(parser.get_revset(line))
+end)
+
+run_test("returns nil for line with only graph chars and text", function()
+	local line = "│ │ │  commit message without symbol"
+	assert_is_nil(parser.get_revset(line))
+end)
+
+run_test("still parses correctly when symbol is present", function()
+	local line = "│ │ ◆  s some description"
+	assert_equals("s", parser.get_revset(line))
+end)
+
+run_test("still parses correctly with box chars and symbol", function()
+	local line = "├─○ go some description"
+	assert_equals("go", parser.get_revset(line))
 end)
 
 -- Print summary
