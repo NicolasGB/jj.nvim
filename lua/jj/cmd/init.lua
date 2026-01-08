@@ -46,7 +46,11 @@ local status_module = require("jj.cmd.status")
 --- @field open_pr? string|string[]
 --- @field open_pr_list? string|string[]
 --- @field bookmark? string|string[]
+--- @field rebase? string|string[]
 --- @field rebase_mode? jj.cmd.rebase.keymaps
+--- @field squash? string|string[]
+--- @field squash_mode? jj.cmd.squash.keymaps
+--- @field quick_squash? string|string[]
 
 --- @class jj.cmd.rebase.keymaps
 --- @field onto? string|string[]
@@ -55,6 +59,11 @@ local status_module = require("jj.cmd.status")
 --- @field onto_immutable? string|string[]
 --- @field after_immutable? string|string[]
 --- @field before_immutable? string|string[]
+--- @field exit_mode? string|string[]
+
+--- @class jj.cmd.squash.keymaps
+--- @field into? string|string[]
+--- @field into_immutable? string|string[]
 --- @field exit_mode? string|string[]
 
 --- @class jj.cmd.bookmark
@@ -138,6 +147,13 @@ M.config = {
 				before_immutable = "<S-b>",
 				exit_mode = { "<Esc>", "<C-c>" },
 			},
+			squash = "s",
+			squash_mode = {
+				into = "<CR>",
+				into_immutable = "<S-CR>",
+				exit_mode = { "<Esc>", "<C-c>" },
+			},
+			quick_squash = "<S-s>",
 		},
 		status = {
 			open_file = "<CR>",

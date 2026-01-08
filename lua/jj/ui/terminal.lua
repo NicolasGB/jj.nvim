@@ -52,30 +52,32 @@ end
 
 --- Help for terminal buffer
 function M.keymap_help()
-    -- get the normal mode keys defined for the current buffer
-    local keys = vim.api.nvim_buf_get_keymap(0, "n")
+	-- get the normal mode keys defined for the current buffer
+	local keys = vim.api.nvim_buf_get_keymap(0, "n")
 
-    -- sort the keys table by desc
-    table.sort(keys, function(a, b) return (a.desc or "") < (b.desc or "") end)
+	-- sort the keys table by desc
+	table.sort(keys, function(a, b)
+		return (a.desc or "") < (b.desc or "")
+	end)
 
-    -- Figure out the width of the longest key for later formatting
-    -- Ignore keys for entries without a desc
-    local max_key_width = 0
-    for _, mapping in ipairs(keys) do
-      local desc = mapping["desc"]
-      if desc ~= nil then
-        local key = mapping["lhs"]
-        local key_width = vim.api.nvim_strwidth(key)
-        if key_width > max_key_width then
-          max_key_width = key_width
-        end
-      end
-    end
+	-- Figure out the width of the longest key for later formatting
+	-- Ignore keys for entries without a desc
+	local max_key_width = 0
+	for _, mapping in ipairs(keys) do
+		local desc = mapping["desc"]
+		if desc ~= nil then
+			local key = mapping["lhs"]
+			local key_width = vim.api.nvim_strwidth(key)
+			if key_width > max_key_width then
+				max_key_width = key_width
+			end
+		end
+	end
 
-    -- create a buffer and floating window to show the key mappings
-    local buf, win = buffer.create_float({
-        title = " Key mappings ",
-        title_pos = "left",
+	-- create a buffer and floating window to show the key mappings
+	local buf, win = buffer.create_float({
+		title = " Key mappings ",
+		title_pos = "left",
 		enter = true,
 		bufhidden = "hide",
 		win_options = {
@@ -85,41 +87,38 @@ function M.keymap_help()
 			cursorline = false,
 			signcolumn = "no",
 		},
-    })
+	})
 
-    -- helper function to pad a given key with spaces if necessary such that
-    -- its size will match max_key_width calculated above.
-    local function space_pad(key)
-      local key_width = vim.api.nvim_strwidth(key)
-      local delta = max_key_width - key_width
-      if delta > 0 then
-        return key .. string.rep(" ", delta)
-      end
-      return key
-    end
+	-- helper function to pad a given key with spaces if necessary such that
+	-- its size will match max_key_width calculated above.
+	local function space_pad(key)
+		local key_width = vim.api.nvim_strwidth(key)
+		local delta = max_key_width - key_width
+		if delta > 0 then
+			return key .. string.rep(" ", delta)
+		end
+		return key
+	end
 
-    -- create formated entries for items with a non-nil desc
-    local lines = {}
-    for _, entry in ipairs(keys) do
-      if entry["desc"] ~= nil then
-        local line = string.format("  %s   %s",
-                                   space_pad(entry["lhs"]),
-                                   entry["desc"])
-        table.insert(lines, line)
-      end
+	-- create formated entries for items with a non-nil desc
+	local lines = {}
+	for _, entry in ipairs(keys) do
+		if entry["desc"] ~= nil then
+			local line = string.format("  %s   %s", space_pad(entry["lhs"]), entry["desc"])
+			table.insert(lines, line)
+		end
+	end
 
-    end
+	-- add some helper text at the end
+	table.insert(lines, "")
+	table.insert(lines, '   Use "q" or ESC to close this window')
 
-    -- add some helper text at the end
-    table.insert(lines, "")
-    table.insert(lines, '   Use "q" or ESC to close this window')
+	-- add the formatted lines to the buffer
+	vim.api.nvim_buf_set_lines(buf, 3, -1, false, lines)
 
-    -- add the formatted lines to the buffer
-    vim.api.nvim_buf_set_lines(buf, 3, -1, false, lines)
-
-    -- Use q or ESC to close the buffer
-    vim.keymap.set("n", "q", "<cmd>close<CR>", { buffer = buf })
-    vim.keymap.set("n", "<Esc>", "<cmd>close<CR>", { buffer = buf })
+	-- Use q or ESC to close the buffer
+	vim.keymap.set("n", "q", "<cmd>close<CR>", { buffer = buf })
+	vim.keymap.set("n", "<Esc>", "<cmd>close<CR>", { buffer = buf })
 end
 
 --- Close the current terminal buffer if it exists
@@ -282,6 +281,12 @@ function M.run_floating(cmd, keymaps)
 			end
 		end
 
+		-- Remove prompt keymaps
+		buffer.remove_keymaps(state.floating_buf, {
+			{ modes = { "n", "v" }, lhs = "[[", rhs = function() end },
+			{ modes = { "n", "v" }, lhs = "]]", rhs = function() end },
+		})
+
 		buffer.set_keymaps(state.floating_buf, default_keymaps)
 		vim.b[state.floating_buf].jj_keymaps_set = true
 	end
@@ -410,7 +415,7 @@ function M.run(cmd, keymaps)
 	-- Set base keymaps only if they haven't been set for this buffer yet
 	if not vim.b[state.buf].jj_keymaps_set then
 		buffer.set_keymaps(state.buf, {
-            { modes = { "n" }, lhs = "g?", rhs = M.keymap_help },
+			{ modes = { "n" }, lhs = "g?", rhs = M.keymap_help },
 			-- Disable insert, command and append modes
 			{ modes = { "n", "v" }, lhs = "i", rhs = function() end },
 			{ modes = { "n", "v" }, lhs = "c", rhs = function() end },
@@ -420,6 +425,12 @@ function M.run(cmd, keymaps)
 
 		vim.b[state.buf].jj_keymaps_set = true
 	end
+
+	-- Remove prompt keymaps
+	buffer.remove_keymaps(state.buf, {
+		{ modes = { "n", "v" }, lhs = "[[", rhs = function() end },
+		{ modes = { "n", "v" }, lhs = "]]", rhs = function() end },
+	})
 
 	-- Remove command-specific keymaps from previous runs
 	if vim.b[state.buf].jj_command_keymaps then

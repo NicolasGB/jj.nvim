@@ -8,8 +8,8 @@ local terminal = require("jj.ui.terminal")
 
 local log_selected_hl_group = "JJLogSelectedHlGroup"
 local log_selected_ns_id = vim.api.nvim_create_namespace(log_selected_hl_group)
-local log_rebase_target_hl_group = "JJLogRebaseTargetHlGroup"
-local log_rebase_target_ns_id = vim.api.nvim_create_namespace(log_rebase_target_hl_group)
+local log_special_mode_target_hl_group = "JJLogSpecialModeTargetHlGroup"
+local log_special_mode_target_ns_id = vim.api.nvim_create_namespace(log_special_mode_target_hl_group)
 local rebase_mode_autocmd_id = nil
 local last_rebase_target_line = nil
 local HIGHLIGHT_RANGE = 2 -- Revision line + description line
@@ -33,7 +33,7 @@ function M.init_log_highlights()
 	end
 
 	vim.api.nvim_set_hl(0, log_selected_hl_group, cfg.selected)
-	vim.api.nvim_set_hl(0, log_rebase_target_hl_group, cfg.targeted)
+	vim.api.nvim_set_hl(0, log_special_mode_target_hl_group, cfg.targeted)
 end
 
 --- Find the revision line under cursor, handling description lines
@@ -124,7 +124,7 @@ end
 local function apply_target_highlight(buf, revset_line, hl_group)
 	vim.api.nvim_buf_set_extmark(
 		buf,
-		log_rebase_target_ns_id,
+		log_special_mode_target_ns_id,
 		revset_line,
 		0,
 		{ end_line = revset_line + HIGHLIGHT_RANGE, end_col = 0, hl_group = hl_group }
@@ -137,7 +137,7 @@ local function clear_target_highlight(buf)
 	if last_rebase_target_line ~= nil then
 		vim.api.nvim_buf_clear_namespace(
 			buf,
-			log_rebase_target_ns_id,
+			log_special_mode_target_ns_id,
 			last_rebase_target_line,
 			last_rebase_target_line + HIGHLIGHT_RANGE
 		)
@@ -146,7 +146,7 @@ local function clear_target_highlight(buf)
 end
 
 --- Update rebase target highlight on cursor movement
-local function update_rebase_target_highlight()
+local function update_special_mode_target_highlight()
 	local buf = terminal.state.buf
 	if not buf then
 		return
@@ -162,7 +162,71 @@ local function update_rebase_target_highlight()
 	-- Only highlight if rev is not in selection
 	local is_in_selection = vim.b.jj_rebase_revsets and string.find(vim.b.jj_rebase_revsets, rev, 1, true)
 	if not is_in_selection then
-		apply_target_highlight(buf, revset_line, log_rebase_target_hl_group)
+		apply_target_highlight(buf, revset_line, log_special_mode_target_hl_group)
+	end
+end
+
+--- Extracts the revsets from either the current line or the selected lines in visual mode
+--- @return string|nil The revsets string or nil if none found
+local function extract_revsets_from_terminal_buffer()
+	local buf = terminal.state.buf
+	if not buf then
+		utils.notify("No open log buffer", vim.log.levels.ERROR)
+		return nil
+	end
+
+	local revsets_str = nil
+	local mode = vim.fn.mode()
+
+	-- Get revsets based on mode
+	if mode == "n" then
+		revsets_str = get_revset()
+	elseif mode == "v" or mode == "V" then
+		local start_line = vim.fn.line("v")
+		local end_line = vim.fn.line(".")
+		if start_line > end_line then
+			start_line, end_line = end_line, start_line
+		end
+
+		local lines = vim.api.nvim_buf_get_lines(buf, start_line - 1, end_line, false)
+		local revsets = parser.get_all_revsets(lines)
+		if not revsets or #revsets == 0 then
+			utils.notify("No valid revisions found in selected lines", vim.log.levels.ERROR)
+			return nil
+		end
+
+		revsets_str = table.concat(revsets, " | ")
+		-- Exit visual mode after extracting revsets
+		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "n", true)
+	else
+		return nil
+	end
+
+	return revsets_str
+end
+
+--- Setup highlights for selected revisions in the log buffer
+local function setup_selected_highlights()
+	local buf = terminal.state.buf
+	if not buf then
+		return
+	end
+
+	-- Set highlights
+	local marks = get_highlight_marks()
+	if not marks or #marks == 0 then
+		utils.notify("No valid revisions found to highlight", vim.log.levels.ERROR)
+		return
+	end
+
+	for _, mark in ipairs(marks) do
+		vim.api.nvim_buf_set_extmark(
+			buf,
+			log_selected_ns_id,
+			mark.line,
+			mark.col,
+			{ end_line = mark.end_line, end_col = mark.end_col, hl_group = log_selected_hl_group }
+		)
 	end
 end
 
@@ -178,7 +242,7 @@ function M.log(opts)
 		terminal.store_cursor_position()
 		-- Make sure to clear highlights before rerunning since the previous log buffer might have some
 		vim.api.nvim_buf_clear_namespace(terminal.state.buf, log_selected_ns_id, 0, -1)
-		vim.api.nvim_buf_clear_namespace(terminal.state.buf, log_rebase_target_ns_id, 0, -1)
+		vim.api.nvim_buf_clear_namespace(terminal.state.buf, log_special_mode_target_ns_id, 0, -1)
 	end
 
 	local jj_cmd = "jj log"
@@ -528,65 +592,49 @@ end
 
 --- Rebase bookmark(s)
 function M.handle_log_rebase()
-	local buf = terminal.state.buf
-	if not buf then
-		utils.notify("No open log buffer", vim.log.levels.ERROR)
+	local revsets_str = extract_revsets_from_terminal_buffer()
+	-- Validate revsets
+	if not revsets_str or revsets_str == "" then
 		return
 	end
+	vim.b.jj_rebase_revsets = revsets_str
 
-	local revsets_str = nil
-	local mode = vim.fn.mode()
+	-- Set highlights
+	setup_selected_highlights()
 
-	-- Get revsets based on mode
-	if mode == "n" then
-		revsets_str = get_revset()
-	elseif mode == "v" or mode == "V" then
-		local start_line = vim.fn.line("v")
-		local end_line = vim.fn.line(".")
-		if start_line > end_line then
-			start_line, end_line = end_line, start_line
-		end
+	M.transition_mode("rebase")
+	utils.notify("Rebase `started`.", vim.log.levels.INFO, 500)
+end
 
-		local lines = vim.api.nvim_buf_get_lines(buf, start_line - 1, end_line, false)
-		local revsets = parser.get_all_revsets(lines)
-		if not revsets or #revsets == 0 then
-			utils.notify("No valid revisions found in selected lines", vim.log.levels.ERROR)
-			return
-		end
-
-		revsets_str = table.concat(revsets, " | ")
-		-- Exit visual mode before transition
-		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "n", true)
-	else
-		return
-	end
-
+--- Squash bookmarks(s)
+function M.handle_log_squash()
+	local revsets_str = extract_revsets_from_terminal_buffer()
 	-- Validate revsets
 	if not revsets_str or revsets_str == "" then
 		return
 	end
 
-	vim.b.jj_rebase_revsets = revsets_str
-
+	vim.b.jj_squash_revsets = revsets_str
 	-- Set highlights
-	local marks = get_highlight_marks()
-	if not marks or #marks == 0 then
-		utils.notify("No valid revisions found to highlight during rebase", vim.log.levels.ERROR)
+	setup_selected_highlights()
+
+	M.transition_mode("squash")
+	utils.notify("Squash `started`.", vim.log.levels.INFO, 500)
+end
+
+--- Quick squash the bookmark under the cursor into it's parent
+function M.handle_log_quick_squash()
+	local revset = get_revset()
+	if not revset or revset == "" then
 		return
 	end
 
-	for _, mark in ipairs(marks) do
-		vim.api.nvim_buf_set_extmark(
-			buf,
-			log_selected_ns_id,
-			mark.line,
-			mark.col,
-			{ end_line = mark.end_line, end_col = mark.end_col, hl_group = log_selected_hl_group }
-		)
-	end
-
-	M.transition_mode("rebase")
-	utils.notify("Rebase `started`.", vim.log.levels.INFO, 500)
+	local cmd = string.format("jj squash -r %s -u --ignore-immutable", revset)
+	utils.notify(string.format("Squashing `%s` into it's parent...", revset), vim.log.levels.INFO)
+	runner.execute_command_async(cmd, function()
+		utils.notify(string.format("Successfully squashed `%s` into it's parent", revset), vim.log.levels.INFO)
+		M.log({})
+	end, string.format("Error squashing `%s` into it's parent", revset))
 end
 
 --- Resolve log keymaps from config, filtering out nil values
@@ -698,6 +746,16 @@ function M.log_keymaps()
 			handler = M.handle_log_rebase,
 			modes = { "n", "v" },
 		},
+		squash = {
+			desc = "Squash bookmark(s)",
+			handler = M.handle_log_squash,
+			modes = { "n", "v" },
+		},
+		quick_squash = {
+			desc = "Squash the bookmark under the cursor into it's parent (-r) keeping parent's message (-u), alwas ignores immutability",
+			handler = M.handle_log_quick_squash,
+			modes = { "n" },
+		},
 	}
 
 	return cmd.merge_keymaps(cmd.resolve_keymaps_from_specs(keymaps, specs), cmd.terminal_keymaps())
@@ -749,7 +807,37 @@ function M.rebase_keymaps()
 		},
 		exit_mode = {
 			desc = "Exit rebase to normal mode",
-			handler = M.handle_rebase_mode_exit,
+			handler = M.handle_special_mode_exit,
+			modes = { "n" },
+		},
+	}
+
+	return cmd.resolve_keymaps_from_specs(keymaps, spec)
+end
+
+--- Squash mode keymaps
+--- @return jj.core.buffer.keymap[]
+function M.squash_keymaps()
+	local cmd = require("jj.cmd")
+	local keymaps = cmd.config.keymaps.log.squash_mode or {}
+
+	--- @type jj.cmd.keymap_specs
+	local spec = {
+		into = {
+			desc = "Squash into (-t) the revision under cursor",
+			handler = M.handle_squash_execute,
+			args = { "into" },
+			modes = { "n" },
+		},
+		into_immutable = {
+			desc = "Squash onto (-i) the revision under cursor (ignores immutability)",
+			handler = M.handle_squash_execute,
+			args = { "into", true },
+			modes = { "n" },
+		},
+		exit_mode = {
+			desc = "Exit squash to normal mode",
+			handler = M.handle_special_mode_exit,
 			modes = { "n" },
 		},
 	}
@@ -765,12 +853,14 @@ function M.get_keymaps_for_mode(mode)
 		return M.log_keymaps()
 	elseif mode == "rebase" then
 		return M.rebase_keymaps()
+	elseif mode == "squash" then
+		return M.squash_keymaps()
 	end
 	return {}
 end
 
 --- Transition between buffer modes by swapping keymaps
---- @param target_mode string Target mode name (e.g., "normal", "rebase")
+--- @param target_mode "normal"|"rebase"|"squash" Target mode name (e.g., "normal", "rebase")
 function M.transition_mode(target_mode)
 	-- Get the mode keymaps
 	if target_mode == vim.b.jj_mode then
@@ -782,19 +872,19 @@ function M.transition_mode(target_mode)
 	terminal.replace_terminal_keymaps(new_keymaps)
 
 	-- Set up or tear down rebase mode autocmd
-	if target_mode == "rebase" then
+	if target_mode ~= "normal" then
 		rebase_mode_autocmd_id = vim.api.nvim_create_autocmd("CursorMoved", {
 			buffer = terminal.state.buf,
-			callback = update_rebase_target_highlight,
+			callback = update_special_mode_target_highlight,
 		})
 		-- Highlight initial position
-		update_rebase_target_highlight()
+		update_special_mode_target_highlight()
 	elseif rebase_mode_autocmd_id then
 		vim.api.nvim_del_autocmd(rebase_mode_autocmd_id)
 		rebase_mode_autocmd_id = nil
 		-- Clear target highlight
 		local buf = terminal.state.buf or 0
-		vim.api.nvim_buf_clear_namespace(buf, log_rebase_target_ns_id, 0, -1)
+		vim.api.nvim_buf_clear_namespace(buf, log_special_mode_target_ns_id, 0, -1)
 		last_rebase_target_line = nil
 	end
 
@@ -802,8 +892,8 @@ function M.transition_mode(target_mode)
 	vim.b.jj_mode = target_mode
 end
 
---- Handle rebase mode exit
-function M.handle_rebase_mode_exit()
+--- Handle special mode exit
+function M.handle_special_mode_exit()
 	-- Clear stored revsets
 	vim.b.jj_rebase_revsets = nil
 
@@ -811,7 +901,7 @@ function M.handle_rebase_mode_exit()
 	-- Clear highlights
 	local buf = terminal.state.buf or 0
 	vim.api.nvim_buf_clear_namespace(buf, log_selected_ns_id, 0, -1)
-	vim.api.nvim_buf_clear_namespace(buf, log_rebase_target_ns_id, 0, -1)
+	vim.api.nvim_buf_clear_namespace(buf, log_special_mode_target_ns_id, 0, -1)
 
 	utils.notify("Rebase `canceled`", vim.log.levels.INFO, 500)
 end
@@ -853,12 +943,55 @@ function M.handle_rebase_execute(mode, ignore_immut)
 		-- Clear all highlighting before transitioning
 		local buf = terminal.state.buf or 0
 		vim.api.nvim_buf_clear_namespace(buf, log_selected_ns_id, 0, -1)
-		vim.api.nvim_buf_clear_namespace(buf, log_rebase_target_ns_id, 0, -1)
+		vim.api.nvim_buf_clear_namespace(buf, log_special_mode_target_ns_id, 0, -1)
 
 		M.transition_mode("normal")
 		-- Refresh log
 		M.log({})
 	end, "Error during rebase onto")
+end
+
+--- Handle squash execution
+--- @param mode "into" Squash mode
+--- @param ignore_immut boolean? Wether or not to ignore immutability
+function M.handle_squash_execute(mode, ignore_immut)
+	-- Get all revsets in the format "xx xy xz"
+	local revsets = vim.b.jj_squash_revsets
+	local destination_revset = get_revset()
+	if not destination_revset or destination_revset == "" then
+		return
+	end
+
+	utils.notify(string.format("Squashing...", revsets, mode, destination_revset), vim.log.levels.INFO, 500)
+	-- U flag to keep destination's message
+	local cmd = string.format("jj squash -f '%s' -u", revsets)
+
+	if mode == "into" then
+		cmd = cmd .. string.format(" -t %s", destination_revset)
+	end
+
+	-- If ignore_immut is true, add the flag
+	-- This is not currently exposed in keymaps but could be in the future
+	if ignore_immut then
+		cmd = cmd .. " --ignore-immutable"
+	end
+
+	runner.execute_command_async(cmd, function()
+		utils.notify(
+			string.format("Squashed `%s` into `%s` successfully", revsets, destination_revset),
+			vim.log.levels.INFO
+		)
+		vim.b.jj_squash_revsets = nil
+
+		-- Clear all highlighting before transitioning
+		local buf = terminal.state.buf or 0
+		vim.api.nvim_buf_clear_namespace(buf, log_selected_ns_id, 0, -1)
+		vim.api.nvim_buf_clear_namespace(buf, log_special_mode_target_ns_id, 0, -1)
+
+		M.transition_mode("normal")
+		-- Refresh log
+		M.log({})
+	end, "Error during squash into")
 end
 
 return M

@@ -19,6 +19,7 @@
   - [Abandon changes from the log buffer](#abandon-changes-from-the-log-buffer)
   - [Fetch and push from the log buffer](#fetch-and-push-from-the-log-buffer)
   - [Manage bookmarks from the log buffer](#manage-bookmarks-from-the-log-buffer)
+  - [Squash changes from the log buffer](#squash-changes-from-the-log-buffer)
   - [Rebase changes from the log buffer](#rebase-changes-from-the-log-buffer)
   - [Open a PR/MR from the log buffer](#open-a-prmr-from-the-log-buffer)
   - [Open a changed file](#open-a-changed-file)
@@ -53,7 +54,7 @@
   - `diff` - Show changes with optional filtering by current file
   - `new` - Create a new change with optional parent selection
   - `edit` - Edit a change
-  - `squash` - Squash the current diff to it's parent
+  - `squash` - Squash the current diff to its parent or interactive squash mode from the log buffer
   - `rebase` - Rebase changes to a destination
   - `bookmark create/delete` - Create and delete bookmarks
   - `undo` - Undo the last operation
@@ -118,6 +119,31 @@ You can fetch and push directly from the log buffer:
 - `b` - Create a new bookmark or move an existing one to the revision under cursor
   - Select from existing bookmarks to move them
   - Or create a new bookmark at that revision
+
+### Squash changes from the log buffer
+
+Enter an interactive squash mode to squash one or more changes into a destination:
+
+- `s` - Enter squash mode targeting the revision under cursor (in normal mode) or selected revisions (in visual mode)
+- `<S-s>` - Quick squash the revision under cursor into its parent
+
+Once in squash mode, the interface highlights your selection and the current squash destination:
+
+- Selected changes are highlighted in your configured `selected_hl` color (default: dark magenta)
+- The cursor position (potential squash destination) is highlighted in your configured `targeted_hl` color (default: green)
+- Move the cursor to preview different squash destinations with live highlighting
+
+From squash mode, choose how to squash:
+
+- `<CR>` - Squash into (`-t`) the revision under cursor
+- `<S-CR>` - Squash into (`-t`) ignoring immutability
+- `<Esc>` or `<C-c>` - Exit squash mode without making changes
+
+**Visual mode selection:** Select multiple revisions in visual mode before pressing `s` to squash them all at once. The plugin extracts each selected revision and squashes them together.
+
+**Quick squash:** In normal mode, press `<S-s>` to quickly squash the current revision into its parent. This ignores immutability.
+
+![Squash-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/squash.gif)
 
 ### Rebase changes from the log buffer
 
@@ -311,6 +337,13 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
             before_immutable = "<S-b>",             -- Rebase before revision under cursor (ignore immutability)
             exit_mode = { "<Esc>", "<C-c>" }, -- Exit rebase mode
         },
+        squash = "s",                       -- Enter squash mode targeting revision under cursor or selected revisions
+        squash_mode = {
+            into = "<CR>",                     -- Squash into revision under cursor
+            into_immutable = "<S-CR>",         -- Squash into revision under cursor (ignore immutability)
+            exit_mode = { "<Esc>", "<C-c>" }, -- Exit squash mode
+        },
+        quick_squash = "<S-s>",             -- Quick squash revision under cursor into its parent (ignore immutability)
       },
       -- Status buffer keymaps (set to nil to disable)
       status = {
@@ -320,8 +353,8 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
       -- Close keymaps (shared across all buffers)
       close = { "q", "<Esc>" },
     },
-  }
-}
+
+}}
 
 ```
 
