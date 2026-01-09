@@ -462,17 +462,33 @@ function M.handle_log_fetch()
 end
 
 --- Handle pushing from `jj log` buffer.
-function M.handle_log_push_all()
+--- Askip the user for wich local bookmark to push.
+function M.handle_log_push_from_all()
+	local bookkmarks = utils.get_all_bookmarks()
 	local cmd = "jj git push"
-	utils.notify("Pushing `ALL` bookmarks", vim.log.levels.INFO)
-	runner.execute_command_async(cmd, function(output)
-		if output and string.find(output, "Nothing changed%.") then
-			utils.notify("Nothing changed.", vim.log.levels.INFO)
+	if not bookkmarks or #bookkmarks == 0 then
+		utils.notify("No bookmarks found to push", vim.log.levels.ERROR)
+		return
+	end
+
+	vim.ui.select(bookkmarks, {
+		prompt = "Select bookmark to push: ",
+	}, function(choice)
+		if choice then
+			local push_cmd = string.format("%s -b %s", cmd, choice)
+			utils.notify(string.format("Pushing bookmark `%s`...", choice), vim.log.levels.INFO)
+			runner.execute_command_async(push_cmd, function(output)
+				if output and string.find(output, "Nothing changed%.") then
+					utils.notify("Nothing changed.", vim.log.levels.INFO)
+				else
+					utils.notify(string.format("Successfully pushed bookmark `%s`", choice), vim.log.levels.INFO)
+					M.log({})
+				end
+			end, string.format("Error pushing bookmark `%s`", choice))
 		else
-			utils.notify("Successfully pushed all to remote", vim.log.levels.INFO)
-			M.log({})
+			return
 		end
-	end, "Error pushing to remote")
+	end)
 end
 
 --- Handle log pushing bookmark from current line in `jj log` buffer.
@@ -481,6 +497,7 @@ function M.handle_log_push_bookmark()
 	if not revset or revset == "" then
 		return
 	end
+
 	-- If we found a revfision get it's bookmark and push it
 	local bookmark, success = runner.execute_command(
 		string.format("jj log -r %s -T 'bookmarks' --no-graph", revset),
@@ -492,6 +509,18 @@ function M.handle_log_push_bookmark()
 		return
 	end
 
+	-- Function to push the bookmark, takes the full command as argument
+	local function push(cmd)
+		runner.execute_command_async(cmd, function(output)
+			if output and string.find(output, "Nothing changed%.") then
+				utils.notify("Nothing changed.", vim.log.levels.INFO)
+			else
+				utils.notify(string.format("Successfully pushed bookmark for `%s`", revset), vim.log.levels.INFO)
+				M.log({})
+			end
+		end, string.format("Error pushing bookmark for `%s`", revset))
+	end
+
 	-- If there's a * trim it (bookmarks with modifications have *)
 	bookmark = bookmark:gsub("%*", ""):gsub("^%s+", ""):gsub("%s+$", "")
 
@@ -500,17 +529,39 @@ function M.handle_log_push_bookmark()
 		return
 	end
 
-	-- Push the bookmark from the revset found
-	local cmd = string.format("jj git push --bookmark %s -N", bookmark)
-	utils.notify(string.format("Pushing bookmark `%s`...", bookmark), vim.log.levels.INFO)
-	runner.execute_command_async(cmd, function(output)
-		if output and string.find(output, "Nothing changed%.") then
-			utils.notify("Nothing changed.", vim.log.levels.INFO)
-		else
-			utils.notify(string.format("Successfully pushed bookmark for `%s`", revset), vim.log.levels.INFO)
-			M.log({})
-		end
-	end, string.format("Error pushing bookmark for `%s`", revset))
+	-- If there are multiple bookmarks user must choose
+	if bookmark:find(" ") then
+		-- Split by whitespace
+		local bookmarks = {}
+		bookmarks = vim.split(bookmark, "%s+", { trimempty = true })
+		table.insert(bookmarks, "[All]")
+
+		utils.notify(vim.inspect(bookmarks))
+		vim.ui.select(bookmarks, {
+			prompt = "Which bookmark do you want to push?",
+		}, function(choice)
+			if choice then
+				local cmd = "jj git push"
+				if choice == "[All]" then
+					-- Push all bookmarks
+					cmd = string.format("%s --all", cmd)
+					utils.notify("Pushing `ALL` bookmarks", vim.log.levels.INFO)
+				else
+					utils.notify(string.format("Pushing bookmark `%s`...", choice), vim.log.levels.INFO)
+					cmd = string.format("%s -b %s", cmd, choice)
+				end
+				push(cmd)
+			else
+				return
+			end
+		end)
+	else
+		-- If there's only one bookmark simply push it
+		-- Push the bookmark from the revset found
+		local cmd = string.format("jj git push -b %s", bookmark)
+		utils.notify(string.format("Pushing bookmark `%s`...", bookmark), vim.log.levels.INFO)
+		push(cmd)
+	end
 end
 
 --- Handle opening a PR/MR from `jj log` buffer for the revision under cursor
@@ -735,8 +786,8 @@ function M.log_keymaps()
 			modes = { "n" },
 		},
 		push_all = {
-			desc = "Push all to remote",
-			handler = M.handle_log_push_all,
+			desc = "Push one of the local bookmarks to remote",
+			handler = M.handle_log_push_from_all,
 			modes = { "n" },
 		},
 		push = {
