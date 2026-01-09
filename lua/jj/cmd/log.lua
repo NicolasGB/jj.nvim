@@ -382,12 +382,15 @@ end
 --- On success, notifies and refreshes the log buffer.
 --- @param ignore_immut? boolean Pass --ignore-immutable to jj abandon when true.
 function M.handle_log_abandon(ignore_immut)
-	local revset = get_revset()
-	if not revset or revset == "" then
+	local revsets = extract_revsets_from_terminal_buffer()
+	if not revsets then
 		return
 	end
 
-	-- If we found a revision, abandon it.
+	-- Delete the pipes from the revsets string since jj abandon expects space separated revsets
+	revsets = revsets:gsub("| ", "")
+
+	-- If we found revision(s), abandon it.
 
 	-- Build command parts.
 	local cmd_parts = { "jj", "abandon" }
@@ -395,14 +398,18 @@ function M.handle_log_abandon(ignore_immut)
 		table.insert(cmd_parts, "--ignore-immutable")
 	end
 
-	table.insert(cmd_parts, revset)
+	table.insert(cmd_parts, revsets)
 
 	-- Build cmd string
 	local cmd = table.concat(cmd_parts, " ")
 
 	-- Try to execute cmd
 	runner.execute_command_async(cmd, function()
-		utils.notify(string.format("Abandoned change: `%s`", revset), vim.log.levels.INFO)
+		local text = "Abandoned change: `%s`"
+		if #revsets > 1 then
+			text = "Abandoned changes: `%s`"
+		end
+		utils.notify(string.format(text, revsets), vim.log.levels.INFO)
 		M.log({})
 	end, "Error abandoning change")
 end
@@ -708,7 +715,7 @@ function M.log_keymaps()
 			-- As of now i'm only exposing the non ignore-immutable version of abandon in the keymaps
 			-- Maybe in the future we can add another keymap for that, if people request it
 			args = { false },
-			modes = { "n" },
+			modes = { "n", "v" },
 		},
 		fetch = {
 			desc = "Fetch from remote",
