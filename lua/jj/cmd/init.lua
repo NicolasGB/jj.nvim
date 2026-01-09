@@ -51,6 +51,7 @@ local status_module = require("jj.cmd.status")
 --- @field squash? string|string[]
 --- @field squash_mode? jj.cmd.squash.keymaps
 --- @field quick_squash? string|string[]
+--- @field summary? string|string[]
 
 --- @class jj.cmd.rebase.keymaps
 --- @field onto? string|string[]
@@ -154,6 +155,7 @@ M.config = {
 				exit_mode = { "<Esc>", "<C-c>" },
 			},
 			quick_squash = "<S-s>",
+			summary = "<S-k>",
 		},
 		status = {
 			open_file = "<CR>",
