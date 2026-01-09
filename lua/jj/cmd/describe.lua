@@ -9,6 +9,7 @@ local editor = require("jj.ui.editor")
 
 --- @class jj.cmd.describe_opts
 --- @field with_status boolean: Whether or not `jj st` should be displayed in a buffer while describing the commit
+--- @field type? "buffer"|"input" Editor mode for describe command: "buffer" (Git-style editor) or "input" (simple input prompt)
 --- @type jj.cmd.describe_opts
 local default_describe_opts = {
 	with_status = true,
@@ -69,9 +70,10 @@ function M.describe(description, revset, opts)
 	end
 
 	local cmd = require("jj.cmd")
+	local merged_opts = vim.tbl_deep_extend("force", default_describe_opts, opts or {})
 
 	-- Use buffer editor mode (defaults to "buffer" if not configured)
-	local editor_mode = cmd.config.describe.editor.type or "buffer"
+	local editor_mode = merged_opts.type or cmd.config.describe.editor.type or "buffer"
 	if editor_mode == "buffer" then
 		local jj_cmd = "jj log -r " .. revset .. " --no-graph -T 'coalesce(description, \"\n\")'"
 		local old_description_raw, success = runner.execute_command(jj_cmd, "Failed to get old description")
@@ -129,7 +131,6 @@ function M.describe(description, revset, opts)
 		end, describe_editor_keymaps())
 	else
 		-- Use input mode
-		local merged_opts = vim.tbl_deep_extend("force", default_describe_opts, opts or {})
 		if merged_opts.with_status then
 			-- Show the status in a terminal buffer
 			cmd.status()
