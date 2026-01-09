@@ -5,6 +5,7 @@ local utils = require("jj.utils")
 local runner = require("jj.core.runner")
 local parser = require("jj.core.parser")
 local terminal = require("jj.ui.terminal")
+local buffer = require("jj.core.buffer")
 
 local log_selected_hl_group = "JJLogSelectedHlGroup"
 local log_selected_ns_id = vim.api.nvim_create_namespace(log_selected_hl_group)
@@ -13,6 +14,8 @@ local log_special_mode_target_ns_id = vim.api.nvim_create_namespace(log_special_
 local rebase_mode_autocmd_id = nil
 local last_rebase_target_line = nil
 local HIGHLIGHT_RANGE = 2 -- Revision line + description line
+
+local last_summary_buf = nil -- Stores the revset of the last summary
 
 --- @class jj.cmd.log_opts
 --- @field summary? boolean
@@ -714,6 +717,156 @@ function M.handle_log_quick_squash()
 	end, string.format("Error squashing `%s` into it's parent", revset))
 end
 
+--- Handle diff action in summary tooltip
+--- Diffs the file at revset against its parent (revset-)
+--- @param revset string The revision being viewed
+local function handle_summary_diff(revset)
+	local line = vim.api.nvim_get_current_line()
+	local filepath = parser.parse_file_info_from_status_line(line)
+	if not filepath then
+		utils.notify("No file found on this line", vim.log.levels.WARN)
+		return
+	end
+
+	terminal.run_floating(
+		string.format("jj diff -r %s %s", revset, filepath.new_path),
+		require("jj.cmd").floating_keymaps()
+	)
+end
+
+--- Handle edit action in summary tooltip (opens file after jj edit)
+--- @param revset string The revision to edit
+--- @param ignore_immut boolean Whether to ignore immutability
+local function handle_summary_edit(revset, ignore_immut)
+	local line = vim.api.nvim_get_current_line()
+	local filepath = parser.parse_file_info_from_status_line(line)
+	if not filepath then
+		utils.notify("No file found on this line", vim.log.levels.WARN)
+		return
+	end
+
+	local cmd = string.format("jj edit %s", revset)
+	if ignore_immut then
+		cmd = cmd .. " --ignore-immutable"
+	end
+
+	runner.execute_command_async(cmd, function()
+		utils.notify(string.format("Edited `%s`", revset), vim.log.levels.INFO)
+		-- Go to to the buffer on top
+		vim.cmd("wincmd k")
+		-- Open the file in that window, replacing current buffer
+		vim.cmd("edit " .. vim.fn.fnameescape(filepath.new_path))
+	end, string.format("Error editing `%s`", revset))
+end
+
+--- Get keymaps for summary tooltip
+--- @param revset string The revision being viewed
+--- @return jj.core.buffer.keymap[]
+local function summary_keymaps(revset)
+	return {
+		{
+			modes = { "n" },
+			lhs = "d",
+			rhs = function()
+				handle_summary_diff(revset)
+			end,
+			opts = { desc = "Diff file at this revision" },
+		},
+		{
+			modes = { "n" },
+			lhs = "<CR>",
+			rhs = function()
+				handle_summary_edit(revset, false)
+			end,
+			opts = { desc = "Edit revision and open file" },
+		},
+		{
+			modes = { "n" },
+			lhs = "<S-CR>",
+			rhs = function()
+				handle_summary_edit(revset, true)
+			end,
+			opts = { desc = "Edit revision (ignore immutability) and open file" },
+		},
+	}
+end
+
+--- Build the summary command for a revset
+--- @param revset string The revision to show summary for
+--- @return string The jj log command
+local function build_summary_cmd(revset)
+	local template = '"Commit ID: " ++ commit_id ++ "\\n" '
+		.. '++ "Change ID: " ++ change_id ++ "\\n" '
+		.. '++ "Author: " ++ author ++ " (" ++ author.timestamp() ++ ")\\n" '
+		.. '++ "Committer: " ++ committer ++ " (" ++ committer.timestamp() ++ ")\\n\\n" '
+		.. "++ description "
+		.. '++ "\\n" ++ self.diff().summary()'
+
+	return string.format("jj log -r %s --no-graph -T '%s'", revset, template)
+end
+
+--- Handle showing summary tooltip for revision under cursor
+function M.handle_log_summary()
+	-- If tooltip exists and is valid, open scratch split instead
+	if last_summary_buf and vim.api.nvim_buf_is_valid(last_summary_buf) then
+		local revset = vim.b[last_summary_buf].jj_summary_revset
+		if revset then
+			-- Close the tooltip
+			buffer.close(last_summary_buf, true)
+			last_summary_buf = nil
+
+			-- Open ephemeral split with same content
+			local cmd = build_summary_cmd(revset)
+			local buf = terminal.run_scratch(cmd, {
+				title = string.format("jj-summary://%s", revset),
+				keymaps = summary_keymaps(revset),
+			})
+			if buf then
+				-- Store the revset for the scratchpad buffer
+				vim.b[buf].jj_summary_revset = revset
+			end
+			return
+		end
+	end
+
+	local revset = get_revset()
+	if not revset or revset == "" then
+		return
+	end
+
+	local cmd = build_summary_cmd(revset)
+
+	-- Run command synchronously first to calculate dimensions
+	local output, success = runner.execute_command(cmd, nil, nil, false)
+	if not success or not output then
+		return
+	end
+
+	-- Calculate dimensions based on output
+	local lines = vim.split(output, "\n", { trimempty = false })
+	local max_width = 0
+	for _, line in ipairs(lines) do
+		max_width = math.max(max_width, vim.fn.strdisplaywidth(line))
+	end
+	local width = math.min(max_width + 2, vim.o.columns - 4)
+	local height = #lines
+
+	local buf, _ = terminal.run_tooltip(cmd, {
+		title = string.format(" Summary: %s ", revset),
+		enter = false,
+		width = width,
+		height = height,
+		on_exit = function()
+			last_summary_buf = nil
+		end,
+	})
+
+	if buf then
+		last_summary_buf = buf
+		vim.b[buf].jj_summary_revset = revset
+	end
+end
+
 --- Resolve log keymaps from config, filtering out nil values
 --- @return jj.core.buffer.keymap[]
 function M.log_keymaps()
@@ -831,6 +984,11 @@ function M.log_keymaps()
 		quick_squash = {
 			desc = "Squash the bookmark under the cursor into it's parent (-r) keeping parent's message (-u), alwas ignores immutability",
 			handler = M.handle_log_quick_squash,
+			modes = { "n" },
+		},
+		summary = {
+			desc = "Show summary tooltip for revision under cursor",
+			handler = M.handle_log_summary,
 			modes = { "n" },
 		},
 	}
