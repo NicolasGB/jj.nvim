@@ -278,22 +278,29 @@ end
 --- @param flag? 'after' Position relative to the current revision; nil to branch off.
 --- @param ignore_immut? boolean Pass --ignore-immutable to jj when true.
 function M.handle_log_new(flag, ignore_immut)
-	local revset = get_revset()
-	if not revset or revset == "" then
+	local revsets = extract_revsets_from_terminal_buffer()
+	if not revsets then
 		return
 	end
+
+	-- Delete the pipes from the revsets string since jj new expects space separated revsets
+	revsets = revsets:gsub("| ", "")
+
+	local is_multiple = revsets:find(" ") ~= nil
 
 	-- Mapping for flag-specific options and messages.
 	local flag_map = {
 		after = {
 			opt = "-A",
 			err = "Error creating new change after: `%s`",
-			ok = "Successfully created change after: `%s`",
+			ok = is_multiple and "Successfully created merge change after: `%s`"
+				or "Successfully created change after: `%s`",
 		},
 		default = {
 			opt = "",
 			err = "Error creating new change branching off `%s`",
-			ok = "Successfully created change branching off `%s`",
+			ok = is_multiple and "Successfully created merge change from: `%s`"
+				or "Successfully created change branching off `%s`",
 		},
 	}
 
@@ -302,19 +309,24 @@ function M.handle_log_new(flag, ignore_immut)
 	-- Build command parts
 	local cmd_parts = { "jj", "new" }
 	if cfg.opt ~= "" then
-		table.insert(cmd_parts, cfg.opt)
+		-- For -A flag, each revset needs its own -A prefix
+		for rev in revsets:gmatch("%S+") do
+			table.insert(cmd_parts, cfg.opt)
+			table.insert(cmd_parts, rev)
+		end
+	else
+		table.insert(cmd_parts, revsets)
 	end
-	table.insert(cmd_parts, revset)
 	if ignore_immut then
 		table.insert(cmd_parts, "--ignore-immutable")
 	end
 
 	local cmd = table.concat(cmd_parts, " ")
 	runner.execute_command_async(cmd, function()
-		utils.notify(string.format(cfg.ok, revset), vim.log.levels.INFO)
+		utils.notify(string.format(cfg.ok, revsets), vim.log.levels.INFO)
 		-- Refresh the log buffer after creating the change.
 		require("jj.cmd").log()
-	end, string.format(cfg.err, revset))
+	end, string.format(cfg.err, revsets))
 end
 
 --- Handle diffing a log line
@@ -406,7 +418,7 @@ function M.handle_log_abandon(ignore_immut)
 	-- Try to execute cmd
 	runner.execute_command_async(cmd, function()
 		local text = "Abandoned change: `%s`"
-		if #revsets > 1 then
+		if revsets:find(" ", 1) then
 			text = "Abandoned changes: `%s`"
 		end
 		utils.notify(string.format(text, revsets), vim.log.levels.INFO)
@@ -685,19 +697,19 @@ function M.log_keymaps()
 			desc = "Create new change branching off revision under cursor",
 			handler = M.handle_log_new,
 			args = { nil, false },
-			modes = { "n" },
+			modes = { "n", "v" },
 		},
 		new_after = {
 			desc = "Create new change after revision under cursor",
 			handler = M.handle_log_new,
 			args = { "after", false },
-			modes = { "n" },
+			modes = { "n", "v" },
 		},
 		new_after_immutable = {
 			desc = "Create new change after revision under cursor (ignores immutability)",
 			handler = M.handle_log_new,
 			args = { "after", true },
-			modes = { "n" },
+			modes = { "n", "v" },
 		},
 		undo = {
 			desc = "Undo last change",
