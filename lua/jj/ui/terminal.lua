@@ -580,7 +580,7 @@ function M.run_tooltip(cmd, opts)
 		buffer.close(buf, true)
 	end, { buffer = buf, silent = true })
 
-	-- Close when cursor moves in other windows
+	-- Close when cursor moves in other windows (unless suppress flag is set)
 	vim.api.nvim_create_autocmd("CursorMoved", {
 		callback = function()
 			if
@@ -588,6 +588,10 @@ function M.run_tooltip(cmd, opts)
 				and vim.api.nvim_win_is_valid(win)
 				and vim.api.nvim_get_current_win() ~= win
 			then
+				-- Don't close if suppress flag is set (e.g., when opening floating diff from tooltip)
+				if vim.b[buf].jj_suppress_auto_close then
+					return
+				end
 				buffer.close(buf, true)
 				return true
 			end
