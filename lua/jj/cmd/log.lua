@@ -15,7 +15,8 @@ local rebase_mode_autocmd_id = nil
 local last_rebase_target_line = nil
 local HIGHLIGHT_RANGE = 2 -- Revision line + description line
 
-local last_summary_buf = nil -- Stores the revset of the last summary
+local last_summary_buf = nil -- Stores the buffer of the last summary tooltip
+local last_summary_win = nil -- Stores the window of the last summary tooltip
 
 --- @class jj.cmd.log_opts
 --- @field summary? boolean
@@ -719,6 +720,7 @@ end
 
 --- Handle diff action in summary tooltip
 --- Diffs the file at revset against its parent (revset-)
+--- Opens a floating diff, and returns focus to tooltip when closed
 --- @param revset string The revision being viewed
 local function handle_summary_diff(revset)
 	local line = vim.api.nvim_get_current_line()
@@ -728,13 +730,53 @@ local function handle_summary_diff(revset)
 		return
 	end
 
-	terminal.run_floating(
-		string.format("jj diff -r %s %s", revset, filepath.new_path),
-		require("jj.cmd").floating_keymaps()
-	)
+	-- Store current tooltip buffer/window to return to after diff closes
+	local tooltip_buf = last_summary_buf
+	local tooltip_win = last_summary_win
+
+	-- Suppress auto-close on the tooltip while diff is open
+	if tooltip_buf and vim.api.nvim_buf_is_valid(tooltip_buf) then
+		vim.b[tooltip_buf].jj_suppress_auto_close = true
+	end
+
+	-- Create keymaps that return to tooltip on close
+	local diff_keymaps = require("jj.cmd").floating_keymaps()
+
+	-- Add custom close behavior that returns to tooltip
+	local function close_and_return()
+		-- Close the floating diff
+		if terminal.state.floating_buf and vim.api.nvim_buf_is_valid(terminal.state.floating_buf) then
+			buffer.close(terminal.state.floating_buf, true)
+		end
+		-- Return focus to tooltip if still valid
+		if tooltip_win and vim.api.nvim_win_is_valid(tooltip_win) then
+			vim.api.nvim_set_current_win(tooltip_win)
+		end
+		-- Clear suppress flag
+		if tooltip_buf and vim.api.nvim_buf_is_valid(tooltip_buf) then
+			vim.b[tooltip_buf].jj_suppress_auto_close = nil
+		end
+	end
+
+	-- Override the close keymaps
+	table.insert(diff_keymaps, {
+		modes = { "n" },
+		lhs = "q",
+		rhs = close_and_return,
+		opts = { desc = "Close diff and return to tooltip" },
+	})
+	table.insert(diff_keymaps, {
+		modes = { "n" },
+		lhs = "<Esc>",
+		rhs = close_and_return,
+		opts = { desc = "Close diff and return to tooltip" },
+	})
+
+	terminal.run_floating(string.format("jj diff -r %s %s", revset, filepath.new_path), diff_keymaps)
 end
 
 --- Handle edit action in summary tooltip (opens file after jj edit)
+--- Closes tooltip and log buffer, edits the revision, and opens the file
 --- @param revset string The revision to edit
 --- @param ignore_immut boolean Whether to ignore immutability
 local function handle_summary_edit(revset, ignore_immut)
@@ -745,6 +787,16 @@ local function handle_summary_edit(revset, ignore_immut)
 		return
 	end
 
+	-- Close the tooltip first
+	if last_summary_buf and vim.api.nvim_buf_is_valid(last_summary_buf) then
+		buffer.close(last_summary_buf, true)
+		last_summary_buf = nil
+		last_summary_win = nil
+	end
+
+	-- Close the log buffer
+	terminal.close_terminal_buffer()
+
 	local cmd = string.format("jj edit %s", revset)
 	if ignore_immut then
 		cmd = cmd .. " --ignore-immutable"
@@ -752,9 +804,7 @@ local function handle_summary_edit(revset, ignore_immut)
 
 	runner.execute_command_async(cmd, function()
 		utils.notify(string.format("Edited `%s`", revset), vim.log.levels.INFO)
-		-- Go to to the buffer on top
-		vim.cmd("wincmd k")
-		-- Open the file in that window, replacing current buffer
+		-- Open the file in the current window
 		vim.cmd("edit " .. vim.fn.fnameescape(filepath.new_path))
 	end, string.format("Error editing `%s`", revset))
 end
@@ -766,7 +816,7 @@ local function summary_keymaps(revset)
 	return {
 		{
 			modes = { "n" },
-			lhs = "d",
+			lhs = "D",
 			rhs = function()
 				handle_summary_diff(revset)
 			end,
@@ -806,25 +856,15 @@ local function build_summary_cmd(revset)
 end
 
 --- Handle showing summary tooltip for revision under cursor
+--- First K shows tooltip without entering, second K enters the tooltip
 function M.handle_log_summary()
-	-- If tooltip exists and is valid, open scratch split instead
+	-- If tooltip exists and is valid, enter it on second K
 	if last_summary_buf and vim.api.nvim_buf_is_valid(last_summary_buf) then
 		local revset = vim.b[last_summary_buf].jj_summary_revset
-		if revset then
-			-- Close the tooltip
-			buffer.close(last_summary_buf, true)
-			last_summary_buf = nil
-
-			-- Open ephemeral split with same content
-			local cmd = build_summary_cmd(revset)
-			local buf = terminal.run_scratch(cmd, {
-				title = string.format("jj-summary://%s", revset),
-				keymaps = summary_keymaps(revset),
-			})
-			if buf then
-				-- Store the revset for the scratchpad buffer
-				vim.b[buf].jj_summary_revset = revset
-			end
+		if revset and last_summary_win and vim.api.nvim_win_is_valid(last_summary_win) then
+			-- Enter the tooltip window and set up keymaps
+			vim.api.nvim_set_current_win(last_summary_win)
+			buffer.set_keymaps(last_summary_buf, summary_keymaps(revset))
 			return
 		end
 	end
@@ -851,18 +891,20 @@ function M.handle_log_summary()
 	local width = math.min(max_width + 2, vim.o.columns - 4)
 	local height = #lines
 
-	local buf, _ = terminal.run_tooltip(cmd, {
+	local buf, win = terminal.run_tooltip(cmd, {
 		title = string.format(" Summary: %s ", revset),
 		enter = false,
 		width = width,
 		height = height,
 		on_exit = function()
 			last_summary_buf = nil
+			last_summary_win = nil
 		end,
 	})
 
 	if buf then
 		last_summary_buf = buf
+		last_summary_win = win
 		vim.b[buf].jj_summary_revset = revset
 	end
 end
