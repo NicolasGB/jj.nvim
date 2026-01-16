@@ -492,22 +492,22 @@ end
 --- Run a command in a PTY-based tooltip window
 --- Unlike run_floating, this doesn't track state - caller manages the buffer reference
 --- @param cmd string The command to run
---- @param opts? jj.ui.terminal.tooltip_opts Tooltip options
+--- @param tool_opts? jj.ui.terminal.tooltip_opts Tooltip options
 --- @return number|nil buf Buffer handle, or nil on failure
 --- @return number|nil win Window handle, or nil on failure
-function M.run_tooltip(cmd, opts)
-	opts = opts or {}
+function M.run_tooltip(cmd, tool_opts)
+	tool_opts = tool_opts or {}
 
 	local buf, win = buffer.create_float({
-		title = opts.title or " JJ ",
+		title = tool_opts.title or " JJ ",
 		title_pos = "center",
-		enter = opts.enter or false,
+		enter = tool_opts.enter or false,
 		bufhidden = "wipe",
 		relative = "cursor",
 		row = 1,
 		col = 0,
-		width = opts.width,
-		height = opts.height,
+		width = tool_opts.width,
+		height = tool_opts.height,
 		win_options = {
 			wrap = true,
 			number = false,
@@ -523,8 +523,6 @@ function M.run_tooltip(cmd, opts)
 		vim.api.nvim_buf_delete(buf, { force = true })
 		return nil, nil
 	end
-
-	local job_id = nil
 
 	local jid = vim.fn.jobstart(cmd, {
 		pty = true,
@@ -558,8 +556,6 @@ function M.run_tooltip(cmd, opts)
 		return buf, win
 	end
 
-	job_id = jid
-
 	vim.api.nvim_create_autocmd({ "BufWipeout", "BufDelete" }, {
 		buffer = buf,
 		once = true,
@@ -567,17 +563,36 @@ function M.run_tooltip(cmd, opts)
 			if chan then
 				pcall(vim.fn.chanclose, chan)
 			end
-			if job_id then
-				pcall(vim.fn.jobstop, job_id)
+			if jid then
+				pcall(vim.fn.jobstop, jid)
 			end
-			if opts.on_exit then
-				opts.on_exit(buf)
+			if tool_opts.on_exit then
+				tool_opts.on_exit(buf)
 			end
 		end,
 	})
 
 	vim.keymap.set("n", "<Esc>", function()
 		buffer.close(buf, true)
+		-- Focus the log window before restoring cursor position
+		if state.buf then
+			local log_win = vim.fn.bufwinid(state.buf)
+			if log_win ~= -1 then
+				vim.api.nvim_set_current_win(log_win)
+			end
+		end
+		M.restore_cursor_position()
+	end, { buffer = buf, silent = true })
+	vim.keymap.set("n", "q", function()
+		buffer.close(buf, true)
+		-- Focus the log window before restoring cursor position
+		if state.buf then
+			local log_win = vim.fn.bufwinid(state.buf)
+			if log_win ~= -1 then
+				vim.api.nvim_set_current_win(log_win)
+			end
+		end
+		M.restore_cursor_position()
 	end, { buffer = buf, silent = true })
 
 	-- Close when cursor moves in other windows (unless suppress flag is set)
@@ -598,8 +613,8 @@ function M.run_tooltip(cmd, opts)
 		end,
 	})
 
-	if opts.keymaps and #opts.keymaps > 0 then
-		buffer.set_keymaps(buf, opts.keymaps)
+	if tool_opts.keymaps and #tool_opts.keymaps > 0 then
+		buffer.set_keymaps(buf, tool_opts.keymaps)
 	end
 
 	vim.cmd("stopinsert")
@@ -623,134 +638,6 @@ function M.replace_floating_keymaps(keymaps)
 		buffer.set_keymaps(state.floating_buf, keymaps)
 		vim.b[state.floating_buf].jj_command_keymaps = keymaps
 	end
-end
-
---- @class jj.ui.terminal.scratch_opts
---- @field title? string Buffer name/title
---- @field size? number Split size in columns (default: 80)
---- @field direction? "left"|"right" Split direction (default: "right")
---- @field enter? boolean Whether to enter the new window (default: true)
---- @field keymaps? jj.core.buffer.keymap[] Keymaps to set on the buffer
---- @field on_exit? fun(buf: number) Callback when buffer is closed
-
---- Run a command in a PTY-based in a scratch vertical split
---- Unlike run_floating, this creates a split next to the current window
---- @param cmd string The command to run
---- @param scratch_opts? jj.ui.terminal.scratch_opts Ephemeral split options
---- @return number|nil buf Buffer handle, or nil on failure
---- @return number|nil win Window handle, or nil on failure
-function M.run_scratch(cmd, scratch_opts)
-	scratch_opts = scratch_opts or {}
-
-	local size = scratch_opts.size or 80
-	local direction = scratch_opts.direction or "right"
-	local enter = scratch_opts.enter ~= false
-
-	local buf, win = buffer.create({
-		split = "vertical",
-		direction = direction,
-		size = size,
-		bufhidden = "wipe",
-		win_options = {
-			wrap = true,
-			number = false,
-			relativenumber = false,
-			cursorline = false,
-			signcolumn = "no",
-		},
-	})
-
-	-- Focus the new window if enter is true
-	if enter and win then
-		vim.api.nvim_set_current_win(win)
-	end
-
-	if scratch_opts.title then
-		pcall(vim.api.nvim_buf_set_name, buf, scratch_opts.title)
-	end
-
-	local chan = vim.api.nvim_open_term(buf, {})
-	if not chan or chan <= 0 then
-		vim.notify("Failed to create terminal channel", vim.log.levels.ERROR)
-		vim.api.nvim_buf_delete(buf, { force = true })
-		return nil, nil
-	end
-
-	local job_id = nil
-
-	local jid = vim.fn.jobstart(cmd, {
-		pty = true,
-		width = vim.api.nvim_win_get_width(win),
-		height = vim.api.nvim_win_get_height(win),
-		env = {
-			TERM = "xterm-256color",
-			PAGER = "cat",
-			DELTA_PAGER = "cat",
-			COLORTERM = "truecolor",
-		},
-		on_stdout = function(_, data)
-			if not buf or not vim.api.nvim_buf_is_valid(buf) then
-				return
-			end
-			local output = table.concat(data, "\n")
-			vim.api.nvim_chan_send(chan, output)
-		end,
-		on_exit = function()
-			vim.schedule(function()
-				if buf and vim.api.nvim_buf_is_valid(buf) then
-					buffer.set_modifiable(buf, false)
-					buffer.stop_insert(buf)
-				end
-			end)
-		end,
-	})
-
-	if jid <= 0 then
-		vim.api.nvim_chan_send(chan, "Failed to start command: " .. cmd .. "\r\n")
-		return buf, win
-	end
-
-	job_id = jid
-
-	vim.api.nvim_create_autocmd({ "BufWipeout", "BufDelete" }, {
-		buffer = buf,
-		once = true,
-		callback = function()
-			if chan then
-				pcall(vim.fn.chanclose, chan)
-			end
-			if job_id then
-				pcall(vim.fn.jobstop, job_id)
-			end
-			if scratch_opts.on_exit then
-				scratch_opts.on_exit(buf)
-			end
-		end,
-	})
-
-	-- Close with q or Esc
-	vim.keymap.set("n", "q", function()
-		buffer.close(buf, true)
-	end, { buffer = buf, silent = true })
-
-	vim.keymap.set("n", "<Esc>", function()
-		buffer.close(buf, true)
-	end, { buffer = buf, silent = true })
-
-	-- Disable insert/command/append modes
-	buffer.set_keymaps(buf, {
-		{ modes = { "n", "v" }, lhs = "i", rhs = function() end },
-		{ modes = { "n", "v" }, lhs = "c", rhs = function() end },
-		{ modes = { "n", "v" }, lhs = "a", rhs = function() end },
-	})
-
-	if scratch_opts.keymaps and #scratch_opts.keymaps > 0 then
-		buffer.set_keymaps(buf, scratch_opts.keymaps)
-	end
-
-	vim.cmd("stopinsert")
-
-	return buf, win
 end
 
 return M

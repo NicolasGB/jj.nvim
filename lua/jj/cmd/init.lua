@@ -52,6 +52,7 @@ local status_module = require("jj.cmd.status")
 --- @field squash_mode? jj.cmd.squash.keymaps
 --- @field quick_squash? string|string[]
 --- @field summary? string|string[]
+--- @field summary_tooltip? jj.cmd.summary_tooltip.keymaps
 
 --- @class jj.cmd.rebase.keymaps
 --- @field onto? string|string[]
@@ -66,6 +67,11 @@ local status_module = require("jj.cmd.status")
 --- @field into? string|string[]
 --- @field into_immutable? string|string[]
 --- @field exit_mode? string|string[]
+
+--- @class jj.cmd.summary_tooltip.keymaps
+--- @field diff? string|string[]
+--- @field edit? string|string[]
+--- @field edit_immutable? string|string[]
 
 --- @class jj.cmd.bookmark
 --- @field prefix? string Prefix to append when creating a bookmark
@@ -156,6 +162,11 @@ M.config = {
 			},
 			quick_squash = "<S-s>",
 			summary = "<S-k>",
+			summary_tooltip = {
+				diff = "<S-d>",
+				edit = "<CR>",
+				edit_immutable = "<S-CR>",
+			},
 		},
 		status = {
 			open_file = "<CR>",
@@ -258,12 +269,12 @@ function M.floating_keymaps()
 		close = {
 			desc = "Close floating buffer",
 			handler = terminal.close_floating_buffer,
-			modes = { "n" },
+			modes = { "n", "v" },
 		},
 		hide = {
 			desc = "Hide floating buffer",
 			handler = terminal.hide_floating_buffer,
-			modes = { "n" },
+			modes = { "n", "v" },
 		},
 	})
 end

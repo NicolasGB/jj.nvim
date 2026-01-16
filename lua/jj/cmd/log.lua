@@ -722,7 +722,7 @@ end
 --- Diffs the file at revset against its parent (revset-)
 --- Opens a floating diff, and returns focus to tooltip when closed
 --- @param revset string The revision being viewed
-local function handle_summary_diff(revset)
+function M.handle_summary_diff(revset)
 	local line = vim.api.nvim_get_current_line()
 	local filepath = parser.parse_file_info_from_status_line(line)
 	if not filepath then
@@ -739,15 +739,10 @@ local function handle_summary_diff(revset)
 		vim.b[tooltip_buf].jj_suppress_auto_close = true
 	end
 
-	-- Create keymaps that return to tooltip on close
-	local diff_keymaps = require("jj.cmd").floating_keymaps()
-
 	-- Add custom close behavior that returns to tooltip
 	local function close_and_return()
 		-- Close the floating diff
-		if terminal.state.floating_buf and vim.api.nvim_buf_is_valid(terminal.state.floating_buf) then
-			buffer.close(terminal.state.floating_buf, true)
-		end
+		terminal.close_floating_buffer()
 		-- Return focus to tooltip if still valid
 		if tooltip_win and vim.api.nvim_win_is_valid(tooltip_win) then
 			vim.api.nvim_set_current_win(tooltip_win)
@@ -758,28 +753,33 @@ local function handle_summary_diff(revset)
 		end
 	end
 
-	-- Override the close keymaps
-	table.insert(diff_keymaps, {
-		modes = { "n" },
-		lhs = "q",
-		rhs = close_and_return,
-		opts = { desc = "Close diff and return to tooltip" },
-	})
-	table.insert(diff_keymaps, {
-		modes = { "n" },
-		lhs = "<Esc>",
-		rhs = close_and_return,
-		opts = { desc = "Close diff and return to tooltip" },
-	})
+	local cmd = require("jj.cmd")
+	local cfg = cmd.config.keymaps.floating or {}
+	-- In this specific case we override the behaviour of the default terminal close and return to the old buffer
+	local specs = {
+		close = {
+			modes = { "n", "v" },
+			handler = close_and_return,
+			desc = "Close diff and return to tooltip",
+		},
+		hide = {
+			modes = { "n", "v" },
+			handler = close_and_return,
+			desc = "Close diff and return to tooltip",
+		},
+	}
 
-	terminal.run_floating(string.format("jj diff -r %s %s", revset, filepath.new_path), diff_keymaps)
+	terminal.run_floating(
+		string.format("jj diff -r %s %s", revset, filepath.new_path),
+		cmd.resolve_keymaps_from_specs(cfg, specs)
+	)
 end
 
 --- Handle edit action in summary tooltip (opens file after jj edit)
 --- Closes tooltip and log buffer, edits the revision, and opens the file
 --- @param revset string The revision to edit
 --- @param ignore_immut boolean Whether to ignore immutability
-local function handle_summary_edit(revset, ignore_immut)
+function M.handle_summary_edit(revset, ignore_immut)
 	local line = vim.api.nvim_get_current_line()
 	local filepath = parser.parse_file_info_from_status_line(line)
 	if not filepath then
@@ -803,42 +803,39 @@ local function handle_summary_edit(revset, ignore_immut)
 	end
 
 	runner.execute_command_async(cmd, function()
-		utils.notify(string.format("Edited `%s`", revset), vim.log.levels.INFO)
+		utils.notify(string.format("Editing revset: `%s`", revset), vim.log.levels.INFO)
 		-- Open the file in the current window
 		vim.cmd("edit " .. vim.fn.fnameescape(filepath.new_path))
-	end, string.format("Error editing `%s`", revset))
+	end, string.format("Error editing revset: `%s`", revset))
 end
 
 --- Get keymaps for summary tooltip
 --- @param revset string The revision being viewed
 --- @return jj.core.buffer.keymap[]
-local function summary_keymaps(revset)
-	return {
-		{
+function M.summary_keymaps(revset)
+	local cmd = require("jj.cmd")
+	local keymaps = cmd.config.keymaps.log.summary_tooltip or {}
+	local specs = {
+		diff = {
 			modes = { "n" },
-			lhs = "D",
-			rhs = function()
-				handle_summary_diff(revset)
-			end,
-			opts = { desc = "Diff file at this revision" },
+			handler = M.handle_summary_diff,
+			args = { revset },
+			desc = "Diff file at this revision",
 		},
-		{
+		edit = {
 			modes = { "n" },
-			lhs = "<CR>",
-			rhs = function()
-				handle_summary_edit(revset, false)
-			end,
-			opts = { desc = "Edit revision and open file" },
+			handler = M.handle_summary_edit,
+			args = { revset, false },
+			desc = "Edit revision and open file",
 		},
-		{
+		edit_immutable = {
 			modes = { "n" },
-			lhs = "<S-CR>",
-			rhs = function()
-				handle_summary_edit(revset, true)
-			end,
+			handler = M.handle_summary_edit,
+			args = { revset, true },
 			opts = { desc = "Edit revision (ignore immutability) and open file" },
 		},
 	}
+	return cmd.resolve_keymaps_from_specs(keymaps, specs)
 end
 
 --- Build the summary command for a revset
@@ -862,9 +859,11 @@ function M.handle_log_summary()
 	if last_summary_buf and vim.api.nvim_buf_is_valid(last_summary_buf) then
 		local revset = vim.b[last_summary_buf].jj_summary_revset
 		if revset and last_summary_win and vim.api.nvim_win_is_valid(last_summary_win) then
+			-- Store the cursor position
+			terminal.store_cursor_position()
 			-- Enter the tooltip window and set up keymaps
 			vim.api.nvim_set_current_win(last_summary_win)
-			buffer.set_keymaps(last_summary_buf, summary_keymaps(revset))
+			buffer.set_keymaps(last_summary_buf, M.summary_keymaps(revset))
 			return
 		end
 	end
