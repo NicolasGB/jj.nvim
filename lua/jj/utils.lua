@@ -256,4 +256,22 @@ function M.open_pr_for_bookmark(bookmark)
 	end)
 end
 
+--- Check if a given revset represents an immutable change
+--- @param revset string The revset to check
+--- @return boolean True if the change is immutable, false otherwise
+function M.is_change_immutable(revset)
+	local output, success = runner.execute_command(
+		string.format("jj log --no-graph -r  '%s' -T 'immutable'", revset),
+		"Error checking change immutability",
+		nil,
+		true
+	)
+
+	if not success or not output then
+		return false
+	end
+
+	return vim.trim(output) == "true"
+end
+
 return M

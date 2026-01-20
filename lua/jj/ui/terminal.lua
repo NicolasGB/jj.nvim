@@ -39,6 +39,22 @@ local state = {
 
 	-- Cursor position
 	cursor_restore_pos = nil,
+
+	-- The current tooltip buffer
+	--- @type integer|nil
+	tooltip_buf = nil,
+	-- The tooltip window
+	--- @type integer|nil
+	tooltip_win = nil,
+	-- The tooltip channel to communicate with the terminal
+	--- @type integer|nil
+	tooltip_chan = nil,
+	-- The tooltip_job_id
+	--- @type integer|nil
+	tooltip_job_id = nil,
+	-- The tooltip autocmd that auto closes it
+	--- @type integer|nil
+	tooltip_close_autocmd = nil,
 }
 
 -- Re-export
@@ -123,12 +139,37 @@ end
 
 --- Close the current terminal buffer if it exists
 function M.close_terminal_buffer()
+	-- If the tooltip is showing that's what we want to close
+	if state.tooltip_buf then
+		M.close_tooltip()
+		return
+	end
+
+	-- Otherwise close the buffer
 	buffer.close(state.buf)
+	state.buf_cmd = nil
+	state.cursor_restore_pos = nil
+	state.chan = nil
+	state.job_id = nil
 end
 
 --- Close the current terminal buffer if it exists
 function M.close_floating_buffer()
 	buffer.close(state.floating_buf)
+	state.floating_chan = nil
+	state.floating_job_id = nil
+	state.floating_buf = nil
+end
+
+--- Close the current tooltip buffer if it exists
+function M.close_tooltip()
+	buffer.close(state.tooltip_buf)
+	vim.api.nvim_del_autocmd(state.tooltip_close_autocmd)
+	state.tooltip_chan = nil
+	state.tooltip_job_id = nil
+	state.tooltip_buf = nil
+	state.tooltip_win = nil
+	state.tooltip_close_autocmd = nil
 end
 
 --- Hide the current floating window
@@ -490,7 +531,6 @@ end
 --- @field height? number Tooltip height (default: 80% of lines)
 
 --- Run a command in a PTY-based tooltip window
---- Unlike run_floating, this doesn't track state - caller manages the buffer reference
 --- @param cmd string The command to run
 --- @param tool_opts? jj.ui.terminal.tooltip_opts Tooltip options
 --- @return number|nil buf Buffer handle, or nil on failure
@@ -498,7 +538,33 @@ end
 function M.run_tooltip(cmd, tool_opts)
 	tool_opts = tool_opts or {}
 
-	local buf, win = buffer.create_float({
+	-- Clean up previous state if invalid
+	if state.tooltip_buf and not vim.api.nvim_buf_is_valid(state.tooltip_buf) then
+		state.tooltip_buf = nil
+		state.tooltip_win = nil
+		state.tooltip_chan = nil
+		state.tooltip_job_id = nil
+	end
+
+	-- Stop any running job first
+	if state.tooltip_job_id then
+		vim.fn.jobstop(state.tooltip_job_id)
+		state.tooltip_job_id = nil
+	end
+
+	-- Close previous channel
+	if state.tooltip_chan then
+		vim.fn.chanclose(state.tooltip_chan)
+		state.tooltip_chan = nil
+	end
+
+	-- Wipe old buffer if it exists
+	if state.tooltip_buf and vim.api.nvim_buf_is_valid(state.tooltip_buf) then
+		vim.api.nvim_buf_delete(state.tooltip_buf, { force = true })
+		state.tooltip_buf = nil
+	end
+
+	state.tooltip_buf, state.tooltip_win = buffer.create_float({
 		title = tool_opts.title or " JJ ",
 		title_pos = "center",
 		enter = tool_opts.enter or false,
@@ -517,17 +583,17 @@ function M.run_tooltip(cmd, tool_opts)
 		},
 	})
 
-	local chan = vim.api.nvim_open_term(buf, {})
-	if not chan or chan <= 0 then
+	state.tooltip_chan = vim.api.nvim_open_term(state.tooltip_buf, {})
+	if not state.tooltip_chan or state.tooltip_chan <= 0 then
 		vim.notify("Failed to create terminal channel", vim.log.levels.ERROR)
-		vim.api.nvim_buf_delete(buf, { force = true })
+		vim.api.nvim_buf_delete(state.tooltip_buf, { force = true })
 		return nil, nil
 	end
 
-	local jid = vim.fn.jobstart(cmd, {
+	state.tooltip_job_id = vim.fn.jobstart(cmd, {
 		pty = true,
-		width = vim.api.nvim_win_get_width(win),
-		height = vim.api.nvim_win_get_height(win),
+		width = vim.api.nvim_win_get_width(state.tooltip_win),
+		height = vim.api.nvim_win_get_height(state.tooltip_win),
 		env = {
 			TERM = "xterm-256color",
 			PAGER = "cat",
@@ -535,45 +601,48 @@ function M.run_tooltip(cmd, tool_opts)
 			COLORTERM = "truecolor",
 		},
 		on_stdout = function(_, data)
-			if not buf or not vim.api.nvim_buf_is_valid(buf) then
+			if not state.tooltip_buf or not vim.api.nvim_buf_is_valid(state.tooltip_buf) then
 				return
 			end
 			local output = table.concat(data, "\n")
-			vim.api.nvim_chan_send(chan, output)
+			vim.api.nvim_chan_send(state.tooltip_chan, output)
 		end,
 		on_exit = function()
 			vim.schedule(function()
-				if buf and vim.api.nvim_buf_is_valid(buf) then
-					buffer.set_modifiable(buf, false)
-					buffer.stop_insert(buf)
+				if state.tooltip_buf and vim.api.nvim_buf_is_valid(state.tooltip_buf) then
+					buffer.set_modifiable(state.tooltip_buf, false)
+					buffer.stop_insert(state.tooltip_buf)
 				end
 			end)
 		end,
 	})
 
-	if jid <= 0 then
-		vim.api.nvim_chan_send(chan, "Failed to start command: " .. cmd .. "\r\n")
-		return buf, win
+	if state.tooltip_job_id <= 0 then
+		vim.api.nvim_chan_send(state.tooltip_chan, "Failed to start command: " .. cmd .. "\r\n")
+		return state.tooltip_buf, state.tooltip_win
 	end
 
 	vim.api.nvim_create_autocmd({ "BufWipeout", "BufDelete" }, {
-		buffer = buf,
+		buffer = state.tooltip_buf,
 		once = true,
 		callback = function()
-			if chan then
-				pcall(vim.fn.chanclose, chan)
+			if state.tooltip_chan then
+				pcall(vim.fn.chanclose, state.tooltip_chan)
 			end
-			if jid then
-				pcall(vim.fn.jobstop, jid)
+			if state.tooltip_job_id then
+				pcall(vim.fn.jobstop, state.tooltip_job_id)
 			end
-			if tool_opts.on_exit then
-				tool_opts.on_exit(buf)
-			end
+
+			-- Clean the state when closing
+			state.tooltip_buf = nil
+			state.tooltip_win = nil
+			state.tooltip_chan = nil
+			state.tooltip_job_id = nil
 		end,
 	})
 
 	vim.keymap.set("n", "<Esc>", function()
-		buffer.close(buf, true)
+		M.close_tooltip()
 		-- Focus the log window before restoring cursor position
 		if state.buf then
 			local log_win = vim.fn.bufwinid(state.buf)
@@ -582,9 +651,9 @@ function M.run_tooltip(cmd, tool_opts)
 			end
 		end
 		M.restore_cursor_position()
-	end, { buffer = buf, silent = true })
+	end, { buffer = state.tooltip_buf, silent = true })
 	vim.keymap.set("n", "q", function()
-		buffer.close(buf, true)
+		M.close_tooltip()
 		-- Focus the log window before restoring cursor position
 		if state.buf then
 			local log_win = vim.fn.bufwinid(state.buf)
@@ -593,33 +662,37 @@ function M.run_tooltip(cmd, tool_opts)
 			end
 		end
 		M.restore_cursor_position()
-	end, { buffer = buf, silent = true })
+	end, { buffer = state.tooltip_buf, silent = true })
 
 	-- Close when cursor moves in other windows (unless suppress flag is set)
-	vim.api.nvim_create_autocmd("CursorMoved", {
+	state.tooltip_close_autocmd = vim.api.nvim_create_autocmd("CursorMoved", {
 		callback = function()
 			if
-				vim.api.nvim_buf_is_valid(buf)
-				and vim.api.nvim_win_is_valid(win)
-				and vim.api.nvim_get_current_win() ~= win
+				vim.api.nvim_buf_is_valid(state.tooltip_buf)
+				and vim.api.nvim_win_is_valid(state.tooltip_win)
+				and vim.api.nvim_get_current_win() ~= state.tooltip_win
 			then
-				-- Don't close if suppress flag is set (e.g., when opening floating diff from tooltip)
-				if vim.b[buf].jj_suppress_auto_close then
+				-- Don't close if the keep open flag is set (e.g., when opening floating diff from tooltip)
+				if vim.b[state.tooltip_buf].jj_keep_open then
 					return
 				end
-				buffer.close(buf, true)
+				buffer.close(state.tooltip_buf, true)
 				return true
 			end
 		end,
 	})
 
 	if tool_opts.keymaps and #tool_opts.keymaps > 0 then
-		buffer.set_keymaps(buf, tool_opts.keymaps)
+		buffer.set_keymaps(state.tooltip_buf, tool_opts.keymaps)
 	end
 
-	vim.cmd("stopinsert")
+	return state.tooltip_buf, state.tooltip_win
+end
 
-	return buf, win
+--- Whether or not to keep the tooltip open instead of autoclosing
+--- @param keep_open boolean
+function M.keep_tooltip_open(keep_open)
+	vim.b[state.tooltip_buf].jj_keep_open = keep_open
 end
 
 --- Replace keymaps for floating terminal

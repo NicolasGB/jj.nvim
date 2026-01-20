@@ -15,9 +15,6 @@ local rebase_mode_autocmd_id = nil
 local last_rebase_target_line = nil
 local HIGHLIGHT_RANGE = 2 -- Revision line + description line
 
-local last_summary_buf = nil -- Stores the buffer of the last summary tooltip
-local last_summary_win = nil -- Stores the window of the last summary tooltip
-
 --- @class jj.cmd.log_opts
 --- @field summary? boolean
 --- @field reversed? boolean
@@ -547,7 +544,6 @@ function M.handle_log_push_bookmark()
 		bookmarks = vim.split(bookmark, "%s+", { trimempty = true })
 		table.insert(bookmarks, "[All]")
 
-		utils.notify(vim.inspect(bookmarks))
 		vim.ui.select(bookmarks, {
 			prompt = "Which bookmark do you want to push?",
 		}, function(choice)
@@ -730,13 +726,9 @@ function M.handle_summary_diff(revset)
 		return
 	end
 
-	-- Store current tooltip buffer/window to return to after diff closes
-	local tooltip_buf = last_summary_buf
-	local tooltip_win = last_summary_win
-
-	-- Suppress auto-close on the tooltip while diff is open
-	if tooltip_buf and vim.api.nvim_buf_is_valid(tooltip_buf) then
-		vim.b[tooltip_buf].jj_suppress_auto_close = true
+	-- Keep the tooltip open
+	if terminal.state.tooltip_buf and vim.api.nvim_buf_is_valid(terminal.state.tooltip_buf) then
+		terminal.keep_tooltip_open(true)
 	end
 
 	-- Add custom close behavior that returns to tooltip
@@ -744,12 +736,12 @@ function M.handle_summary_diff(revset)
 		-- Close the floating diff
 		terminal.close_floating_buffer()
 		-- Return focus to tooltip if still valid
-		if tooltip_win and vim.api.nvim_win_is_valid(tooltip_win) then
-			vim.api.nvim_set_current_win(tooltip_win)
+		if terminal.state.tooltip_win and vim.api.nvim_win_is_valid(terminal.state.tooltip_win) then
+			vim.api.nvim_set_current_win(terminal.state.tooltip_win)
 		end
 		-- Clear suppress flag
-		if tooltip_buf and vim.api.nvim_buf_is_valid(tooltip_buf) then
-			vim.b[tooltip_buf].jj_suppress_auto_close = nil
+		if terminal.state.tooltip_buf and vim.api.nvim_buf_is_valid(terminal.state.tooltip_buf) then
+			terminal.keep_tooltip_open(false)
 		end
 	end
 
@@ -780,6 +772,15 @@ end
 --- @param revset string The revision to edit
 --- @param ignore_immut boolean Whether to ignore immutability
 function M.handle_summary_edit(revset, ignore_immut)
+	-- Before anything check if the revset is immutable and the ignore_immut flag is set
+	if utils.is_change_immutable(revset) and not ignore_immut then
+		utils.notify(
+			string.format("The change `%s` is immutable, use the `edit_immutable` shortcut.", revset),
+			vim.log.levels.WARN
+		)
+		return
+	end
+
 	local line = vim.api.nvim_get_current_line()
 	local filepath = parser.parse_file_info_from_status_line(line)
 	if not filepath then
@@ -788,10 +789,8 @@ function M.handle_summary_edit(revset, ignore_immut)
 	end
 
 	-- Close the tooltip first
-	if last_summary_buf and vim.api.nvim_buf_is_valid(last_summary_buf) then
-		buffer.close(last_summary_buf, true)
-		last_summary_buf = nil
-		last_summary_win = nil
+	if terminal.state.tooltip_buf and vim.api.nvim_buf_is_valid(terminal.state.tooltip_buf) then
+		terminal.close_tooltip()
 	end
 
 	-- Close the log buffer
@@ -856,14 +855,14 @@ end
 --- First K shows tooltip without entering, second K enters the tooltip
 function M.handle_log_summary()
 	-- If tooltip exists and is valid, enter it on second K
-	if last_summary_buf and vim.api.nvim_buf_is_valid(last_summary_buf) then
-		local revset = vim.b[last_summary_buf].jj_summary_revset
-		if revset and last_summary_win and vim.api.nvim_win_is_valid(last_summary_win) then
+	if terminal.state.tooltip_buf and vim.api.nvim_buf_is_valid(terminal.state.tooltip_buf) then
+		local revset = vim.b[terminal.state.tooltip_buf].jj_summary_revset
+		if revset and terminal.state.tooltip_buf and vim.api.nvim_win_is_valid(terminal.state.tooltip_win) then
 			-- Store the cursor position
 			terminal.store_cursor_position()
 			-- Enter the tooltip window and set up keymaps
-			vim.api.nvim_set_current_win(last_summary_win)
-			buffer.set_keymaps(last_summary_buf, M.summary_keymaps(revset))
+			vim.api.nvim_set_current_win(terminal.state.tooltip_win)
+			buffer.set_keymaps(terminal.state.tooltip_buf, M.summary_keymaps(revset))
 			return
 		end
 	end
@@ -890,21 +889,15 @@ function M.handle_log_summary()
 	local width = math.min(max_width + 2, vim.o.columns - 4)
 	local height = #lines
 
-	local buf, win = terminal.run_tooltip(cmd, {
+	local buf, _ = terminal.run_tooltip(cmd, {
 		title = string.format(" Summary: %s ", revset),
 		enter = false,
 		width = width,
 		height = height,
-		on_exit = function()
-			last_summary_buf = nil
-			last_summary_win = nil
-		end,
 	})
 
 	if buf then
-		last_summary_buf = buf
-		last_summary_win = win
-		vim.b[buf].jj_summary_revset = revset
+		vim.b[terminal.state.tooltip_buf].jj_summary_revset = revset
 	end
 end
 
