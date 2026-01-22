@@ -682,6 +682,19 @@ function M.open_pr(opts)
 	utils.open_pr_for_bookmark(bookmark)
 end
 
+-- Jujutsu commit
+--- @param description string|nil Commit changes in the current change
+function M.commit(description)
+	if not utils.ensure_jj() then
+		return
+	end
+
+	M.describe(description, nil, nil, function()
+		-- Opinionated -A flag since it seems more intuitive when editing and commiting past changes and has no effect on top changes
+		M.new({ args = "-A @" })
+	end)
+end
+
 --- @param args string|string[] jj command arguments
 function M.j(args)
 	if not utils.ensure_jj() then
@@ -795,6 +808,9 @@ function M.j(args)
 		annotate_line = function()
 			require("jj.annotate").line()
 		end,
+		commit = function()
+			M.commit(remaining_args_str ~= "" and remaining_args_str or nil)
+		end,
 	}
 
 	if handlers[subcommand] then
@@ -841,6 +857,7 @@ function M.register_command()
 				"open_pr",
 				"annotate",
 				"annotate_line",
+				"commit",
 			}
 			local matches = {}
 			for _, cmd in ipairs(subcommands) do
