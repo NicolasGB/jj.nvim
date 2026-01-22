@@ -61,6 +61,7 @@
   - `redo` - Redo the last undone operation
   - `open_pr` - Open a PR/MR on your remote (GitHub, GitLab, Gitea, Forgejo, etc.)
   - `annotate` / `annotate_line` - View file blame and line history with change ID, author, and timestamp
+  - `commit` - Describe the current change and create a new one after
   - Diff commands
   - `:Jdiff [revision]` - Vertical split diff against a jj revision
   - `:Jhdiff [revision]` - Horizontal split diff
@@ -234,6 +235,8 @@ The plugin provides a `:J` command that accepts jj subcommands:
 :J bookmark create/move/delete
 :J # This will use your defined default command
 :J <your-alias>
+:J commit            " Opens your configured editor describes @ and then creates a new change -A immediately
+:J commit <any text here> " Automatically describes @ and creates a new change -A immediately
 ```
 
 ### Diff Commands

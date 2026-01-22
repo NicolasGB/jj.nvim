@@ -343,9 +343,16 @@ end
 
 --- Handle describing a log line
 function M.handle_log_describe()
+	-- Store the cursor pos for when we exit the describe
+	terminal.store_cursor_position()
 	local revset = get_revset()
 	if revset then
-		require("jj.cmd").describe(nil, revset)
+		require("jj.cmd").describe(nil, revset, nil, function()
+			-- Execute log
+			M.log()
+			-- Restore previous cursor pos
+			terminal.restore_cursor_position()
+		end)
 	else
 		utils.notify("No valid revision found in the log line", vim.log.levels.ERROR)
 	end

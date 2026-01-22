@@ -18,7 +18,8 @@ local default_describe_opts = {
 --- Execute jj describe command with the given description
 --- @param description string The description text
 --- @param revset? string The revision to describe
-local function execute_describe(description, revset)
+--- @param on_close function|nil The function to run on success
+local function execute_describe(description, revset, on_close)
 	if not description or description == "" then
 		utils.notify("Description cannot be empty", vim.log.levels.ERROR)
 		return
@@ -33,6 +34,12 @@ local function execute_describe(description, revset)
 	-- Use --stdin to properly handle multi-line and special characters
 	runner.execute_command_async(cmd, function()
 		utils.notify("Description set.", vim.log.levels.INFO)
+		-- If an on close callback is provided, call it
+		if on_close then
+			vim.schedule(function()
+				on_close()
+			end)
+		end
 	end, "Failed to describe", description)
 end
 
@@ -53,7 +60,8 @@ end
 --- @param description? string Optional description text
 --- @param revset? string The revision to describe
 --- @param opts? jj.cmd.describe_opts Optional command options
-function M.describe(description, revset, opts)
+--- @param on_close function|nil Optional callback when editor is closed
+function M.describe(description, revset, opts, on_close)
 	if not utils.ensure_jj() then
 		return
 	end
@@ -61,7 +69,7 @@ function M.describe(description, revset, opts)
 	-- Check if a description was provided otherwise require for input
 	if description then
 		-- Description provided directly
-		execute_describe(description, revset)
+		execute_describe(description, revset, on_close)
 		return
 	end
 
@@ -105,9 +113,6 @@ function M.describe(description, revset, opts)
 		table.insert(text, "JJ:") -- blank line
 		table.insert(text, 'JJ: Lines starting with "JJ:" (like this one) will be removed')
 
-		-- Check if we're coming from the log view so we can reopen it after editing
-		local open_log_on_close = terminal.state.buf_cmd == "log"
-
 		-- Close the terminal buffer before opening editor
 		terminal.close_terminal_buffer()
 
@@ -123,9 +128,10 @@ function M.describe(description, revset, opts)
 			execute_describe(trimmed_description, revset)
 			-- Once editing is done, reopen the log if we came from there
 		end, function()
-			if open_log_on_close then
+			-- If an on close callback is provided, call it
+			if on_close then
 				vim.schedule(function()
-					cmd.log({})
+					on_close()
 				end)
 			end
 		end, describe_editor_keymaps())
@@ -142,7 +148,7 @@ function M.describe(description, revset, opts)
 		}, function(input)
 			-- If the user inputed something, execute the describe command
 			if input then
-				execute_describe(input, revset)
+				execute_describe(input, revset, on_close)
 			end
 			-- Close the current terminal when finished
 			terminal.close_terminal_buffer()
@@ -151,4 +157,3 @@ function M.describe(description, revset, opts)
 end
 
 return M
-
