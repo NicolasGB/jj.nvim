@@ -160,4 +160,5 @@ function M.open_hdiff(opts)
 	M.diff_current(vim.tbl_extend("force", { layout = "horizontal" }, { rev = opts and opts.rev }))
 end
 
+---@return jj.diff
 return M

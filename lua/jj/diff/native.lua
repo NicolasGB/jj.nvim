@@ -1,7 +1,6 @@
 local utils = require("jj.utils")
 local buffer = require("jj.core.buffer")
 
----@type jj.diff
 local diff = require("jj.diff")
 
 --- Get the content of a file at a specific revision
@@ -111,13 +110,13 @@ diff.register_backend("native", {
 	show_revision = function(opts)
 		local terminal = require("jj.ui.terminal")
 
-		local cmd = string.format("jj diff -r %s --quiet", opts.rev)
+		local cmd = string.format("jj show -r %s --quiet --no-pager", opts.rev)
 		terminal.run_floating(cmd, require("jj.cmd").floating_keymaps())
 	end,
 	diff_revisions = function(opts)
 		local terminal = require("jj.ui.terminal")
 
-		local cmd = string.format("jj diff -f %s -t %s --quiet", opts.left, opts.right)
+		local cmd = string.format("jj diff -f %s -t %s --quiet --no-pager", opts.left, opts.right)
 		terminal.run_floating(cmd, require("jj.cmd").floating_keymaps())
 	end,
 })

@@ -6,6 +6,7 @@ local runner = require("jj.core.runner")
 local parser = require("jj.core.parser")
 local terminal = require("jj.ui.terminal")
 local buffer = require("jj.core.buffer")
+local diff = require("jj.diff")
 
 local log_selected_hl_group = "JJLogSelectedHlGroup"
 local log_selected_ns_id = vim.api.nvim_create_namespace(log_selected_hl_group)
@@ -335,8 +336,7 @@ function M.handle_log_diff()
 	local revset = get_revset()
 
 	if revset then
-		local cmd = string.format("jj show --no-pager %s", revset)
-		terminal.run_floating(cmd, require("jj.cmd").floating_keymaps())
+		diff.show_revision({ rev = revset })
 	else
 		utils.notify("No valid revision found in the log line", vim.log.levels.ERROR)
 	end
@@ -731,40 +731,11 @@ function M.handle_summary_diff(revset)
 		terminal.keep_tooltip_open(true)
 	end
 
-	-- Add custom close behavior that returns to tooltip
-	local function close_and_return()
-		-- Close the floating diff
-		terminal.close_floating_buffer()
-		-- Return focus to tooltip if still valid
-		if terminal.state.tooltip_win and vim.api.nvim_win_is_valid(terminal.state.tooltip_win) then
-			vim.api.nvim_set_current_win(terminal.state.tooltip_win)
-		end
-		-- Clear suppress flag
-		if terminal.state.tooltip_buf and vim.api.nvim_buf_is_valid(terminal.state.tooltip_buf) then
-			terminal.keep_tooltip_open(false)
-		end
-	end
-
-	local cmd = require("jj.cmd")
-	local cfg = cmd.config.keymaps.floating or {}
-	-- In this specific case we override the behaviour of the default terminal close and return to the old buffer
-	local specs = {
-		close = {
-			modes = { "n", "v" },
-			handler = close_and_return,
-			desc = "Close diff and return to tooltip",
-		},
-		hide = {
-			modes = { "n", "v" },
-			handler = close_and_return,
-			desc = "Close diff and return to tooltip",
-		},
-	}
-
-	terminal.run_floating(
-		string.format("jj diff -r %s %s", revset, filepath.new_path),
-		cmd.resolve_keymaps_from_specs(cfg, specs)
-	)
+	-- Use the diff module to show what changed in this revision for this file
+	diff.show_revision({
+		rev = revset,
+		path = filepath.new_path,
+	})
 end
 
 --- Handle edit action in summary tooltip (opens file after jj edit)
