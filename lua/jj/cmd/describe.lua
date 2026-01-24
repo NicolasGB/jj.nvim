@@ -83,13 +83,13 @@ function M.describe(description, revset, opts, on_close)
 	-- Use buffer editor mode (defaults to "buffer" if not configured)
 	local editor_mode = merged_opts.type or cmd.config.describe.editor.type or "buffer"
 	if editor_mode == "buffer" then
-		local jj_cmd = "jj log -r " .. revset .. " --no-graph -T 'coalesce(description, \"\n\")'"
+		local jj_cmd = "jj log -r " .. revset .. " --quiet --no-graph -T 'coalesce(description, \"\n\")'"
 		local old_description_raw, success = runner.execute_command(jj_cmd, "Failed to get old description")
 		if not old_description_raw or not success then
 			return
 		end
 
-		local log_cmd = "jj log -r " .. revset .. " --no-graph -T 'self.diff().summary()'"
+		local log_cmd = "jj log -r " .. revset .. " --quiet --no-graph -T 'self.diff().summary()'"
 		local status_result, success2 = runner.execute_command(log_cmd, "Error getting status")
 		if not success2 then
 			return

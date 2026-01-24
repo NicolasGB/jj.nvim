@@ -68,6 +68,10 @@ diff.register_backend("native", {
 		local split_fun = layout == "horizontal" and vim.cmd.split or vim.cmd.vsplit
 		local orig_win = vim.api.nvim_get_current_win()
 
+		-- Use better diff algorithm for code moves and indentation
+		local saved_diffopt = vim.o.diffopt
+		vim.opt.diffopt:append("algorithm:patience,indent-heuristic")
+
 		-- Set up diff: current buffer on right, revision on left
 		vim.cmd.diffthis()
 		split_fun({ mods = { split = "aboveleft" } })
@@ -89,6 +93,7 @@ diff.register_backend("native", {
 					vim.cmd.diffoff()
 				end
 				buffer.set_cursor(prev_buf, prev_cur_pos)
+				vim.o.diffopt = saved_diffopt
 			end)
 		end
 

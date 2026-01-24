@@ -17,10 +17,6 @@ local function diff_two_changes(left, right)
 		return
 	end
 
-	-- Get only the first 6 chars
-	commit_id_left = string.sub(commit_id_left, 1, 6)
-	commit_id_right = string.sub(commit_id_right, 1, 6)
-
 	vim.cmd(string.format("CodeDiff %s %s", commit_id_right, commit_id_left))
 end
 
@@ -44,8 +40,6 @@ diff.register_backend("codediff", {
 			commit_id = t_commit_id
 		end
 
-		-- Get the first six
-		commit_id = string.sub(commit_id, 1, 6)
 		vim.cmd(string.format("CodeDiff file %s", commit_id))
 	end,
 

@@ -333,12 +333,23 @@ end
 
 --- Handle diffing a log line
 function M.handle_log_diff()
-	local revset = get_revset()
-
-	if revset then
-		diff.show_revision({ rev = revset })
-	else
+	local revsets = extract_revsets_from_terminal_buffer()
+	if not revsets then
 		utils.notify("No valid revision found in the log line", vim.log.levels.ERROR)
+		return
+	end
+
+	-- Delete the pipes from the revsets string since jj new expects space separated revsets
+	revsets = revsets:gsub("| ", "")
+
+	local is_multiple = revsets:find(" ") ~= nil
+
+	if not is_multiple then
+		diff.show_revision({ rev = revsets })
+	else
+		-- Get the first and the last revset to diff
+		local list = vim.split(revsets, "%s+", { trimempty = true })
+		diff.diff_revisions({ left = list[1], right = list[#list] })
 	end
 end
 
@@ -907,7 +918,7 @@ function M.log_keymaps()
 		diff = {
 			desc = "Diff revision under cursor",
 			handler = M.handle_log_diff,
-			modes = { "n" },
+			modes = { "n", "v" },
 		},
 		new = {
 			desc = "Create new change branching off revision under cursor",
