@@ -2,98 +2,162 @@
 local M = {}
 
 local utils = require("jj.utils")
-local buffer = require("jj.core.buffer")
 
---- Get the content of a file at a specific revision
---- @param rev string The revision
---- @param path string The file path
---- @return table lines The file content
-local function get_file_content(rev, path)
-	local cmd = string.format("jj file show -r %s %s", vim.fn.shellescape(rev), vim.fn.shellescape(path))
-	local content = vim.fn.system(cmd)
-	local success = vim.v.shell_error == 0
-	if success then
-		return vim.split(content, "\n", { trimempty = true })
-	else
-		-- File does not exist at revision
-		return {}
-	end
-end
+---@alias jj.diff.backend "native"|"diffview"|"codediff"|string
 
---- Open a read-only buffer for a specific revision of a file
---- @param rev string The revision
---- @param path string The file path
-function M.open_revision(rev, path)
-	local lines = get_file_content(rev, path)
+---@class jj.diff.current_opts
+---@field rev? string          -- revision to diff against (default: "@-")
+---@field path? string         -- path to diff (default: current buffer path)
+---@field backend? jj.diff.backend
+---@field layout? "vertical"|"horizontal" -- only used by native backend
 
-	local buf = vim.api.nvim_create_buf(false, true)
+---@class jj.diff.revision_opts
+---@field rev string           -- revision to show
+---@field path? string         -- optional single-file filter
+---@field backend? jj.diff.backend
+---@field display? "floating"|"tab"|"split" -- hint to backend
 
-	local buf_name = string.format("jj://%s/%s", rev, path)
-	vim.api.nvim_buf_set_name(buf, buf_name)
-	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+---@class jj.diff.revisions_opts
+---@field left string          -- left/base revision
+---@field right string         -- right/target revision
+---@field path? string         -- optional single-file filter
+---@field backend? jj.diff.backend
+---@field display? "floating"|"tab"|"split"
 
-	local ft = vim.filetype.match({ filename = path })
-	if ft then
-		vim.bo[buf].filetype = ft
-	end
+---@class jj.diff.BackendImpl
+---@field diff_current? fun(opts: jj.diff.current_opts)
+---@field show_revision? fun(opts: jj.diff.revision_opts)
+---@field diff_revisions? fun(opts: jj.diff.revisions_opts)
 
-	vim.bo[buf].buftype = "nofile"
-	vim.bo[buf].bufhidden = "wipe"
-	vim.bo[buf].readonly = true
-	vim.bo[buf].swapfile = false
-	vim.bo[buf].modifiable = true
-
-	vim.api.nvim_win_set_buf(0, buf)
-end
+---@class jj.diff.config
+---@field backend? jj.diff.backend
+---@field backends? table<string, table>
 
 ---@class jj.diff.diff_opts
 ---@field rev string the revision to diff against
 
---- Open a diff split for a specific revision of the current file
---- @param split_fun function Split function for the diff
---- @param opts? jj.diff.diff_opts Any passed arguments
-function M.open_diff(split_fun, opts)
-	if not utils.ensure_jj() then
-		return
-	end
+---@type jj.diff.config
+M.config = {
+	backend = "native",
+	backends = {},
+}
 
-	-- Get previus cursor position
-	local prev_buf = vim.api.nvim_get_current_buf()
-	local prev_cur_pos = buffer.get_cursor(prev_buf)
-	-- If no previous cursor position, set to start of file
-	if prev_cur_pos == nil then
-		prev_cur_pos = { 1, 0 }
-	end
+---@type table<string, jj.diff.BackendImpl>
+local backends = {}
 
-	-- Ensure opts is a table to avoid indexing nil
-	opts = opts or {}
-	local rev = opts.rev or "@-"
-	local path = vim.api.nvim_buf_get_name(0)
+-----------------------------------------------------------------------
+-- Backend Registry
+-----------------------------------------------------------------------
 
-	vim.cmd.diffthis()
-	split_fun({ mods = { split = "aboveleft" } })
-	M.open_revision(rev, path)
-	vim.cmd.diffthis()
-
-	-- Add an autocomnd to restore the buffer position to the previous one when exiting diff
-	vim.api.nvim_create_autocmd("BufWipeout", {
-		buffer = vim.api.nvim_get_current_buf(),
-		callback = function()
-			buffer.set_cursor(prev_buf, prev_cur_pos)
-		end,
-	})
+--- Register or override a backend implementation
+---@param name string
+---@param impl jj.diff.BackendImpl
+function M.register_backend(name, impl)
+	backends[name] = impl
 end
+
+--- Get the configured default backend name
+---@return string
+local function get_config_backend()
+	local ok, cfg = pcall(function()
+		return require("jj").config.diff
+	end)
+	if ok and cfg and cfg.backend then
+		return cfg.backend
+	end
+	return M.config.backend or "native"
+end
+
+--- Get a backend implementation by name, falling back to native
+---@param name? string
+---@return jj.diff.BackendImpl
+local function get_backend(name)
+	name = name or get_config_backend()
+	local impl = backends[name]
+	if not impl then
+		utils.notify(
+			string.format("[Diff] backend '%s' not available, falling back to 'native'", name),
+			vim.log.levels.WARN
+		)
+		impl = backends.native
+	end
+	return impl
+end
+
+--- Setup the diff module
+---@param cfg? jj.diff.config
+function M.setup(cfg)
+	M.config = vim.tbl_deep_extend("force", M.config, cfg or {})
+	-- Laod default backends
+	pcall(require, "jj.diff.diffview")
+	pcall(require, "jj.diff.codediff")
+	pcall(require, "jj.diff.native")
+end
+
+-----------------------------------------------------------------------
+-- Unified Public API
+-----------------------------------------------------------------------
+
+--- Single dispatcher (canonical entry point)
+---@param kind "current"|"revision"|"revisions"
+---@param opts table
+function M.open(kind, opts)
+	opts = opts or {}
+	local backend = get_backend(opts.backend)
+
+	if kind == "current" then
+		if backend.diff_current then
+			return backend.diff_current(opts)
+		end
+		return backends.native.diff_current(opts)
+	elseif kind == "revision" then
+		if backend.show_revision then
+			return backend.show_revision(opts)
+		end
+		return backends.native.show_revision(opts)
+	elseif kind == "revisions" then
+		if backend.diff_revisions then
+			return backend.diff_revisions(opts)
+		end
+		return backends.native.diff_revisions(opts)
+	else
+		utils.notify("[Diff] unknown diff kind: " .. tostring(kind), vim.log.levels.ERROR)
+	end
+end
+
+--- Diff current buffer against a revision
+---@param opts? jj.diff.current_opts
+function M.diff_current(opts)
+	return M.open("current", opts or {})
+end
+
+--- Show what changed in a single revision
+---@param opts jj.diff.revision_opts
+function M.show_revision(opts)
+	return M.open("revision", opts)
+end
+
+--- Diff between two revisions
+---@param opts jj.diff.revisions_opts
+function M.diff_revisions(opts)
+	return M.open("revisions", opts)
+end
+
+---
+-----------------------------------------------------------------------
+-- BACKWARDS COMPATIBLE API
+-----------------------------------------------------------------------
 
 -- Open a vertical diff split for a specific revision of the current file
 --- @param opts? jj.diff.diff_opts Any passed arguments
 function M.open_vdiff(opts)
-	M.open_diff(vim.cmd.vsplit, opts)
+	M.diff_current(vim.tbl_extend("force", { layout = "vertical" }, { rev = opts and opts.rev }))
 end
 
 -- Open a horizontal diff split for a specific revision of the current file
 --- @param opts? jj.diff.diff_opts Any passed arguments
 function M.open_hdiff(opts)
-	M.open_diff(vim.cmd.split, opts)
+	M.diff_current(vim.tbl_extend("force", { layout = "horizontal" }, { rev = opts and opts.rev }))
 end
 
 return M

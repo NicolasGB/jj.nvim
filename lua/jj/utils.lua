@@ -261,7 +261,7 @@ end
 --- @return boolean True if the change is immutable, false otherwise
 function M.is_change_immutable(revset)
 	local output, success = runner.execute_command(
-		string.format("jj log --no-graph -r  '%s' -T 'immutable'", revset),
+		string.format("jj log --no-graph -r  '%s' -T 'immutable' --quiet", revset),
 		"Error checking change immutability",
 		nil,
 		true
@@ -272,6 +272,25 @@ function M.is_change_immutable(revset)
 	end
 
 	return vim.trim(output) == "true"
+end
+---
+--- Get the commit id from a given revision
+--- @param revset string The revset to extract the commit id from
+--- @return string|nil
+function M.get_commit_id(revset)
+	local output, success = runner.execute_command(
+		string.format("jj log --no-graph -r '%s' -T 'commit_id' --quiet", revset),
+		"Error extracting commit id",
+		nil,
+		true
+	)
+	-- Test quie
+
+	if not success or not output then
+		return nil
+	end
+
+	return vim.trim(output)
 end
 
 return M

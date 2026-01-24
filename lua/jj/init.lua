@@ -3,6 +3,7 @@ local cmd = require("jj.cmd")
 local picker = require("jj.picker")
 local editor = require("jj.ui.editor")
 local terminal = require("jj.ui.terminal")
+local diff = require("jj.diff")
 
 --- Jujutsu plugin configuration
 --- @class jj.Config
@@ -10,6 +11,7 @@ local terminal = require("jj.ui.terminal")
 --- @field picker? jj.picker.config Options for picker module
 --- @field terminal? jj.ui.terminal.opts Options for the terminal
 --- @field highlights? jj.highlights Options for the highlights
+--- @field diff? jj.diff.config Options for the diff module
 
 --- @class jj.highlights
 --- @field editor? jj.ui.editor.highlights Highlight configuration for describe buffer
@@ -29,6 +31,10 @@ M.config = {
 			targeted = { fg = "#5a9e6f", ctermfg = "Green" },
 		},
 	},
+	diff = {
+		backend = "native",
+		backends = {},
+	},
 }
 
 --- Setup the plugin
@@ -41,6 +47,7 @@ function M.setup(opts)
 	editor.setup({ highlights = M.config.highlights.editor })
 	cmd.setup(opts and opts.cmd or {})
 	terminal.setup(opts and opts.terminal or {})
+	diff.setup(M.config.diff)
 
 	cmd.register_command()
 end
