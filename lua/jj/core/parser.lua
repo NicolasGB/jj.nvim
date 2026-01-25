@@ -162,12 +162,22 @@ function M.get_revset(line)
 	allowed_prefix = allowed_prefix .. "]+" -- close class, match one or more (not zero)
 
 	-- Match first alphanumeric sequence after graph prefix
-	-- Only match if it's followed by whitespace or end of string (not part of text)
-	local revset = line:match("^" .. allowed_prefix .. "(%w+)%s")
+	-- Supports divergent changes: revset\0, revset\1, etc.
+	-- Only match if it's followed by whitespace, backslash (for divergent), or end of string
+
+	-- Try matching with divergent suffix first: revset\N where N is a number
+	local revset, divergent_num = line:match("^" .. allowed_prefix .. "(%w+)\\(%d+)")
+	if revset and divergent_num then
+		return revset .. "\\" .. divergent_num
+	end
+
+	-- Try regular match followed by whitespace
+	revset = line:match("^" .. allowed_prefix .. "(%w+)%s")
 	if not revset then
 		-- Try matching at end of line without trailing whitespace
 		revset = line:match("^" .. allowed_prefix .. "(%w+)$")
 	end
+
 	return revset
 end
 
