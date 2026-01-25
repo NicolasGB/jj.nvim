@@ -12,6 +12,7 @@
 
 - [Current Features](#current-features)
 - [Enhanced Integrations](#enhanced-integrations)
+  - [View change summary from the log buffer](#view-change-summary-from-the-log-buffer)
   - [Diff any change](#diff-any-change)
   - [Edit changes](#edit-changes)
   - [Create new changes from the log buffer](#create-new-changes-from-the-log-buffer)
@@ -72,6 +73,21 @@
 ## Enhanced integrations
 
 Here are some cool features you can do with jj.nvim:
+
+### View change summary from the log buffer
+
+Quickly preview the files changed in any revision without leaving the log:
+
+- `<S-k>` - Show a tooltip with the revision's changed files
+- `<S-k>` - To enter the tooltip buffer
+
+From the summary view, you can:
+
+- `d` - Diff the file under cursor at that revision
+- `<CR>` - Edit the revision and open the file
+- `<S-CR>` - Edit the revision (ignoring immutability) and open the file
+
+![Summary-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/summary.gif)
 
 ### Diff any change
 
@@ -347,6 +363,12 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
             exit_mode = { "<Esc>", "<C-c>" }, -- Exit squash mode
         },
         quick_squash = "<S-s>",             -- Quick squash revision under cursor into its parent (ignore immutability)
+        summary = "<S-k>",                  -- Show summary tooltip for revision under cursor
+        summary_tooltip = {
+            diff = "<S-d>",                   -- Diff file at this revision
+            edit = "<CR>",                    -- Edit revision and open file
+            edit_immutable = "<S-CR>",        -- Edit revision (ignore immutability) and open file
+        },
       },
       -- Status buffer keymaps (set to nil to disable)
       status = {

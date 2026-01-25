@@ -5,6 +5,7 @@ local utils = require("jj.utils")
 local runner = require("jj.core.runner")
 local parser = require("jj.core.parser")
 local terminal = require("jj.ui.terminal")
+local buffer = require("jj.core.buffer")
 
 local log_selected_hl_group = "JJLogSelectedHlGroup"
 local log_selected_ns_id = vim.api.nvim_create_namespace(log_selected_hl_group)
@@ -543,7 +544,6 @@ function M.handle_log_push_bookmark()
 		bookmarks = vim.split(bookmark, "%s+", { trimempty = true })
 		table.insert(bookmarks, "[All]")
 
-		utils.notify(vim.inspect(bookmarks))
 		vim.ui.select(bookmarks, {
 			prompt = "Which bookmark do you want to push?",
 		}, function(choice)
@@ -714,6 +714,193 @@ function M.handle_log_quick_squash()
 	end, string.format("Error squashing `%s` into it's parent", revset))
 end
 
+--- Handle diff action in summary tooltip
+--- Diffs the file at revset against its parent (revset-)
+--- Opens a floating diff, and returns focus to tooltip when closed
+--- @param revset string The revision being viewed
+function M.handle_summary_diff(revset)
+	local line = vim.api.nvim_get_current_line()
+	local filepath = parser.parse_file_info_from_status_line(line)
+	if not filepath then
+		utils.notify("No file found on this line", vim.log.levels.WARN)
+		return
+	end
+
+	-- Keep the tooltip open
+	if terminal.state.tooltip_buf and vim.api.nvim_buf_is_valid(terminal.state.tooltip_buf) then
+		terminal.keep_tooltip_open(true)
+	end
+
+	-- Add custom close behavior that returns to tooltip
+	local function close_and_return()
+		-- Close the floating diff
+		terminal.close_floating_buffer()
+		-- Return focus to tooltip if still valid
+		if terminal.state.tooltip_win and vim.api.nvim_win_is_valid(terminal.state.tooltip_win) then
+			vim.api.nvim_set_current_win(terminal.state.tooltip_win)
+		end
+		-- Clear suppress flag
+		if terminal.state.tooltip_buf and vim.api.nvim_buf_is_valid(terminal.state.tooltip_buf) then
+			terminal.keep_tooltip_open(false)
+		end
+	end
+
+	local cmd = require("jj.cmd")
+	local cfg = cmd.config.keymaps.floating or {}
+	-- In this specific case we override the behaviour of the default terminal close and return to the old buffer
+	local specs = {
+		close = {
+			modes = { "n", "v" },
+			handler = close_and_return,
+			desc = "Close diff and return to tooltip",
+		},
+		hide = {
+			modes = { "n", "v" },
+			handler = close_and_return,
+			desc = "Close diff and return to tooltip",
+		},
+	}
+
+	terminal.run_floating(
+		string.format("jj diff -r %s %s", revset, filepath.new_path),
+		cmd.resolve_keymaps_from_specs(cfg, specs)
+	)
+end
+
+--- Handle edit action in summary tooltip (opens file after jj edit)
+--- Closes tooltip and log buffer, edits the revision, and opens the file
+--- @param revset string The revision to edit
+--- @param ignore_immut boolean Whether to ignore immutability
+function M.handle_summary_edit(revset, ignore_immut)
+	-- Before anything check if the revset is immutable and the ignore_immut flag is set
+	if utils.is_change_immutable(revset) and not ignore_immut then
+		utils.notify(
+			string.format("The change `%s` is immutable, use the `edit_immutable` shortcut.", revset),
+			vim.log.levels.WARN
+		)
+		return
+	end
+
+	local line = vim.api.nvim_get_current_line()
+	local filepath = parser.parse_file_info_from_status_line(line)
+	if not filepath then
+		utils.notify("No file found on this line", vim.log.levels.WARN)
+		return
+	end
+
+	-- Close the tooltip first
+	if terminal.state.tooltip_buf and vim.api.nvim_buf_is_valid(terminal.state.tooltip_buf) then
+		terminal.close_tooltip()
+	end
+
+	-- Close the log buffer
+	terminal.close_terminal_buffer()
+
+	local cmd = string.format("jj edit %s", revset)
+	if ignore_immut then
+		cmd = cmd .. " --ignore-immutable"
+	end
+
+	runner.execute_command_async(cmd, function()
+		utils.notify(string.format("Editing revset: `%s`", revset), vim.log.levels.INFO)
+		-- Open the file in the current window
+		vim.cmd("edit " .. vim.fn.fnameescape(filepath.new_path))
+	end, string.format("Error editing revset: `%s`", revset))
+end
+
+--- Get keymaps for summary tooltip
+--- @param revset string The revision being viewed
+--- @return jj.core.buffer.keymap[]
+function M.summary_keymaps(revset)
+	local cmd = require("jj.cmd")
+	local keymaps = cmd.config.keymaps.log.summary_tooltip or {}
+	local specs = {
+		diff = {
+			modes = { "n" },
+			handler = M.handle_summary_diff,
+			args = { revset },
+			desc = "Diff file at this revision",
+		},
+		edit = {
+			modes = { "n" },
+			handler = M.handle_summary_edit,
+			args = { revset, false },
+			desc = "Edit revision and open file",
+		},
+		edit_immutable = {
+			modes = { "n" },
+			handler = M.handle_summary_edit,
+			args = { revset, true },
+			opts = { desc = "Edit revision (ignore immutability) and open file" },
+		},
+	}
+	return cmd.resolve_keymaps_from_specs(keymaps, specs)
+end
+
+--- Build the summary command for a revset
+--- @param revset string The revision to show summary for
+--- @return string The jj log command
+local function build_summary_cmd(revset)
+	local template = '"Commit ID: " ++ commit_id ++ "\\n" '
+		.. '++ "Change ID: " ++ change_id ++ "\\n" '
+		.. '++ "Author: " ++ author ++ " (" ++ author.timestamp() ++ ")\\n" '
+		.. '++ "Committer: " ++ committer ++ " (" ++ committer.timestamp() ++ ")\\n\\n" '
+		.. "++ description "
+		.. '++ "\\n" ++ self.diff().summary()'
+
+	return string.format("jj log -r %s --no-graph -T '%s'", revset, template)
+end
+
+--- Handle showing summary tooltip for revision under cursor
+--- First K shows tooltip without entering, second K enters the tooltip
+function M.handle_log_summary()
+	-- If tooltip exists and is valid, enter it on second K
+	if terminal.state.tooltip_buf and vim.api.nvim_buf_is_valid(terminal.state.tooltip_buf) then
+		local revset = vim.b[terminal.state.tooltip_buf].jj_summary_revset
+		if revset and terminal.state.tooltip_buf and vim.api.nvim_win_is_valid(terminal.state.tooltip_win) then
+			-- Store the cursor position
+			terminal.store_cursor_position()
+			-- Enter the tooltip window and set up keymaps
+			vim.api.nvim_set_current_win(terminal.state.tooltip_win)
+			buffer.set_keymaps(terminal.state.tooltip_buf, M.summary_keymaps(revset))
+			return
+		end
+	end
+
+	local revset = get_revset()
+	if not revset or revset == "" then
+		return
+	end
+
+	local cmd = build_summary_cmd(revset)
+
+	-- Run command synchronously first to calculate dimensions
+	local output, success = runner.execute_command(cmd, nil, nil, false)
+	if not success or not output then
+		return
+	end
+
+	-- Calculate dimensions based on output
+	local lines = vim.split(output, "\n", { trimempty = false })
+	local max_width = 0
+	for _, line in ipairs(lines) do
+		max_width = math.max(max_width, vim.fn.strdisplaywidth(line))
+	end
+	local width = math.min(max_width + 2, vim.o.columns - 4)
+	local height = #lines
+
+	local buf, _ = terminal.run_tooltip(cmd, {
+		title = string.format(" Summary: %s ", revset),
+		enter = false,
+		width = width,
+		height = height,
+	})
+
+	if buf then
+		vim.b[terminal.state.tooltip_buf].jj_summary_revset = revset
+	end
+end
+
 --- Resolve log keymaps from config, filtering out nil values
 --- @return jj.core.buffer.keymap[]
 function M.log_keymaps()
@@ -831,6 +1018,11 @@ function M.log_keymaps()
 		quick_squash = {
 			desc = "Squash the bookmark under the cursor into it's parent (-r) keeping parent's message (-u), alwas ignores immutability",
 			handler = M.handle_log_quick_squash,
+			modes = { "n" },
+		},
+		summary = {
+			desc = "Show summary tooltip for revision under cursor",
+			handler = M.handle_log_summary,
 			modes = { "n" },
 		},
 	}
