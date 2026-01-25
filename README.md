@@ -14,6 +14,7 @@
 - [Enhanced Integrations](#enhanced-integrations)
   - [View change summary from the log buffer](#view-change-summary-from-the-log-buffer)
   - [Diff any change](#diff-any-change)
+  - [Describe a change](#describe-a-change)
   - [Edit changes](#edit-changes)
   - [Create new changes from the log buffer](#create-new-changes-from-the-log-buffer)
   - [Undo/Redo from the log buffer](#undoredo-from-the-log-buffer)
@@ -69,9 +70,9 @@
   - Diff commands
   - `:Jdiff [revision]` - Vertical split diff against a jj revision
   - `:Jhdiff [revision]` - Horizontal split diff
-- Picker for for [Snacks.nvim](https://github.com/folke/snacks.nvim)
+- Picker for [Snacks.nvim](https://github.com/folke/snacks.nvim)
   - `jj status` Displays the current changes diffs
-  - `jj file_history` Displays a buffer's history changes and allows to edit it's change (including immutable changes)
+  - `jj file_history` Displays a buffer's history changes and allows to edit its change (including immutable changes)
 
 ## Enhanced integrations
 
@@ -86,7 +87,7 @@ Quickly preview the files changed in any revision without leaving the log:
 
 From the summary view, you can:
 
-- `d` - Diff the file under cursor at that revision
+- `<S-d>` - Diff the file under cursor at that revision
 - `<CR>` - Edit the revision and open the file
 - `<S-CR>` - Edit the revision (ignoring immutability) and open the file
 
@@ -101,12 +102,18 @@ You can diff any change in your log history by pressing `<S-d>` on its line or o
 
 ![Diff-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/diff-log.gif)
 
+### Describe a change
+
+You can describe any change directly from the log buffer:
+
+- `d` - Describe the revision under cursor using your configured editor
+
 ### Edit changes
 
 Jumping up and down your log history ?
 
-In your log ouptut press `CR` in a line to directly edit a `mutable` change.
-If you are sure what your are doing press `S-CR` (Shift Enter) to edit a `immutable` change.
+In your log output press `CR` in a line to directly edit a `mutable` change.
+If you are sure what you are doing press `S-CR` (Shift Enter) to edit an `immutable` change.
 ![Edit-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/edit-log.gif)
 
 ### Create new changes from the log buffer
@@ -135,7 +142,7 @@ You can abandon changes directly from the log buffer, works in visual mode to ab
 You can fetch and push directly from the log buffer:
 
 - `f` - Fetch from remote
-- `<S-p>` - Push from a boockmark from through the picker
+- `<S-p>` - Push a bookmark through the picker
 - `p` - Push bookmark of revision under cursor to remote
 
 ### Manage bookmarks from the log buffer
@@ -214,7 +221,7 @@ The plugin automatically:
 
 ### Open a changed file
 
-Just press enter to open the a file from the `status` output in your current window.
+Just press enter to open a file from the `status` output in your current window.
 ![Open-status](https://github.com/NicolasGB/jj.nvim/raw/main/assets/enter-status.gif)
 
 ### Restore a changed file
@@ -579,7 +586,7 @@ The diff module provides a unified API for viewing diffs with pluggable backend 
 
 The natively supported backends are:
 
-- Native (Diffs the current file in place and uses a floating buffer with your jj'diff command when diffing changes)
+- Native (Diffs the current file in place and uses a floating buffer with your jj diff command when diffing changes)
 - [codediff](https://github.com/esmuellert/codediff.nvim)
 - [diffview](https://github.com/sindrets/diffview.nvim)
 
@@ -707,7 +714,11 @@ vim.keymap.set("n", "<leader>jA", annotate.line, { desc = "JJ annotate line" })
 {
   "nicolasgb/jj.nvim",
   dependencies = {
-    "folke/snacks.nvim", -- Optional only if you use picker's
+    "folke/snacks.nvim", -- Optional, only needed if you use pickers
+
+    -- One of these two if you want to use them as your diff backend
+    "esmuellert/codediff.nvim",
+    "sindrets/diffview.nvim",
   },
 
   config = function()
@@ -715,6 +726,9 @@ vim.keymap.set("n", "<leader>jA", annotate.line, { desc = "JJ annotate line" })
     jj.setup({
       terminal = {
         cursor_render_delay = 10, -- Adjust if cursor position isn't restoring correctly
+      },
+      diff = {
+          backend = "codediff"
       },
       cmd = {
         describe = {
@@ -814,11 +828,11 @@ This is an early-stage project. Contributions are welcome, but please be aware t
 
 ## Documentation
 
-Once the plugin is more complete i'll write docs for each of the commands.
+Once the plugin is more complete I'll write docs for each of the commands.
 
 ## FAQ
 
-- Telescope Suport? Planned but i don't use it, it's already thought of by design, will implement it at some point or if someone submits a PR i'll accept it gladly.
+- Telescope Support? Planned but I don't use it, it's already thought of by design, will implement it at some point or if someone submits a PR I'll accept it gladly.
 
 ## License
 
