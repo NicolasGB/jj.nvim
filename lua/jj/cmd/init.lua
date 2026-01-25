@@ -378,19 +378,18 @@ function M.diff(opts)
 		return
 	end
 
-	local cmd = "jj diff"
+	local diff_module = require("jj.diff")
 
 	if opts and opts.current then
 		local file = vim.fn.expand("%:p")
 		if file and file ~= "" then
-			cmd = string.format("%s %s", cmd, vim.fn.fnameescape(file))
+			diff_module.diff_current({ path = file })
 		else
 			utils.notify("Current buffer is not a file", vim.log.levels.ERROR)
-			return
 		end
+	else
+		diff_module.show_revision({ rev = "@" })
 	end
-
-	terminal.run(cmd, M.terminal_keymaps())
 end
 
 -- Jujutsu rebase

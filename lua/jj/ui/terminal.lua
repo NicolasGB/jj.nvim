@@ -163,8 +163,13 @@ end
 
 --- Close the current tooltip buffer if it exists
 function M.close_tooltip()
+	if not state.tooltip_buf then
+		return
+	end
 	buffer.close(state.tooltip_buf)
-	vim.api.nvim_del_autocmd(state.tooltip_close_autocmd)
+	if state.tooltip_close_autocmd then
+		pcall(vim.api.nvim_del_autocmd, state.tooltip_close_autocmd)
+	end
 	state.tooltip_chan = nil
 	state.tooltip_job_id = nil
 	state.tooltip_buf = nil
@@ -668,7 +673,8 @@ function M.run_tooltip(cmd, tool_opts)
 	state.tooltip_close_autocmd = vim.api.nvim_create_autocmd("CursorMoved", {
 		callback = function()
 			if
-				vim.api.nvim_buf_is_valid(state.tooltip_buf)
+				state.tooltip_buf
+				and vim.api.nvim_buf_is_valid(state.tooltip_buf)
 				and vim.api.nvim_win_is_valid(state.tooltip_win)
 				and vim.api.nvim_get_current_win() ~= state.tooltip_win
 			then
@@ -676,8 +682,7 @@ function M.run_tooltip(cmd, tool_opts)
 				if vim.b[state.tooltip_buf].jj_keep_open then
 					return
 				end
-				buffer.close(state.tooltip_buf, true)
-				return true
+				M.close_tooltip()
 			end
 		end,
 	})

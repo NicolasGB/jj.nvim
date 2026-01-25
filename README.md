@@ -34,7 +34,10 @@
   - [Push Command Options](#push-command-options)
   - [Bookmark Management Command Options](#bookmark-management-command-options)
   - [Open PR/MR Command Options](#open-prmr-command-options)
-  - [Diff Split Views](#diff-split-views)
+  - [Diff Module](#diff-module)
+    - [Functions](#functions)
+    - [Log Buffer Integration](#log-buffer-integration)
+  - [Custom Diff Backends](#custom-diff-backends)
   - [Annotations](#annotations)
 - [Example config](#example-config)
 - [Requirements](#requirements)
@@ -91,7 +94,11 @@ From the summary view, you can:
 
 ### Diff any change
 
-You can diff any change in your log history by simply pressing `d` on its line, yeah just like that!
+You can diff any change in your log history by pressing `<S-d>` on its line or on a summary file change. You can also visually select multiple changes to diff between the first and last selected.
+
+> [!NOTE]
+> Integrates with your preferred diff plugin or uses your native jj diff config. See [Diff Module](#diff-module).
+
 ![Diff-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/diff-log.gif)
 
 ### Edit changes
@@ -119,7 +126,7 @@ You can undo/redo changes directly from the log buffer:
 
 ### Abandon changes from the log buffer
 
-You can abandon changes directly from the log buffer:
+You can abandon changes directly from the log buffer, works in visual mode to abandon multiple changes:
 
 - `a` - Abandon the revision under the cursor
 
@@ -128,7 +135,7 @@ You can abandon changes directly from the log buffer:
 You can fetch and push directly from the log buffer:
 
 - `f` - Fetch from remote
-- `<S-p>` - Push all changes to remote
+- `<S-p>` - Push from a boockmark from through the picker
 - `p` - Push bookmark of revision under cursor to remote
 
 ### Manage bookmarks from the log buffer
@@ -297,6 +304,16 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
     -- If cursor column is being reset to 0 when refreshing commands, try increasing this value
     -- This delay allows the terminal emulator to complete rendering before restoring cursor position
     cursor_render_delay = 10,
+  },
+
+  -- Configure diff module
+  diff = {
+    -- Default backend for viewing diffs
+    -- "native" - Built-in split diff using Neovim's diff mode (default)
+    -- "diffview" - Use diffview.nvim plugin (requires diffview.nvim)
+    -- "codediff" - Use codediff.nvim plugin (requires codediff.nvim)
+    -- Or any custom backend name you've registered
+    backend = "native",
   },
 
   -- Configure cmd module (describe editor, keymaps)
@@ -556,17 +573,95 @@ cmd.open_pr()                          -- Open PR for current change's bookmark
 cmd.open_pr({ list_bookmarks = true }) -- Select bookmark from all and open PR
 ```
 
-### Diff Split Views
+### Diff Module
 
-Use the `diff` module for opening splits:
+The diff module provides a unified API for viewing diffs with pluggable backend support.
+
+The natively supported backends are:
+
+- Native (Diffs the current file in place and uses a floating buffer with your jj'diff command when diffing changes)
+- [codediff](https://github.com/esmuellert/codediff.nvim)
+- [diffview](https://github.com/sindrets/diffview.nvim)
+
+#### Functions
 
 ```lua
 local diff = require("jj.diff")
-diff.open_diff()                    -- Vertical split diff against parent
-diff.open_diff({ rev = "main" })    -- Vertical split against specific revision
-diff.open_hsplit()                  -- Horizontal split diff
-diff.open_hsplit({ rev = "@-2" })   -- Horizontal split against @-2
+
+-- Diff current buffer against a revision (default: @-)
+-- The `layout` is only supported for the native backend
+diff.diff_current({ rev = "@-", layout = "vertical" })
+
+-- Show what changed in a single revision
+diff.show_revision({ rev = "abc123" })
+
+-- Diff between two revisions
+diff.diff_revisions({ left = "main", right = "@" })
+
+-- Convenience functions (LEGACY FUNCTIONS)
+diff.open_vdiff()                   -- Vertical split diff against parent
+diff.open_vdiff({ rev = "main" })   -- Vertical split against specific revision
+diff.open_hdiff()                   -- Horizontal split diff
+diff.open_hdiff({ rev = "@-2" })    -- Horizontal split against @-2
 ```
+
+#### Log Buffer Integration
+
+The diff module integrates seamlessly with the log buffer:
+
+- `<S-d>` - Show diff for the revision under cursor in a floating window
+
+These actions use the configured diff backend, allowing you to leverage your preferred diff viewer directly from the log.
+
+### Custom Diff Backends
+
+The diff module supports pluggable backends. Built-in backends include `native`, `diffview`, and `codediff`. You can register your own backend:
+
+```lua
+local diff = require("jj.diff")
+
+diff.register_backend("my-backend", {
+  -- Diff current buffer against a revision
+  diff_current = function(opts)
+    -- opts.rev: revision to diff against (default: "@-")
+    -- opts.path: file path (default: current buffer)
+    -- opts.layout: "vertical" or "horizontal"
+  end,
+
+  -- Show what changed in a single revision
+  show_revision = function(opts)
+    -- opts.rev: revision to show
+    -- opts.path: optional file filter
+    -- opts.display: "floating", "tab", or "split"
+  end,
+
+  -- Diff between two revisions
+  diff_revisions = function(opts)
+    -- opts.left: left/base revision
+    -- opts.right: right/target revision
+    -- opts.path: optional file filter
+    -- opts.display: "floating", "tab", or "split"
+  end,
+})
+```
+
+Set your backend as default in the config:
+
+```lua
+require("jj").setup({
+  diff = {
+    backend = "my-backend"
+  }
+})
+```
+
+Or use it per-call:
+
+```lua
+diff.diff_current({ backend = "my-backend", rev = "main" })
+```
+
+All three functions are optional—missing ones fall back to the `native` implementation.
 
 ### Annotations
 
