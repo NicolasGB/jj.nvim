@@ -31,13 +31,11 @@ diff.register_backend("codediff", {
 		end
 
 		-- Extract the commit id from opts.rev
-		local commit_id = "HEAD~1"
-		if opts.rev then
-			local t_commit_id = utils.get_commit_id(opts.rev)
-			if t_commit_id == nil then
-				return
-			end
-			commit_id = t_commit_id
+		local revset = opts.rev or "@-"
+
+		local commit_id = utils.get_commit_id(revset)
+		if not commit_id then
+			return
 		end
 
 		vim.cmd(string.format("CodeDiff file %s", commit_id))
