@@ -334,7 +334,7 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
         type = "buffer",
         -- Customize keymaps for the describe editor buffer
         keymaps = {
-          close = { "<Esc>", "<C-c>", "q" },  -- Keys to close editor without saving
+          close = { "<C-c>", "q" },  -- Keys to close editor without saving
         }
       }
     },
@@ -735,7 +735,7 @@ vim.keymap.set("n", "<leader>jA", annotate.line, { desc = "JJ annotate line" })
           editor = {
             type = "buffer",
             keymaps = {
-              close = { "q", "<Esc>", "<C-c>" },
+              close = { "q", "<Esc>", "<C-c>" }, -- Enable <Esc> in the editor
             }
           }
         },

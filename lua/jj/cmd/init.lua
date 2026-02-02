@@ -116,7 +116,7 @@ M.config = {
 		editor = {
 			type = "buffer",
 			keymaps = {
-				close = { "<Esc>", "<C-c>", "q" },
+				close = { "<C-c>", "q" },
 			},
 		},
 	},
