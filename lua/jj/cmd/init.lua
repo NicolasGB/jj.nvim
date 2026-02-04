@@ -3,8 +3,8 @@ local M = {}
 
 local utils = require("jj.utils")
 local runner = require("jj.core.runner")
-local parser = require("jj.core.parser")
 local terminal = require("jj.ui.terminal")
+local editor = require("jj.ui.editor")
 
 local diff = require("jj.diff")
 local log_module = require("jj.cmd.log")
@@ -701,10 +701,73 @@ function M.commit(description)
 		return
 	end
 
-	M.describe(description, nil, nil, function()
-		-- Opinionated -A flag since it seems more intuitive when editing and commiting past changes and has no effect on top changes
-		M.new({ args = "-A @" })
-	end)
+	local should_refresh = terminal.is_log_buffer_open()
+
+	if description and description ~= "" then
+		local cmd = "jj commit --message " .. vim.fn.shellescape(description)
+		runner.execute_command_async(cmd, function()
+			utils.notify("Committed.", vim.log.levels.INFO)
+			if should_refresh then
+				vim.schedule(function()
+					M.log()
+				end)
+			end
+		end, "Failed to commit")
+		return
+	end
+
+	local editor_mode = M.config.describe.editor.type or "buffer"
+	if editor_mode == "input" then
+		M.status()
+		vim.ui.input({ prompt = "Description: ", default = "" }, function(input)
+			if input and not input:match("^%s*$") then
+				local cmd = "jj commit --message " .. vim.fn.shellescape(input)
+				runner.execute_command_async(cmd, function()
+					utils.notify("Committed.", vim.log.levels.INFO)
+					if should_refresh then
+						vim.schedule(function()
+							M.log()
+						end)
+					end
+				end, "Failed to commit")
+			elseif input then
+				utils.notify("Description cannot be empty", vim.log.levels.ERROR)
+			end
+			terminal.close_terminal_buffer()
+		end)
+		return
+	end
+
+	local text = utils.get_describe_text("@")
+	if not text then
+		return
+	end
+
+	terminal.close_terminal_buffer()
+
+	local keymaps = M.resolve_keymaps_from_specs(M.config.describe.editor.keymaps or {}, {
+		close = {
+			desc = "Close commit editor without saving",
+			handler = "<cmd>close!<CR>",
+		},
+	})
+
+	editor.open_editor(text, nil, function(buf_lines)
+		local trimmed_description = utils.extract_description_from_describe(buf_lines)
+		if not trimmed_description then
+			utils.notify("Description cannot be empty", vim.log.levels.ERROR)
+			return
+		end
+		local cmd = "jj commit --message " .. vim.fn.shellescape(trimmed_description)
+		runner.execute_command_async(cmd, function()
+			utils.notify("Committed.", vim.log.levels.INFO)
+			if should_refresh then
+				vim.schedule(function()
+					M.log()
+				end)
+			end
+		end, "Failed to commit")
+	end, keymaps)
 end
 
 --- @param args string|string[] jj command arguments
