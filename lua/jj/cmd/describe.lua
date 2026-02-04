@@ -3,7 +3,6 @@ local M = {}
 
 local utils = require("jj.utils")
 local runner = require("jj.core.runner")
-local parser = require("jj.core.parser")
 local terminal = require("jj.ui.terminal")
 local editor = require("jj.ui.editor")
 
@@ -18,8 +17,7 @@ local default_describe_opts = {
 --- Execute jj describe command with the given description
 --- @param description string The description text
 --- @param revset? string The revision to describe
---- @param on_close function|nil The function to run on success
-local function execute_describe(description, revset, on_close)
+local function execute_describe(description, revset)
 	if not description or description == "" then
 		utils.notify("Description cannot be empty", vim.log.levels.ERROR)
 		return
@@ -34,12 +32,6 @@ local function execute_describe(description, revset, on_close)
 	-- Use --stdin to properly handle multi-line and special characters
 	runner.execute_command_async(cmd, function()
 		utils.notify("Description set.", vim.log.levels.INFO)
-		-- If an on close callback is provided, call it
-		if on_close then
-			vim.schedule(function()
-				on_close()
-			end)
-		end
 	end, "Failed to describe", description)
 end
 
@@ -69,7 +61,7 @@ function M.describe(description, revset, opts, on_close)
 	-- Check if a description was provided otherwise require for input
 	if description then
 		-- Description provided directly
-		execute_describe(description, revset, on_close)
+		execute_describe(description, revset)
 		return
 	end
 
@@ -83,48 +75,20 @@ function M.describe(description, revset, opts, on_close)
 	-- Use buffer editor mode (defaults to "buffer" if not configured)
 	local editor_mode = merged_opts.type or cmd.config.describe.editor.type or "buffer"
 	if editor_mode == "buffer" then
-		local jj_cmd = "jj log -r " .. revset .. " --quiet --no-graph -T 'coalesce(description, \"\n\")'"
-		local old_description_raw, success = runner.execute_command(jj_cmd, "Failed to get old description")
-		if not old_description_raw or not success then
+		local text = utils.get_describe_text(revset)
+		if not text then
 			return
 		end
-
-		local log_cmd = "jj log -r " .. revset .. " --quiet --no-graph -T 'self.diff().summary()'"
-		local status_result, success2 = runner.execute_command(log_cmd, "Error getting status")
-		if not success2 then
-			return
-		end
-
-		local status_files = parser.get_status_files(status_result)
-		local old_description = vim.trim(old_description_raw)
-
-		-- Split description into lines to preserve multiline descriptions
-		local description_lines = vim.split(old_description, "\n")
-		local text = {}
-		for _, line in ipairs(description_lines) do
-			table.insert(text, line)
-		end
-		table.insert(text, "") -- Empty line to separate from user input
-		table.insert(text, "JJ: Change ID: " .. revset)
-		table.insert(text, "JJ: This commit contains the following changes:")
-		for _, item in ipairs(status_files) do
-			table.insert(text, string.format("JJ:     %s %s", item.status, item.file))
-		end
-		table.insert(text, "JJ:") -- blank line
-		table.insert(text, 'JJ: Lines starting with "JJ:" (like this one) will be removed')
 
 		-- Close the terminal buffer before opening editor
 		terminal.close_terminal_buffer()
 
 		editor.open_editor(text, function(buf_lines)
-			local user_lines = {}
-			for _, line in ipairs(buf_lines) do
-				if not line:match("^JJ:") then
-					table.insert(user_lines, line)
-				end
+			local trimmed_description = utils.extract_description_from_describe(buf_lines)
+			if not trimmed_description then
+				-- If nothing is provide simply exit
+				return
 			end
-			-- Join lines and trim leading/trailing whitespace
-			local trimmed_description = table.concat(user_lines, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
 			execute_describe(trimmed_description, revset)
 			-- Once editing is done, reopen the log if we came from there
 		end, function()
@@ -148,10 +112,15 @@ function M.describe(description, revset, opts, on_close)
 		}, function(input)
 			-- If the user inputed something, execute the describe command
 			if input then
-				execute_describe(input, revset, on_close)
+				execute_describe(input, revset)
 			end
 			-- Close the current terminal when finished
 			terminal.close_terminal_buffer()
+			if on_close then
+				vim.schedule(function()
+					on_close()
+				end)
+			end
 		end)
 	end
 end

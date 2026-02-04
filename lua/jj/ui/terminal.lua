@@ -207,6 +207,15 @@ function M.restore_cursor_position()
 	state.cursor_restore_pos = nil
 end
 
+--- Check whether the log buffer is currently active
+--- @return boolean
+function M.is_log_buffer_open()
+	if not state.buf or not vim.api.nvim_buf_is_valid(state.buf) then
+		return false
+	end
+	return state.buf_cmd == "log"
+end
+
 --- Run the command in a floating window
 --- @param cmd string The command to run in the floating window
 --- @param keymaps jj.core.buffer.keymap[]|nil Additional keymaps to set for this floating buffer

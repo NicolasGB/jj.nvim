@@ -273,6 +273,50 @@ function M.is_change_immutable(revset)
 
 	return vim.trim(output) == "true"
 end
+
+--- Build describe text for a given revision
+--- @param revset? string The revision to describe (default: @)
+--- @return string[]|nil
+function M.get_describe_text(revset)
+	if not revset or revset == "" then
+		revset = "@"
+	end
+
+	local parser = require("jj.core.parser")
+	local old_description_raw, success = runner.execute_command(
+		"jj log -r " .. revset .. " --quiet --no-graph -T 'coalesce(description, \"\\n\")'",
+		"Failed to get old description"
+	)
+	if not old_description_raw or not success then
+		return nil
+	end
+
+	local status_result, success2 = runner.execute_command(
+		"jj log -r " .. revset .. " --quiet --no-graph -T 'self.diff().summary()'",
+		"Error getting status"
+	)
+	if not success2 then
+		return nil
+	end
+
+	local status_files = parser.get_status_files(status_result)
+	local old_description = vim.trim(old_description_raw)
+	local description_lines = vim.split(old_description, "\n")
+	local text = {}
+	for _, line in ipairs(description_lines) do
+		table.insert(text, line)
+	end
+	table.insert(text, "")
+	table.insert(text, "JJ: Change ID: " .. revset)
+	table.insert(text, "JJ: This commit contains the following changes:")
+	for _, item in ipairs(status_files) do
+		table.insert(text, string.format("JJ:     %s %s", item.status, item.file))
+	end
+	table.insert(text, "JJ:")
+	table.insert(text, 'JJ: Lines starting with "JJ:" (like this one) will be removed')
+
+	return text
+end
 ---
 --- Get the commit id from a given revision
 --- @param revset string The revset to extract the commit id from
@@ -291,6 +335,25 @@ function M.get_commit_id(revset)
 	end
 
 	return vim.trim(output)
+end
+
+--- Extract the description from the describe text
+--- @param lines string[] The lines of a described change
+--- @return string|nil
+function M.extract_description_from_describe(lines)
+	local final_lines = {}
+	for _, line in ipairs(lines) do
+		if not line:match("^JJ:") then
+			table.insert(final_lines, line)
+		end
+	end
+	-- Join lines and trim leading/trailing whitespace
+	local trimmed_description = table.concat(final_lines, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
+	if trimmed_description == "" then
+		-- If nothing return nil
+		return
+	end
+	return trimmed_description
 end
 
 return M

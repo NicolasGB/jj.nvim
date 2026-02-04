@@ -60,10 +60,10 @@ function M.setup(opts)
 end
 
 ---@param initial_text string[] Lines to initialize the buffer with
----@param on_done fun(buf: string[])? Optional callback called with user text on buffer write
----@param on_unload? fun()? Optional callback called when the buffer is closed
+---@param on_write fun(buf: string[])? Optional callback called with user text on buffer write
+---@param on_unload? fun(buf: string[])? Optional callback  with user text called when the buffer is closed
 ---@param keymaps? jj.core.buffer.keymap[] Optional keymaps for the buffer
-function M.open_editor(initial_text, on_done, on_unload, keymaps)
+function M.open_editor(initial_text, on_write, on_unload, keymaps)
 	-- Initialize highlight groups once
 	init_highlights()
 
@@ -137,11 +137,15 @@ function M.open_editor(initial_text, on_done, on_unload, keymaps)
 	vim.api.nvim_create_autocmd("BufWriteCmd", {
 		buffer = buf,
 		callback = function()
+			-- Get current buffer lines
 			local buf_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-			if on_done then
-				on_done(buf_lines)
-			end
+			-- Update the last written lines variable
+			vim.b[buf].jj_last_written_lines = buf_lines
 			vim.bo[buf].modified = false
+			-- Call the on_write callback if provided
+			if on_write then
+				on_write(buf_lines)
+			end
 		end,
 	})
 
@@ -150,7 +154,10 @@ function M.open_editor(initial_text, on_done, on_unload, keymaps)
 		vim.api.nvim_create_autocmd("BufWipeout", {
 			buffer = buf,
 			callback = function()
-				on_unload()
+				local last_written = vim.b[buf].jj_last_written_lines
+				if last_written then
+					on_unload(last_written)
+				end
 			end,
 		})
 	end
