@@ -307,6 +307,24 @@ function M.is_change_immutable(revset)
 	return vim.trim(output) == "true"
 end
 
+--- Check if a given revset is empty
+--- @param revset string The revset to check
+--- @return boolean True if the revset is empty, false otherwise
+function M.is_change_empty(revset)
+	local output, success = runner.execute_command(
+		string.format("jj log --no-graph -r '%s' -T 'empty' --quiet", revset),
+		"Error checking if revset is empty",
+		nil,
+		true
+	)
+
+	if not success or not output then
+		return false
+	end
+
+	return vim.trim(output) == "true"
+end
+
 --- Build describe text for a given revision
 --- @param revset? string The revision to describe (default: @)
 --- @return string[]|nil
