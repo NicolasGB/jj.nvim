@@ -22,6 +22,7 @@
   - [Fetch and push from the log buffer](#fetch-and-push-from-the-log-buffer)
   - [Manage bookmarks from the log buffer](#manage-bookmarks-from-the-log-buffer)
   - [Squash changes from the log buffer](#squash-changes-from-the-log-buffer)
+  - [Split changes from the log buffer](#split-changes-from-the-log-buffer)
   - [Rebase changes from the log buffer](#rebase-changes-from-the-log-buffer)
   - [Open a PR/MR from the log buffer](#open-a-prmr-from-the-log-buffer)
   - [Open a changed file](#open-a-changed-file)
@@ -60,6 +61,7 @@
   - `new` - Create a new change with optional parent selection
   - `edit` - Edit a change
   - `squash` - Squash the current diff to its parent or interactive squash mode from the log buffer
+  - `split` - Split a change interactively in a floating terminal
   - `rebase` - Rebase changes to a destination
   - `bookmark create/delete` - Create and delete bookmarks
   - `undo` - Undo the last operation
@@ -176,6 +178,42 @@ From squash mode, choose how to squash:
 
 ![Squash-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/squash.gif)
 
+### Split changes from the log buffer
+
+Split a change into two or more revisions directly from the log buffer or the command line:
+
+- `<C-s>` - Split the revision under cursor from the log buffer
+
+The split command opens an interactive floating terminal where jj guides you through selecting which changes go into the first commit. The remaining changes stay in the second commit.
+
+> [!NOTE]
+> If you want to use something like [hunk.nvim](https://github.com/julienvincent/hunk.nvim), simply follow the steps and update your jj's config to use it as a tool and a neovim instance with hunk will be ran inside your current neovim, for a seamless integration
+>
+> Other tools that ran in the terminal like jj's native should work out of the box too.
+
+**Via `:J` command:**
+
+```sh
+:J split              " Split @ interactively
+:J split abc123       " Split a specific revision
+:J split @ --parallel " Create parallel changes instead of sequential
+:J split @ --message "first half" " Set a commit message for the first split
+```
+
+**Via Lua API:**
+
+```lua
+local cmd = require("jj.cmd")
+cmd.split()                                      -- Split @ interactively
+cmd.split({ rev = "abc123" })                    -- Split a specific revision
+cmd.split({ parallel = true })                   -- Create parallel changes
+cmd.split({ message = "first half" })            -- Set message for first split
+cmd.split({ filesets = { "src/" } })             -- Only include specific filesets
+cmd.split({ ignore_immutable = true })           -- Split an immutable revision
+```
+
+The floating terminal size is configurable via the `split.width` and `split.height` options (ratios between `0.1` and `1.0`).
+
 ### Rebase changes from the log buffer
 
 Enter an interactive rebase mode directly from the log buffer to rebase one or more changes:
@@ -262,6 +300,7 @@ The plugin provides a `:J` command that accepts jj subcommands:
 :J fetch             " Fetch from remote
 :J open_pr           " Open PR for current change's bookmark
 :J open_pr --list    " Select bookmark from all and open PR
+:J split             " Split a change interactively
 :J bookmark create/move/delete
 :J # This will use your defined default command
 :J <your-alias>
@@ -344,6 +383,12 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
       close_on_edit = false,                                     -- Close log buffer after editing a change
     },
 
+    -- Configure split command
+    split = {
+      width = 0.99,                                              -- Width ratio of the floating terminal (0.1 to 1.0)
+      height = 0.95,                                             -- Height ratio of the floating terminal (0.1 to 1.0)
+    },
+
     -- Configure bookmark command
     bookmark = {
         prefix = ""
@@ -387,6 +432,7 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
             exit_mode = { "<Esc>", "<C-c>" }, -- Exit squash mode
         },
         quick_squash = "<S-s>",             -- Quick squash revision under cursor into its parent (ignore immutability)
+        split = "<C-s>",                    -- Split the revision under cursor
         summary = "<S-k>",                  -- Show summary tooltip for revision under cursor
         summary_tooltip = {
             diff = "<S-d>",                   -- Diff file at this revision

@@ -5,11 +5,13 @@ local utils = require("jj.utils")
 local runner = require("jj.core.runner")
 local terminal = require("jj.ui.terminal")
 local editor = require("jj.ui.editor")
+local parser = require("jj.core.parser")
 
 local diff = require("jj.diff")
 local log_module = require("jj.cmd.log")
 local describe_module = require("jj.cmd.describe")
 local status_module = require("jj.cmd.status")
+local split_module = require("jj.cmd.split")
 
 -- Config for cmd module
 --- @class jj.cmd.describe.editor.keymaps
@@ -90,9 +92,24 @@ local status_module = require("jj.cmd.status")
 --- @field close? string|string[] Keymaps for the close keybind
 --- @field floating? jj.cmd.floating.keymaps Keymaps for the floating buffer
 
+---@class jj.cmd.split.common
+---@field height? number Height % for the split buffer (between 0.1 and 1.0)
+---@field width? number Width % for the split buffer (between 0.1 and 1.0)
+
+---@class jj.cmd.split.opts: jj.cmd.split.common
+---@field rev? string Revision to split
+---@field message? string Commit message for the new revision
+---@field filesets? string[] Filesets to include in the split
+---@field ignore_immutable? boolean Ignore immutable revisions
+---@field parallel? boolean Run operations in parallel
+---@field on_exit? fun(exit_code: number) Callback invoked when command exits
+
+---@class jj.cmd.split: jj.cmd.split.common
+
 --- @class jj.cmd.opts
 --- @field describe? jj.cmd.describe
 --- @field log? jj.cmd.log
+--- @field split? jj.cmd.split
 --- @field bookmark? jj.cmd.bookmark
 --- @field keymaps? jj.cmd.keymaps Keymaps for the buffers containing the  of the commands
 ---
@@ -122,6 +139,10 @@ M.config = {
 	},
 	log = {
 		close_on_edit = false,
+	},
+	split = {
+		width = 0.99,
+		height = 0.95,
 	},
 	bookmark = {
 		prefix = "",
@@ -167,6 +188,7 @@ M.config = {
 				edit = "<CR>",
 				edit_immutable = "<S-CR>",
 			},
+			split = "<C-s>",
 		},
 		status = {
 			open_file = "<CR>",
@@ -194,6 +216,8 @@ M.log = log_module.log
 M.describe = describe_module.describe
 -- Reexport status function
 M.status = status_module.status
+-- Rexport split function
+M.split = split_module.split
 
 --- Merge multiple keymap arrays into one
 --- @param ... jj.core.buffer.keymap[][] Keymap arrays to merge
@@ -867,6 +891,32 @@ function M.j(args)
 		log = function()
 			M.log({ raw_flags = remaining_args_str ~= "" and remaining_args_str or nil })
 		end,
+		split = function()
+			local rev = remaining_args and remaining_args[1] or "@"
+
+			local opts = {
+				rev = rev,
+			}
+
+			local index = 2
+			for i = index, #remaining_args do
+				local arg = remaining_args[i]
+				if arg == "--parallel" then
+					opts.parallel = true
+				elseif arg == "--ignore-immutable" then
+					opts.ignore_immutable = true
+				elseif arg == "--message" and remaining_args[i + 1] then
+					opts.message = remaining_args[i + 1]
+					index = i + 1
+				elseif arg == "--fileset" and remaining_args[i + 1] then
+					opts.filesets = opts.filesets or {}
+					table.insert(opts.filesets, remaining_args[i + 1])
+					index = i + 1
+				end
+			end
+
+			require("jj.cmd.split").split(opts)
+		end,
 		diff = function()
 			M.diff({ current = false })
 		end,
@@ -957,6 +1007,7 @@ function M.register_command()
 				"push",
 				"rebase",
 				"redo",
+				"split",
 				"squash",
 				"st",
 				"status",

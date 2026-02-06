@@ -218,7 +218,9 @@ end
 --- Run the command in a floating window
 --- @param cmd string The command to run in the floating window
 --- @param keymaps jj.core.buffer.keymap[]|nil Additional keymaps to set for this floating buffer
-function M.run_floating(cmd, keymaps)
+--- @param float_opts? {title?: string, height?: number, width?: number, modifiable?: boolean, keep_modifiable?: boolean, on_exit?: fun(exit_code: integer), interactive?: boolean}
+function M.run_floating(cmd, keymaps, float_opts)
+	float_opts = float_opts or {}
 	-- Clean up previous state if invalid
 	if state.floating_buf and not vim.api.nvim_buf_is_valid(state.floating_buf) then
 		state.floating_buf = nil
@@ -246,10 +248,13 @@ function M.run_floating(cmd, keymaps)
 
 	-- Create new floating buffer
 	local buf, win = buffer.create_float({
-		title = " JJ Diff ",
+		title = float_opts.title or " JJ Diff ",
 		title_pos = "center",
 		enter = true,
 		bufhidden = "hide",
+		height = float_opts.height,
+		width = float_opts.width,
+		modifiable = float_opts.modifiable ~= nil and float_opts.modifiable or true,
 		win_options = {
 			wrap = true,
 			number = false,
@@ -273,47 +278,77 @@ function M.run_floating(cmd, keymaps)
 	})
 	state.floating_buf = buf
 
-	-- Create new terminal channel
-	local chan = vim.api.nvim_open_term(state.floating_buf, {})
-	if not chan or chan <= 0 then
-		vim.notify("Failed to create terminal channel", vim.log.levels.ERROR)
-		return
-	end
-	state.floating_chan = chan
+	local jid
+	local chan
+	if float_opts.interactive then
+		jid = vim.fn.jobstart(cmd, {
+			term = true,
+			on_exit = function(_, exit_code)
+				vim.schedule(function()
+					if float_opts.on_exit then
+						float_opts.on_exit(exit_code)
+					end
+					if state.floating_buf and vim.api.nvim_buf_is_valid(state.floating_buf) then
+						M.close_floating_buffer()
+					end
+					vim.cmd("stopinsert")
+				end)
+			end,
+		})
+		state.floating_chan = jid
+		vim.cmd("startinsert")
+	else
+		-- Create new terminal channel
+		chan = vim.api.nvim_open_term(state.floating_buf, {})
+		if not chan or chan <= 0 then
+			vim.notify("Failed to create terminal channel", vim.log.levels.ERROR)
+			return
+		end
+		state.floating_chan = chan
 
-	-- Move cursor to top before output arrives
-	vim.api.nvim_win_set_cursor(win, { 1, 0 })
+		-- Move cursor to top before output arrives
+		vim.api.nvim_win_set_cursor(win, { 1, 0 })
 
-	local jid = vim.fn.jobstart(cmd, {
-		pty = true,
-		width = vim.api.nvim_win_get_width(win),
-		height = vim.api.nvim_win_get_height(win),
-		env = {
-			TERM = "xterm-256color",
-			PAGER = "cat",
-			DELTA_PAGER = "cat",
-			COLORTERM = "truecolor",
-			DFT_BACKGROUND = "light",
-		},
-		on_stdout = function(_, data)
-			if not state.floating_buf or not vim.api.nvim_buf_is_valid(state.floating_buf) then
-				return
-			end
-			local output = table.concat(data, "\n")
-			vim.api.nvim_chan_send(chan, output)
-		end,
-		on_exit = function(_, _) --[[ exit_code ]]
-			vim.schedule(function()
-				if state.floating_buf and vim.api.nvim_buf_is_valid(state.floating_buf) then
-					buffer.set_modifiable(state.floating_buf, false)
-					buffer.stop_insert(state.floating_buf)
+		jid = vim.fn.jobstart(cmd, {
+			pty = true,
+			width = vim.api.nvim_win_get_width(win),
+			height = vim.api.nvim_win_get_height(win),
+			env = {
+				TERM = "xterm-256color",
+				PAGER = "cat",
+				DELTA_PAGER = "cat",
+				COLORTERM = "truecolor",
+				DFT_BACKGROUND = "light",
+			},
+			on_stdout = function(_, data)
+				if not state.floating_buf or not vim.api.nvim_buf_is_valid(state.floating_buf) then
+					return
 				end
-			end)
-		end,
-	})
+				local output = table.concat(data, "\n")
+				vim.api.nvim_chan_send(chan, output)
+			end,
+			on_exit = function(_, exit_code)
+				if float_opts.on_exit then
+					float_opts.on_exit(exit_code)
+				end
+				vim.schedule(function()
+					if state.floating_buf and vim.api.nvim_buf_is_valid(state.floating_buf) then
+						if not float_opts.keep_modifiable then
+							buffer.set_modifiable(state.floating_buf, false)
+						end
+						buffer.stop_insert(state.floating_buf)
+					end
+				end)
+			end,
+		})
+	end
 
-	if jid <= 0 then
-		vim.api.nvim_chan_send(chan, "Failed to start command: " .. cmd .. "\r\n")
+	if not jid or jid <= 0 then
+		if chan then
+			vim.api.nvim_chan_send(chan, "Failed to start command: " .. cmd .. "\r\n")
+		else
+			vim.notify("Failed to start command: " .. cmd, vim.log.levels.ERROR)
+		end
 		state.floating_chan = nil
 	else
 		state.floating_job_id = jid
@@ -328,6 +363,10 @@ function M.run_floating(cmd, keymaps)
 			{ modes = { "n", "v" }, lhs = "<S-a>", rhs = function() end },
 			{ modes = { "n", "v" }, lhs = "u", rhs = function() end },
 		}
+		-- IF it's interactive do not block them
+		if float_opts.interactive then
+			default_keymaps = {}
+		end
 
 		-- Merge default keymaps with provided keymaps
 		if keymaps and #keymaps > 0 then
@@ -336,11 +375,13 @@ function M.run_floating(cmd, keymaps)
 			end
 		end
 
-		-- Remove prompt keymaps
-		buffer.remove_keymaps(state.floating_buf, {
-			{ modes = { "n", "v" }, lhs = "[[", rhs = function() end },
-			{ modes = { "n", "v" }, lhs = "]]", rhs = function() end },
-		})
+		if not float_opts.interactive then
+			-- Remove prompt keymaps
+			buffer.remove_keymaps(state.floating_buf, {
+				{ modes = { "n", "v" }, lhs = "[[", rhs = function() end },
+				{ modes = { "n", "v" }, lhs = "]]", rhs = function() end },
+			})
+		end
 
 		buffer.set_keymaps(state.floating_buf, default_keymaps)
 		vim.b[state.floating_buf].jj_keymaps_set = true
