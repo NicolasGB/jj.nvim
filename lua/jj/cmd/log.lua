@@ -725,6 +725,26 @@ function M.handle_log_quick_squash()
 	end, string.format("Error squashing `%s` into it's parent", revset))
 end
 
+--- Handle log split
+function M.handle_log_split()
+	local revset = get_revset()
+	if not revset or revset == "" then
+		return
+	end
+
+	require("jj.cmd").split({
+		rev = revset,
+		on_exit = function(exit_code)
+			if exit_code == 0 then
+				utils.notify(string.format("Successfully split `%s`", revset), vim.log.levels.INFO)
+				M.log({})
+			else
+				utils.notify(string.format("Cancelled splitting `%s`", revset), vim.log.levels.WARN)
+			end
+		end,
+	})
+end
+
 --- Handle diff action in summary tooltip
 --- Diffs the file at revset against its parent (revset-)
 --- Opens a floating diff, and returns focus to tooltip when closed
@@ -1005,6 +1025,11 @@ function M.log_keymaps()
 		summary = {
 			desc = "Show summary tooltip for revision under cursor",
 			handler = M.handle_log_summary,
+			modes = { "n" },
+		},
+		split = {
+			desc = "Split the revision under cursor",
+			handler = M.handle_log_split,
 			modes = { "n" },
 		},
 	}
