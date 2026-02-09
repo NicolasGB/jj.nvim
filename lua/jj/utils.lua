@@ -157,6 +157,39 @@ function M.get_all_bookmarks()
 	return bookmarks
 end
 
+--- Get all bookmarks in the repository, filters out deleted bookmarks
+--- @return string[] List of bookmarks, or empty list if none found
+function M.get_untracked_bookmarks()
+	-- Use a custom template to output just the bookmark names, one per line
+	-- This is more reliable than parsing the default output format
+	local bookmarks_output, success = runner.execute_command(
+		[[jj bookmark list -a -T 'if(self.remote() && !self.tracked(), name ++ if(!self.present(), " (deleted)", "") ++ "\n")']],
+		"Failed to get untracked bookmarks",
+		nil,
+		true
+	)
+
+	if not success or not bookmarks_output then
+		return {}
+	end
+
+	-- Parse bookmarks from template output
+	local bookmarks = {}
+	local seen = {}
+	for line in bookmarks_output:gmatch("[^\n]+") do
+		local bookmark = vim.trim(line)
+		if bookmark ~= "" and not seen[bookmark] then
+			-- Skip bookmarks containing "Hint:" or "(deleted)"
+			if not bookmark:match("Hint:") and not bookmark:match("%(deleted%)") then
+				table.insert(bookmarks, bookmark)
+				seen[bookmark] = true
+			end
+		end
+	end
+
+	return bookmarks
+end
+
 --- Get git remotes for the current jj repository
 --- @return {name: string, url: string}[]|nil A list of remotes with name and URL
 function M.get_remotes()
