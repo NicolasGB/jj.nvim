@@ -155,9 +155,7 @@ function M.open_editor(initial_text, on_write, on_unload, keymaps)
 			buffer = buf,
 			callback = function()
 				local last_written = vim.b[buf].jj_last_written_lines
-				if last_written then
-					on_unload(last_written)
-				end
+				on_unload(last_written)
 			end,
 		})
 	end

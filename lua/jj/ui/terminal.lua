@@ -148,7 +148,6 @@ function M.close_terminal_buffer()
 	-- Otherwise close the buffer
 	buffer.close(state.buf)
 	state.buf_cmd = nil
-	state.cursor_restore_pos = nil
 	state.chan = nil
 	state.job_id = nil
 end
