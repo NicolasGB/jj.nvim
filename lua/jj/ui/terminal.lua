@@ -325,6 +325,7 @@ function M.run_floating(cmd, keymaps)
 			{ modes = { "n", "v" }, lhs = "i", rhs = function() end },
 			{ modes = { "n", "v" }, lhs = "c", rhs = function() end },
 			{ modes = { "n", "v" }, lhs = "a", rhs = function() end },
+			{ modes = { "n", "v" }, lhs = "<S-a>", rhs = function() end },
 			{ modes = { "n", "v" }, lhs = "u", rhs = function() end },
 		}
 
@@ -577,6 +578,20 @@ function M.run_tooltip(cmd, tool_opts)
 		state.tooltip_buf = nil
 	end
 
+	local height = tool_opts.height
+	if height then
+		local cursor_screen_row = vim.fn.screenrow()
+		local available = vim.o.lines - cursor_screen_row - 2
+		height = math.min(height, math.max(available, 1))
+	end
+
+	local width = tool_opts.width
+	if width then
+		local cursor_screen_col = vim.fn.screencol()
+		local available = vim.o.columns - cursor_screen_col - 2
+		width = math.min(width, math.max(available, 1))
+	end
+
 	state.tooltip_buf, state.tooltip_win = buffer.create_float({
 		title = tool_opts.title or " JJ ",
 		title_pos = "center",
@@ -585,8 +600,8 @@ function M.run_tooltip(cmd, tool_opts)
 		relative = "cursor",
 		row = 1,
 		col = 0,
-		width = tool_opts.width,
-		height = tool_opts.height,
+		width = width,
+		height = height,
 		win_options = {
 			wrap = true,
 			number = false,
