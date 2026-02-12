@@ -17,6 +17,14 @@ local function diff_two_changes(left, right)
 		return
 	end
 
+	--- Omit the commit id when left is the current revision,
+	--- allowing codediff to use the actual file instead of a virtual buffer.
+	local commit_id_current = utils.get_current_commit_id()
+	if commit_id_current == commit_id_left then
+		vim.cmd(string.format("CodeDiff %s", commit_id_right))
+		return
+	end
+
 	vim.cmd(string.format("CodeDiff %s %s", commit_id_right, commit_id_left))
 end
 
