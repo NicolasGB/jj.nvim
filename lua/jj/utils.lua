@@ -370,6 +370,24 @@ function M.get_commit_id(revset)
 	return vim.trim(output)
 end
 
+---
+--- Get the commit id of the current revision
+--- @return string|nil
+function M.get_current_commit_id()
+	local output, success = runner.execute_command(
+		"jj log --no-graph -r '@' -T 'commit_id' --quiet",
+		"Error extracting current revision's commit id",
+		nil,
+		true
+	)
+
+	if not success or not output then
+		return nil
+	end
+
+	return vim.trim(output)
+end
+
 --- Extract the description from the describe text
 --- @param lines string[] The lines of a described change
 --- @return string|nil
