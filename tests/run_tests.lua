@@ -283,65 +283,65 @@ run_test("still parses correctly with box chars and symbol", function()
 	assert_equals("go", parser.get_revset(line))
 end)
 
-run_test("still parses correctly with divergent change suffix \\0", function()
-	local line = "├─○ go\\0 some description"
-	assert_equals("go\\0", parser.get_revset(line))
+run_test("still parses correctly with divergent change suffix /0", function()
+	local line = "├─○ go/0 some description"
+	assert_equals("go/0", parser.get_revset(line))
 end)
 
 -- Divergent changes tests
-run_test("parses divergent change with \\0", function()
-	local line = "◆ abc123\\0 first divergent copy"
-	assert_equals("abc123\\0", parser.get_revset(line))
+run_test("parses divergent change with /0", function()
+	local line = "◆ abc123/0 first divergent copy"
+	assert_equals("abc123/0", parser.get_revset(line))
 end)
 
-run_test("parses divergent change with \\1", function()
-	local line = "○ def456\\1 second divergent copy"
-	assert_equals("def456\\1", parser.get_revset(line))
+run_test("parses divergent change with /1", function()
+	local line = "○  rs/1 lam@lamtrung.com 9 hours ago pr-83-1 6a7 (divergent)"
+	assert_equals("rs/1", parser.get_revset(line))
 end)
 
-run_test("parses divergent change with \\2", function()
-	local line = "◆ ghi789\\2 third divergent copy"
-	assert_equals("ghi789\\2", parser.get_revset(line))
+run_test("parses divergent change with /2", function()
+	local line = "◆ ghi789/2 third divergent copy"
+	assert_equals("ghi789/2", parser.get_revset(line))
 end)
 
-run_test("parses divergent change with higher number \\10", function()
-	local line = "○ jkl012\\10 tenth divergent copy"
-	assert_equals("jkl012\\10", parser.get_revset(line))
+run_test("parses divergent change with higher number /10", function()
+	local line = "○ jkl012/10 tenth divergent copy"
+	assert_equals("jkl012/10", parser.get_revset(line))
 end)
 
 run_test("parses divergent change with graph chars", function()
-	local line = "│ │ ◆ mno345\\0 divergent on branch"
-	assert_equals("mno345\\0", parser.get_revset(line))
+	local line = "│ │ ◆ mno345/0 divergent on branch"
+	assert_equals("mno345/0", parser.get_revset(line))
 end)
 
 run_test("parses divergent change with @ symbol", function()
-	local line = "@ pqr678\\1 working copy divergent"
-	assert_equals("pqr678\\1", parser.get_revset(line))
+	local line = "@ pqr678/1 working copy divergent"
+	assert_equals("pqr678/1", parser.get_revset(line))
 end)
 
 run_test("parses divergent change with conflict symbol", function()
-	local line = "× stu901\\0 conflicted divergent"
-	assert_equals("stu901\\0", parser.get_revset(line))
+	local line = "× stu901/0 conflicted divergent"
+	assert_equals("stu901/0", parser.get_revset(line))
 end)
 
 run_test("parses divergent change with merge connector", function()
-	local line = "├─○ vwx234\\2 divergent after merge"
-	assert_equals("vwx234\\2", parser.get_revset(line))
+	local line = "├─○ vwx234/2 divergent after merge"
+	assert_equals("vwx234/2", parser.get_revset(line))
 end)
 
 run_test("parses divergent change deeply nested", function()
-	local line = "│ │ │ │ ◆ yza567\\0 deeply nested divergent"
-	assert_equals("yza567\\0", parser.get_revset(line))
+	local line = "│ │ │ │ ◆ yza567/0 deeply nested divergent"
+	assert_equals("yza567/0", parser.get_revset(line))
 end)
 
 run_test("parses short revset with divergent suffix", function()
-	local line = "○ a\\0 single char divergent"
-	assert_equals("a\\0", parser.get_revset(line))
+	local line = "○ a/0 single char divergent"
+	assert_equals("a/0", parser.get_revset(line))
 end)
 
 run_test("parses divergent change at end of line", function()
-	local line = "◆ bcd890\\1"
-	assert_equals("bcd890\\1", parser.get_revset(line))
+	local line = "◆ bcd890/1"
+	assert_equals("bcd890/1", parser.get_revset(line))
 end)
 
 -- Print summary

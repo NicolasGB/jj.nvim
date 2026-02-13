@@ -125,7 +125,8 @@ function M.get_revset(line)
 	}
 
 	-- ASCII markers (escaped for pattern matching)
-	local ascii_markers = { "@", "%*", "/", "\\", "%-", "%+", "|" }
+	-- Note: "/" is excluded because it's used as divergent change separator (e.g., rs/1)
+	local ascii_markers = { "@", "%*", "\\", "%-", "%+", "|" }
 
 	-- MUST have at least one commit marker symbol to be a valid commit line
 	-- Otherwise it's a description/message line, not a commit marker line
@@ -162,13 +163,13 @@ function M.get_revset(line)
 	allowed_prefix = allowed_prefix .. "]+" -- close class, match one or more (not zero)
 
 	-- Match first alphanumeric sequence after graph prefix
-	-- Supports divergent changes: revset\0, revset\1, etc.
-	-- Only match if it's followed by whitespace, backslash (for divergent), or end of string
+	-- Supports divergent changes: revset/0, revset/1, etc.
+	-- Only match if it's followed by whitespace, slash (for divergent), or end of string
 
-	-- Try matching with divergent suffix first: revset\N where N is a number
-	local revset, divergent_num = line:match("^" .. allowed_prefix .. "(%w+)\\(%d+)")
+	-- Try matching with divergent suffix first: revset/N where N is a number
+	local revset, divergent_num = line:match("^" .. allowed_prefix .. "(%w+)/(%d+)")
 	if revset and divergent_num then
-		return revset .. "\\" .. divergent_num
+		return revset .. "/" .. divergent_num
 	end
 
 	-- Try regular match followed by whitespace
