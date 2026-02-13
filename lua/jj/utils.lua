@@ -157,6 +157,52 @@ function M.get_all_bookmarks()
 	return bookmarks
 end
 
+--- Get all tags in a repository
+--- @return string[] List of bookmarks, or empty list if none found
+function M.get_all_tags()
+	-- Use a custom template to output just the bookmark names, one per line
+	-- This is more reliable than parsing the default output format
+	local bookmarks_output, success = runner.execute_command(
+		[[jj tag list --sort committer-date- -T 'if(!self.remote(), name ++ if(!self.present(), " (deleted)", "") ++ "\n")']],
+		"Failed to get bookmarks",
+		nil,
+		true
+	)
+
+	if not success or not bookmarks_output then
+		return {}
+	end
+
+	-- Parse tags from template output
+	local tags = {}
+	local seen = {}
+	for line in bookmarks_output:gmatch("[^\n]+") do
+		local tag = vim.trim(line)
+		if tag ~= "" and not seen[tag] then
+			-- Skip tags containing  "(deleted)"
+			if not tag:match("%(deleted%)") then
+				table.insert(tags, tag)
+				seen[tag] = true
+			end
+		end
+	end
+
+	return tags
+end
+
+--- Whether or not the repository is colocated
+--- @return boolean
+function M.is_colocated()
+	local output, success =
+		runner.execute_command("jj git colocation status ", "Failed to determine if repository is colocated", nil, true)
+
+	if not success or not output then
+		return false
+	end
+
+	return vim.startswith(vim.trim(output), "Workspace is currently colocated with Git.")
+end
+
 --- Get all bookmarks in the repository, filters out deleted bookmarks
 --- @return string[] List of bookmarks, or empty list if none found
 function M.get_untracked_bookmarks()

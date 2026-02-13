@@ -21,6 +21,7 @@
   - [Abandon changes from the log buffer](#abandon-changes-from-the-log-buffer)
   - [Fetch and push from the log buffer](#fetch-and-push-from-the-log-buffer)
   - [Manage bookmarks from the log buffer](#manage-bookmarks-from-the-log-buffer)
+  - [Manage tags from the log buffer](#manage-tags-from-the-log-buffer)
   - [Squash changes from the log buffer](#squash-changes-from-the-log-buffer)
   - [Split changes from the log buffer](#split-changes-from-the-log-buffer)
   - [Rebase changes from the log buffer](#rebase-changes-from-the-log-buffer)
@@ -64,6 +65,7 @@
   - `split` - Split a change interactively in a floating terminal
   - `rebase` - Rebase changes to a destination
   - `bookmark create/delete` - Create and delete bookmarks
+  - `tag set/delete/push` - Create, delete, and push tags (push requires colocated repos)
   - `undo` - Undo the last operation
   - `redo` - Redo the last undone operation
   - `open_pr` - Open a PR/MR on your remote (GitHub, GitLab, Gitea, Forgejo, etc.)
@@ -152,6 +154,14 @@ You can fetch and push directly from the log buffer:
 - `b` - Create a new bookmark or move an existing one to the revision under cursor
   - Select from existing bookmarks to move them
   - Or create a new bookmark at that revision
+
+### Manage tags from the log buffer
+
+- `tt` - Create a new tag on the revision under cursor
+- `td` - Delete an existing tag via picker
+- `tp` - Push a tag to a remote (colocated repositories only)
+
+Tag push uses `git push` under the hood and is only available in colocated repositories. If multiple remotes are configured, you'll be prompted to select one.
 
 ### Squash changes from the log buffer
 
@@ -302,6 +312,10 @@ The plugin provides a `:J` command that accepts jj subcommands:
 :J open_pr --list    " Select bookmark from all and open PR
 :J split             " Split a change interactively
 :J bookmark create/move/delete
+:J tag set           " Set a tag (prompts for revision and tag name)
+:J tag set abc123    " Set a tag on a specific revision
+:J tag delete        " Delete a tag via picker
+:J tag delete v1.0   " Delete a specific tag
 :J # This will use your defined default command
 :J <your-alias>
 :J commit            " Opens your configured editor describes @ and then creates a new change -A immediately
@@ -433,6 +447,9 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
         },
         quick_squash = "<S-s>",             -- Quick squash revision under cursor into its parent (ignore immutability)
         split = "<C-s>",                    -- Split the revision under cursor
+        tag_create = "tt",                  -- Create a tag on the revision under cursor
+        tag_delete = "td",                  -- Delete a tag via picker
+        tag_push = "tp",                    -- Push a tag to remote (colocated repos only)
         summary = "<S-k>",                  -- Show summary tooltip for revision under cursor
         summary_tooltip = {
             diff = "<S-d>",                   -- Diff file at this revision
@@ -609,6 +626,30 @@ The `bookmark_delete` function deletes a bookmark:
 ```lua
 local cmd = require("jj.cmd")
 cmd.bookmark_delete()  -- Select bookmark to delete
+```
+
+### Tag Management Command Options
+
+The `tag_set` function creates a tag on a revision:
+
+```lua
+local cmd = require("jj.cmd")
+cmd.tag_set()              -- Prompts for revision and tag name
+cmd.tag_set("abc123")      -- Set a tag on a specific revision (prompts for tag name)
+```
+
+The `tag_delete` function deletes a tag via picker:
+
+```lua
+local cmd = require("jj.cmd")
+cmd.tag_delete()           -- Select tag to delete from picker
+```
+
+The `tag_push` function pushes a tag to a remote (colocated repositories only):
+
+```lua
+local cmd = require("jj.cmd")
+cmd.tag_push()             -- Select tag to push (prompts for remote if multiple)
 ```
 
 ### Open PR/MR Command Options
@@ -825,6 +866,9 @@ vim.keymap.set("n", "<leader>jA", annotate.line, { desc = "JJ annotate line" })
     vim.keymap.set("n", "<leader>jbc", cmd.bookmark_create, { desc = "JJ bookmark create" })
     vim.keymap.set("n", "<leader>jbd", cmd.bookmark_delete, { desc = "JJ bookmark delete" })
     vim.keymap.set("n", "<leader>jbm", cmd.bookmark_move, { desc = "JJ bookmark move" })
+    vim.keymap.set("n", "<leader>jts", cmd.tag_set, { desc = "JJ tag set" })
+    vim.keymap.set("n", "<leader>jtd", cmd.tag_delete, { desc = "JJ tag delete" })
+    vim.keymap.set("n", "<leader>jtp", cmd.tag_push, { desc = "JJ tag push" })
     vim.keymap.set("n", "<leader>ja", cmd.abandon, { desc = "JJ abandon" })
     vim.keymap.set("n", "<leader>jf", cmd.fetch, { desc = "JJ fetch" })
     vim.keymap.set("n", "<leader>jp", cmd.push, { desc = "JJ push" })
