@@ -27,6 +27,20 @@ local function assert_is_nil(value, msg)
 	end
 end
 
+local function assert_table_equals(expected, actual, msg)
+	if type(expected) ~= "table" or type(actual) ~= "table" then
+		error(string.format("%s\nExpected table, got: %s and %s", msg or "Assertion failed", type(expected), type(actual)))
+	end
+	if #expected ~= #actual then
+		error(string.format("%s\nLength mismatch: expected %d, got %d", msg or "Assertion failed", #expected, #actual))
+	end
+	for i, v in ipairs(expected) do
+		if v ~= actual[i] then
+			error(string.format("%s\nAt index %d: expected %s, got %s", msg or "Assertion failed", i, tostring(v), tostring(actual[i])))
+		end
+	end
+end
+
 local function run_test(name, test_fn)
 	local status, err = pcall(test_fn)
 	if status then
@@ -342,6 +356,41 @@ end)
 run_test("parses divergent change at end of line", function()
 	local line = "◆ bcd890/1"
 	assert_equals("bcd890/1", parser.get_revset(line))
+end)
+
+print("\n=== Running parse_default_cmd tests ===\n")
+
+run_test("parse_default_cmd: parses config list array output", function()
+	local output = 'ui.default-command = ["log", "--no-pager", "--limit", "18"]'
+	assert_table_equals({ "log", "--no-pager", "--limit", "18" }, parser.parse_default_cmd(output))
+end)
+
+run_test("parse_default_cmd: parses config list single string output", function()
+	local output = 'ui.default-command = "log"'
+	assert_table_equals({ "log" }, parser.parse_default_cmd(output))
+end)
+
+run_test("parse_default_cmd: parses bare array (config get format)", function()
+	local output = '["log", "--limit", "10"]'
+	assert_table_equals({ "log", "--limit", "10" }, parser.parse_default_cmd(output))
+end)
+
+run_test("parse_default_cmd: parses bare string (config get format)", function()
+	local output = '"log"'
+	assert_table_equals({ "log" }, parser.parse_default_cmd(output))
+end)
+
+run_test("parse_default_cmd: parses unquoted string", function()
+	local output = "log"
+	assert_table_equals({ "log" }, parser.parse_default_cmd(output))
+end)
+
+run_test("parse_default_cmd: returns nil for empty string", function()
+	assert_is_nil(parser.parse_default_cmd(""))
+end)
+
+run_test("parse_default_cmd: returns nil for nil", function()
+	assert_is_nil(parser.parse_default_cmd(nil))
 end)
 
 -- Print summary
