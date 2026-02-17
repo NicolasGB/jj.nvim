@@ -833,22 +833,18 @@ function M.j(args)
 	local cmd = nil
 	if #args == 0 then
 		local default_cmd_str, success = runner.execute_command(
-			"jj config get ui.default-command",
+			"jj config list ui.default-command",
 			"Error getting user's default command",
 			nil,
 			true
 		)
-		if not success then
-			terminal.run("jj", M.terminal_keymaps())
-			return
+		if success then
+			cmd = parser.parse_default_cmd(default_cmd_str or "")
 		end
-
-		local default_cmd = parser.parse_default_cmd(default_cmd_str and default_cmd_str or "")
-		if default_cmd == nil then
-			terminal.run("jj", M.terminal_keymaps())
-			return
+		-- jj's built-in default command is "log"
+		if cmd == nil then
+			cmd = { "log" }
 		end
-		cmd = default_cmd
 	end
 
 	if type(args) == "string" then

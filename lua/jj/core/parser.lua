@@ -9,8 +9,9 @@ function M.parse_default_cmd(cmd_output)
 		return nil
 	end
 
-	-- Remove whitespace and parse TOML output
+	-- Remove whitespace and strip "key = " prefix from `jj config list` output
 	local trimmed_cmd = vim.trim(cmd_output)
+	trimmed_cmd = trimmed_cmd:gsub("^[%w._-]+ = ", "")
 
 	-- Try to parse as TOML array: ["item1", "item2", ...]
 	-- Pattern "%[(.*)%]" captures everything between square brackets
