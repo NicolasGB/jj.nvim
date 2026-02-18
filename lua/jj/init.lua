@@ -10,6 +10,7 @@ local diff = require("jj.diff")
 --- @field cmd? jj.cmd.opts Options for command module
 --- @field picker? jj.picker.config Options for picker module
 --- @field terminal? jj.ui.terminal.opts Options for the terminal
+--- @field editor? jj.ui.editor.opts Options for the editor module
 --- @field highlights? jj.highlights Options for the highlights
 --- @field diff? jj.diff.config Options for the diff module
 
@@ -21,6 +22,9 @@ local diff = require("jj.diff")
 M.config = {
 	picker = {
 		snacks = {},
+	},
+	editor = {
+		auto_insert = false,
 	},
 	highlights = {
 		editor = {
@@ -44,7 +48,10 @@ function M.setup(opts)
 
 	-- Setup for sub-modules
 	picker.setup(opts and opts.picker or {})
-	editor.setup({ highlights = M.config.highlights.editor })
+	editor.setup({
+		highlights = M.config.highlights.editor,
+		auto_insert = M.config.editor.auto_insert,
+	})
 	cmd.setup(opts and opts.cmd or {})
 	terminal.setup(opts and opts.terminal or {})
 	diff.setup(M.config.diff)
