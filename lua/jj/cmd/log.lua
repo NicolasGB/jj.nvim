@@ -247,7 +247,7 @@ function M.log(opts)
 		vim.api.nvim_buf_clear_namespace(terminal.state.buf, log_special_mode_target_ns_id, 0, -1)
 	end
 
-	local jj_cmd = "jj log"
+	local jj_cmd = "jj log --no-pager"
 	local merged_opts = vim.tbl_extend("force", default_log_opts, opts or {})
 
 	-- If a raw has been given simply execute it as is
