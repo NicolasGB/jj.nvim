@@ -44,6 +44,7 @@ local function describe_editor_keymaps()
 		close = {
 			desc = "Close describe editor without saving",
 			handler = "<cmd>close!<CR>",
+			modes = { "n" },
 		},
 	})
 end

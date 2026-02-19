@@ -26,6 +26,7 @@
   - [Split changes from the log buffer](#split-changes-from-the-log-buffer)
   - [Rebase changes from the log buffer](#rebase-changes-from-the-log-buffer)
   - [Open a PR/MR from the log buffer](#open-a-prmr-from-the-log-buffer)
+  - [Browse current file on remote](#browse-current-file-on-remote)
   - [Open a changed file](#open-a-changed-file)
   - [Restore a changed file](#restore-a-changed-file)
 - [Installation](#installation)
@@ -69,6 +70,7 @@
   - `undo` - Undo the last operation
   - `redo` - Redo the last undone operation
   - `open_pr` - Open a PR/MR on your remote (GitHub, GitLab, Gitea, Forgejo, etc.)
+  - `browse` - Open the current file on your remote at the current line (or selected range)
   - `annotate` / `annotate_line` - View file blame and line history with change ID, author, and timestamp
   - `commit` - Describe the current change and create a new one after
   - Diff commands
@@ -265,6 +267,32 @@ The plugin automatically:
 
 **This is a jj.nvim exclusive feature** - the ability to seamlessly bridge from your Neovim jj workflow directly to your remote platform's PR/MR interface.
 
+### Browse current file on remote
+
+Open the current buffer's file in your browser on the hosted remote (GitHub/GitLab/Gitea/Forgejo, etc.) at the current cursor line or a visually selected range.
+
+**Usage:**
+
+```sh
+:Jbrowse          " Use @ (best-effort chooses a remote-reachable ref)
+:Jbrowse main     " Use an explicit revset (no walkback)
+```
+
+**How it works:**
+
+- Takes the current buffer path and makes it repo-relative (must be inside a jj repo)
+- Collects git remotes; if there's more than one, prompts you to pick one
+- Normalizes the remote URL to an HTTPS base repo URL
+- Picks a ref that is expected to exist on the remote:
+  - With default `@`: walks back first-parent up to 20 parents to find a commit reachable from that remote's bookmarks; falls back to `trunk()` if needed
+  - With an explicit revset (e.g. `main`, `@-2`): uses that revset directly (no walkback)
+  - If there's a single unambiguous remote bookmark pointing at the chosen commit, uses that bookmark name; otherwise uses the commit SHA
+- Builds a provider-specific URL and adds a line anchor:
+  - GitHub-style: `#L<start>` or `#L<start>-L<end>`
+  - GitLab-style: `#L<start>` or `#L<start>-<end>`
+
+In Visual mode, select lines and run `:Jbrowse` to open a range.
+
 ### Open a changed file
 
 Just press enter to open a file from the `status` output in your current window.
@@ -308,6 +336,8 @@ The plugin provides a `:J` command that accepts jj subcommands:
 :J fetch             " Fetch from remote
 :J open_pr           " Open PR for current change's bookmark
 :J open_pr --list    " Select bookmark from all and open PR
+:Jbrowse             " Open current file on remote at cursor line
+:Jbrowse main        " Open current file on remote at the given revset
 :J split             " Split a change interactively
 :J bookmark create/move/delete
 :J tag set           " Set a tag (prompts for revision and tag name)

@@ -124,6 +124,153 @@ function M.url_encode(str)
 	end))
 end
 
+--- URL-encode a file path for use in URLs.
+--- Encodes each path segment and preserves `/` separators.
+--- Also normalizes Windows path separators (`\` -> `/`).
+--- @param path string
+--- @return string
+function M.url_encode_path(path)
+	path = (path or ""):gsub("\\", "/")
+	local parts = vim.split(path, "/", { plain = true })
+	for i, seg in ipairs(parts) do
+		parts[i] = M.url_encode(seg)
+	end
+	return table.concat(parts, "/")
+end
+
+--- Check whether a path points to an existing file.
+--- @param path string|nil
+--- @return boolean
+function M.is_file(path)
+	if not path or path == "" then
+		return false
+	end
+	local st = vim.uv.fs_stat(path)
+	return st ~= nil and st.type == "file"
+end
+
+--- Compute a repository-relative path.
+--- Returns nil if `path` is outside of `root`.
+--- @param root string
+--- @param path string
+--- @return string|nil
+function M.relpath(root, path)
+	if not root or root == "" or not path or path == "" then
+		return nil
+	end
+
+	local ok_norm_root, norm_root = pcall(vim.fs.normalize, root)
+	local ok_norm_path, norm_path = pcall(vim.fs.normalize, path)
+	if not ok_norm_root or not ok_norm_path then
+		norm_root, norm_path = root, path
+	end
+
+	local ok_rel, rel = pcall(vim.fs.relpath, norm_root, norm_path)
+	if ok_rel and rel and rel ~= "" and not rel:match("^%.%.") then
+		return rel
+	end
+
+	local prefix = norm_root
+	if not prefix:match("/$") then
+		prefix = prefix .. "/"
+	end
+	if vim.startswith(norm_path, prefix) then
+		return norm_path:sub(#prefix + 1)
+	end
+
+	return nil
+end
+
+--- Normalize a git remote URL to an HTTPS repo URL.
+--- Supports:
+--- - `git@host:owner/repo(.git)`
+--- - `ssh://git@host/owner/repo(.git)`
+--- - `https://host/owner/repo(.git)`
+--- @param raw_url string
+--- @return string|nil repo_url HTTPS base repo URL (no trailing .git)
+--- @return string|nil host Hostname extracted from the remote
+function M.normalize_remote_url(raw_url)
+	if not raw_url or raw_url == "" then
+		return nil, nil
+	end
+
+	raw_url = raw_url:gsub("%.git$", "")
+
+	-- scp-like SSH: git@host:owner/repo
+	if raw_url:match("^git@") then
+		local host = raw_url:match("^git@([^:]+):")
+		local repo_path = raw_url:match("^git@[^:]+:(.+)$")
+		if host and repo_path then
+			return "https://" .. host .. "/" .. repo_path, host
+		end
+	end
+
+	-- ssh://git@host/owner/repo
+	if raw_url:match("^ssh://") then
+		local host = raw_url:match("^ssh://[^@]+@([^/]+)/") or raw_url:match("^ssh://([^/]+)/")
+		local rest = raw_url:gsub("^ssh://[^@]+@", ""):gsub("^ssh://", "")
+		local repo_path = rest:match("^[^/]+/(.+)$")
+		if host and repo_path then
+			repo_path = repo_path:gsub("%.git$", "")
+			return "https://" .. host .. "/" .. repo_path, host
+		end
+	end
+
+	-- HTTPS
+	local host = raw_url:match("^https?://([^/]+)")
+	if host then
+		return raw_url, host
+	end
+
+	return nil, nil
+end
+
+--- Open a URL using the system default handler.
+--- Prefers `vim.ui.open()` when available.
+--- @param url string
+function M.open_url(url)
+	if not url or url == "" then
+		return
+	end
+
+	if vim.ui and type(vim.ui.open) == "function" then
+		vim.ui.open(url)
+		return
+	end
+
+	if vim.fn.has("win32") == 1 then
+		-- `start` is a cmd.exe builtin
+		vim.fn.jobstart({ "cmd.exe", "/c", "start", "", url }, { detach = true })
+		return
+	end
+
+	local open_cmd = vim.fn.has("mac") == 1 and "open" or "xdg-open"
+	vim.fn.jobstart({ open_cmd, url }, { detach = true })
+end
+
+--- Best-effort unquoting of a jj `RefSymbol` rendering.
+---
+--- `RefSymbol` values are displayed as revset symbols, which may be quoted and
+--- escaped if necessary. For browser URLs, we generally want the raw name.
+---
+--- This handles the common cases of surrounding single/double quotes.
+--- @param s string|nil
+--- @return string
+function M.unquote_refsymbol(s)
+	s = vim.trim(s or "")
+	if s == "" then
+		return ""
+	end
+	local first = s:sub(1, 1)
+	local last = s:sub(-1)
+	if (first == '"' and last == '"') or (first == "'" and last == "'") then
+		s = s:sub(2, -2)
+		-- Minimal unescaping (covers typical `\"` and `\\` sequences)
+		s = s:gsub("\\\\", "\\"):gsub('\\"', '"'):gsub("\\'", "'")
+	end
+	return s
+end
+
 --- Get all bookmarks in the repository, filters out deleted bookmarks
 --- @return string[] List of bookmarks, or empty list if none found
 function M.get_all_bookmarks()
@@ -264,27 +411,17 @@ function M.open_pr_for_bookmark(bookmark)
 	-- Get all git remotes
 	local remotes = M.get_remotes()
 
-	if #remotes == 0 then
+	if not remotes or #remotes == 0 then
 		M.notify("No git remotes found", vim.log.levels.ERROR)
 		return
 	end
 
 	-- Helper function to open PR for a given remote URL
 	local function open_pr_with_url(raw_url)
-		-- Remove .git suffix if present
-		raw_url = raw_url:gsub("%.git$", "")
-
-		-- Convert SSH URL to HTTPS and detect platform
-		local repo_url, host
-		if raw_url:match("^git@") then
-			-- Extract host and path from git@host:path
-			host = raw_url:match("^git@([^:]+):")
-			local repo_path = raw_url:match("^git@[^:]+:(.+)$")
-			repo_url = "https://" .. host .. "/" .. repo_path
-		else
-			-- Extract host from https://host/path
-			host = raw_url:match("https?://([^/]+)")
-			repo_url = raw_url
+		local repo_url, host = M.normalize_remote_url(raw_url)
+		if not repo_url or not host then
+			M.notify("Unsupported remote URL: " .. (raw_url or ""), vim.log.levels.ERROR)
+			return
 		end
 
 		-- Construct the appropriate PR/MR URL based on the platform
@@ -302,17 +439,7 @@ function M.open_pr_for_bookmark(bookmark)
 			pr_url = repo_url .. "/compare/" .. encoded_bookmark .. "?expand=1"
 		end
 
-		-- Open the URL using xdg-open or the system's default browser
-		local open_cmd
-		if vim.fn.has("mac") == 1 then
-			open_cmd = "open"
-		elseif vim.fn.has("win32") == 1 then
-			open_cmd = "start"
-		else
-			open_cmd = "xdg-open"
-		end
-
-		vim.fn.jobstart({ open_cmd, pr_url }, { detach = true })
+		M.open_url(pr_url)
 		M.notify(string.format("Opening PR for bookmark `%s`", bookmark), vim.log.levels.INFO)
 	end
 
@@ -450,6 +577,98 @@ function M.get_current_commit_id()
 	end
 
 	return vim.trim(output)
+end
+
+--- Return a commit id that is expected to exist on a given remote.
+---
+--- This is a best-effort heuristic used for browser URLs: if a commit isn't
+--- reachable from the remote's bookmarks, most web UIs will 404.
+---
+--- Strategy:
+--- - Starting from `start_revset`, walk back first-parent (`revset-`) up to
+---   `max_walkback` times until the commit is contained in
+---   `::remote_bookmarks(remote="<remote_name>")`.
+--- - If still not found, return the commit id of `trunk()`.
+---
+--- @param start_revset string Starting point revset (e.g. "@")
+--- @param remote_name string Remote name (e.g. "origin")
+--- @param max_walkback? integer Maximum number of parents to traverse (default: 20)
+--- @return string|nil commit_id
+function M.get_pushed_commit_id(start_revset, remote_name, max_walkback)
+	max_walkback = max_walkback or 20
+	start_revset = (start_revset and start_revset ~= "") and start_revset or "@"
+	remote_name = (remote_name and remote_name ~= "") and remote_name or "origin"
+
+	-- Build a revset expression string we can embed in a template StringLiteral.
+	local remote_literal = remote_name:gsub("\\", "\\\\"):gsub('"', '\\"')
+	local templ = [[if(self.contained_in("::remote_bookmarks(remote='%s')"), commit_id)]]
+	templ = string.format(templ, remote_literal)
+
+	-- If `start_revset` is already a commit id (or change id), we still let jj
+	-- resolve it; otherwise, treat it as a revset expression.
+	local current = start_revset
+	for _ = 0, max_walkback do
+		-- Use a single-quoted StringLiteral for the revset, so we can keep the
+		-- remote name quoted inside the revset expression.
+		local cmd = string.format(
+			"jj log -r %s --no-graph --quiet -T %s",
+			vim.fn.shellescape(current),
+			vim.fn.shellescape(templ)
+		)
+
+		local out, ok = runner.execute_command(cmd, "Error determining remote-reachable commit", nil, true)
+		if ok and out and not out:match("^%s*$") then
+			return vim.trim(out)
+		end
+		current = current .. "-"
+	end
+
+	return M.get_commit_id("trunk()")
+end
+
+--- Return a remote bookmark name pointing at `revset` on `remote_name`.
+---
+--- If there are 0 or multiple matching bookmarks and none of those are neither `main` nor `master`, returns nil.
+--- This avoids choosing an arbitrary name when multiple bookmarks point to the
+--- same commit.
+---
+--- @param revset string
+--- @param remote_name string
+--- @return string|nil bookmark_name
+function M.get_unique_remote_bookmark_name(revset, remote_name)
+	revset = (revset and revset ~= "") and revset or "@"
+	remote_name = (remote_name and remote_name ~= "") and remote_name or "origin"
+
+	-- Render remote bookmarks as tab-separated pairs: <remote>\t<name>\n
+	local tmpl = [[self.remote_bookmarks().map(|b| b.remote() ++ "\t" ++ b.name() ++ "\n").join("")]]
+	local cmd =
+		string.format("jj log -r %s --no-graph --quiet -T %s", vim.fn.shellescape(revset), vim.fn.shellescape(tmpl))
+	local out, ok = runner.execute_command(cmd, "Error getting remote bookmarks", nil, true)
+	if not ok or not out or out:match("^%s*$") then
+		return nil
+	end
+
+	local matches = {}
+	for line in out:gmatch("[^\r\n]+") do
+		local remote_sym, name_sym = line:match("^(.-)\t(.*)$")
+		local r = M.unquote_refsymbol(remote_sym)
+		local n = M.unquote_refsymbol(name_sym)
+		if r == remote_name and n ~= "" then
+			table.insert(matches, n)
+		end
+	end
+
+	if #matches == 1 then
+		return matches[1]
+	elseif #matches > 1 then
+		for _, name in ipairs(matches) do
+			-- Unless it's main or master which takes precedence
+			if name == "main" or name == "master" then
+				return name
+			end
+		end
+	end
+	return nil
 end
 
 --- Extract the description from the describe text

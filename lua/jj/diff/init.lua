@@ -160,5 +160,23 @@ function M.open_hdiff(opts)
 	M.diff_current(vim.tbl_extend("force", { layout = "horizontal" }, { rev = opts and opts.rev }))
 end
 
+-- Register the different diff commands
+function M.register_command()
+	local function create_diff_command(name, fn, desc)
+		vim.api.nvim_create_user_command(name, function(opts)
+			local rev = opts.fargs[1]
+			if rev then
+				fn({ rev = rev })
+			else
+				fn()
+			end
+		end, { nargs = "?", desc = desc .. " (optionally pass jj revision)" })
+	end
+
+	create_diff_command("Jdiff", M.open_vdiff, "Vertical diff against jj revision")
+	create_diff_command("Jhdiff", M.open_hdiff, "Horizontal diff against jj revision")
+	create_diff_command("Jvdiff", M.open_vdiff, "Vertical diff against jj revision")
+end
+
 ---@return jj.diff
 return M

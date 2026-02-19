@@ -4,6 +4,7 @@ local picker = require("jj.picker")
 local editor = require("jj.ui.editor")
 local terminal = require("jj.ui.terminal")
 local diff = require("jj.diff")
+local browse = require("jj.browse")
 
 --- Jujutsu plugin configuration
 --- @class jj.Config
@@ -49,7 +50,10 @@ function M.setup(opts)
 	terminal.setup(opts and opts.terminal or {})
 	diff.setup(M.config.diff)
 
+	-- Register the commands form the different modules
 	cmd.register_command()
+	browse.register_command()
+	diff.register_command()
 end
 
 return M
