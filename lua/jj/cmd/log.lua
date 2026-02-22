@@ -232,6 +232,36 @@ local function setup_selected_highlights()
 	end
 end
 
+--- Build the jj log command string from options
+--- @param opts? jj.cmd.log_opts Optional command options
+--- @return string The full jj log command
+function M.build_log_cmd(opts)
+	local jj_cmd = "jj log --no-pager"
+	local merged_opts = vim.tbl_extend("force", default_log_opts, opts or {})
+
+	if merged_opts.raw_flags then
+		-- Strip --no-pager from raw_flags since it's already in the base command
+		local flags = vim.trim(merged_opts.raw_flags:gsub("%-%-no%-pager", ""):gsub("%s+", " "))
+		if flags ~= "" then
+			return string.format("%s %s", jj_cmd, flags)
+		end
+		return jj_cmd
+	end
+
+	for key, value in pairs(merged_opts) do
+		key = key:gsub("_", "-")
+		if key == "limit" and value then
+			jj_cmd = string.format("%s --%s %d", jj_cmd, key, value)
+		elseif key == "revisions" and value then
+			jj_cmd = string.format("%s --%s %s", jj_cmd, key, value)
+		elseif value then
+			jj_cmd = string.format("%s --%s", jj_cmd, key)
+		end
+	end
+
+	return jj_cmd
+end
+
 --- Jujutsu log
 --- @param opts? jj.cmd.log_opts Optional command options
 function M.log(opts)
@@ -247,26 +277,7 @@ function M.log(opts)
 		vim.api.nvim_buf_clear_namespace(terminal.state.buf, log_special_mode_target_ns_id, 0, -1)
 	end
 
-	local jj_cmd = "jj log --no-pager"
-	local merged_opts = vim.tbl_extend("force", default_log_opts, opts or {})
-
-	-- If a raw has been given simply execute it as is
-	if merged_opts.raw_flags then
-		return terminal.run(string.format("%s %s", jj_cmd, merged_opts.raw_flags), M.log_keymaps())
-	end
-
-	for key, value in pairs(merged_opts) do
-		key = key:gsub("_", "-")
-		if key == "limit" and value then
-			jj_cmd = string.format("%s --%s %d", jj_cmd, key, value)
-		elseif key == "revisions" and value then
-			jj_cmd = string.format("%s --%s %s", jj_cmd, key, value)
-		elseif value then
-			jj_cmd = string.format("%s --%s", jj_cmd, key)
-		end
-	end
-
-	terminal.run(jj_cmd, M.log_keymaps())
+	terminal.run(M.build_log_cmd(opts), M.log_keymaps())
 end
 
 ---
