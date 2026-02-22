@@ -163,7 +163,7 @@ function M.get_all_tags()
 	-- Use a custom template to output just the bookmark names, one per line
 	-- This is more reliable than parsing the default output format
 	local bookmarks_output, success = runner.execute_command(
-		[[jj tag list --sort committer-date- -T 'if(!self.remote(), name ++ if(!self.present(), " (deleted)", "") ++ "\n")']],
+		[[jj tag list --quiet --sort committer-date- -T 'if(!self.remote(), name ++ if(!self.present(), " (deleted)", "") ++ "\n")']],
 		"Failed to get bookmarks",
 		nil,
 		true

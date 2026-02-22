@@ -55,9 +55,7 @@ local split_module = require("jj.cmd.split")
 --- @field quick_squash? string|string[]
 --- @field summary? string|string[]
 --- @field summary_tooltip? jj.cmd.summary_tooltip.keymaps
---- @field tag_create? string|string[]
---- @field tag_delete? string|string[]
---- @field tag_push? string|string[]
+--- @field tag_set? string|string[]
 
 --- @class jj.cmd.rebase.keymaps
 --- @field onto? string|string[]
@@ -192,10 +190,7 @@ M.config = {
 				edit_immutable = "<S-CR>",
 			},
 			split = "<C-s>",
-			tag_actions = "<S-t>",
-			tag_create = "tt",
-			tag_delete = "td",
-			tag_push = "tp",
+			tag_set = "<S-t>",
 		},
 		status = {
 			open_file = "<CR>",

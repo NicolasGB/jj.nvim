@@ -157,11 +157,9 @@ You can fetch and push directly from the log buffer:
 
 ### Manage tags from the log buffer
 
-- `tt` - Create a new tag on the revision under cursor
-- `td` - Delete an existing tag via picker
-- `tp` - Push a tag to a remote (colocated repositories only)
+- `<S-t>` - Create a new tag on the revision under cursor
 
-Tag push uses `git push` under the hood and is only available in colocated repositories. If multiple remotes are configured, you'll be prompted to select one.
+Deleting and pushing tags (for colocated repositories) is also supported and changes are reflected if the log buffer is open. Set up some keybinds and you're good to go, please see [here](#tag-management-command-options).
 
 ### Squash changes from the log buffer
 
@@ -447,9 +445,7 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
         },
         quick_squash = "<S-s>",             -- Quick squash revision under cursor into its parent (ignore immutability)
         split = "<C-s>",                    -- Split the revision under cursor
-        tag_create = "tt",                  -- Create a tag on the revision under cursor
-        tag_delete = "td",                  -- Delete a tag via picker
-        tag_push = "tp",                    -- Push a tag to remote (colocated repos only)
+        tag_create = "<S-t>",               -- Create a tag on the revision under cursor
         summary = "<S-k>",                  -- Show summary tooltip for revision under cursor
         summary_tooltip = {
             diff = "<S-d>",                   -- Diff file at this revision
@@ -649,7 +645,7 @@ The `tag_push` function pushes a tag to a remote (colocated repositories only):
 
 ```lua
 local cmd = require("jj.cmd")
-cmd.tag_push()             -- Select tag to push (prompts for remote if multiple)
+cmd.tag_push()             -- Select tag to push from picker (prompts for remote if multiple)
 ```
 
 ### Open PR/MR Command Options

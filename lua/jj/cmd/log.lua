@@ -595,16 +595,6 @@ function M.handle_log_tag_set(revset)
 	require("jj.cmd").tag_set(revset)
 end
 
---- Handle deleting a tag from `jj log` buffer for the revision under cursor
-function M.handle_log_tag_delete()
-	require("jj.cmd").tag_delete()
-end
-
--- Handle tag push
-function M.handle_log_tag_push()
-	require("jj.cmd").tag_push()
-end
-
 --- Handle opening a PR/MR from `jj log` buffer for the revision under cursor
 --- @param list_bookmarks? boolean If true, prompt to select from all bookmarks instead of using current revision
 function M.handle_log_open_pr(list_bookmarks)
@@ -1055,19 +1045,9 @@ function M.log_keymaps()
 			handler = M.handle_log_split,
 			modes = { "n" },
 		},
-		tag_create = {
-			desc = "Create a tag under the current revset",
+		tag_set = {
+			desc = "Set a tag under the current revset",
 			handler = M.handle_log_tag_set,
-			modes = { "n" },
-		},
-		tag_delete = {
-			desc = "Opens a picker to delete a specific tag",
-			handler = M.handle_log_tag_delete,
-			modes = { "n" },
-		},
-		tag_push = {
-			desc = "Opens a picker tu push a specific tag on git colocated repositories.",
-			handler = M.handle_log_tag_push,
 			modes = { "n" },
 		},
 	}
