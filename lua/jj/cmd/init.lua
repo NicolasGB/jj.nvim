@@ -7,7 +7,6 @@ local terminal = require("jj.ui.terminal")
 local editor = require("jj.ui.editor")
 local parser = require("jj.core.parser")
 
-local diff = require("jj.diff")
 local log_module = require("jj.cmd.log")
 local describe_module = require("jj.cmd.describe")
 local status_module = require("jj.cmd.status")
@@ -805,6 +804,7 @@ function M.commit(description)
 		close = {
 			desc = "Close commit editor without saving",
 			handler = "<cmd>close!<CR>",
+			modes = { "n" },
 		},
 	})
 
@@ -1223,21 +1223,6 @@ function M.register_command()
 		end,
 		desc = "Execute jj commands with subcommand support",
 	})
-
-	local function create_diff_command(name, fn, desc)
-		vim.api.nvim_create_user_command(name, function(opts)
-			local rev = opts.fargs[1]
-			if rev then
-				fn({ rev = rev })
-			else
-				fn()
-			end
-		end, { nargs = "?", desc = desc .. " (optionally pass jj revision)" })
-	end
-
-	create_diff_command("Jdiff", diff.open_vdiff, "Vertical diff against jj revision")
-	create_diff_command("Jhdiff", diff.open_hdiff, "Horizontal diff against jj revision")
-	create_diff_command("Jvdiff", diff.open_vdiff, "Vertical diff against jj revision")
 end
 
 return M
