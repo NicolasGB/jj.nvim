@@ -55,6 +55,7 @@ local split_module = require("jj.cmd.split")
 --- @field quick_squash? string|string[]
 --- @field summary? string|string[]
 --- @field summary_tooltip? jj.cmd.summary_tooltip.keymaps
+--- @field tag_set? string|string[]
 
 --- @class jj.cmd.rebase.keymaps
 --- @field onto? string|string[]
@@ -189,6 +190,7 @@ M.config = {
 				edit_immutable = "<S-CR>",
 			},
 			split = "<C-s>",
+			tag_set = "<S-t>",
 		},
 		status = {
 			open_file = "<CR>",
@@ -824,6 +826,187 @@ function M.commit(description)
 	end, keymaps)
 end
 
+--- Jujutsu tag set
+--- @param rev string|nil
+function M.tag_set(rev)
+	if not utils.ensure_jj() then
+		return
+	end
+
+	local should_refresh = terminal.is_log_buffer_open()
+
+	-- If the revision is not provided, ask the user for it,
+	if not rev then
+		if not should_refresh then
+			M.log({})
+		end
+
+		vim.ui.input({ prompt = "Revision to tag: " }, function(input)
+			if input and not input:match("^%s*$") then
+				rev = input
+				M.tag_set(rev)
+			else
+			end
+		end)
+		return
+	end
+
+	-- Ask the user for the tag name
+	vim.ui.input({ prompt = "Tag name: ", default = "" }, function(input)
+		if input and not input:match("^%s*$") then
+			local cmd = string.format("jj tag set %s -r %s", input, rev)
+			runner.execute_command_async(cmd, function()
+				utils.notify(string.format("Tag `%s` set on `%s`.", input, rev), vim.log.levels.INFO)
+				if should_refresh then
+					vim.schedule(function()
+						M.log()
+					end)
+				end
+			end, "Failed to set tag")
+		elseif input then
+			utils.notify("Tag name cannot be empty", vim.log.levels.ERROR)
+		end
+	end)
+end
+
+--- Jujutsu tag delete
+--- @param tag string|nil If provided, it will delete the given tag without asking the user
+function M.tag_delete(tag)
+	if not utils.ensure_jj() then
+		return
+	end
+
+	-- If the tag is provided, delete it directly without asking the user
+	if tag then
+		local cmd = string.format("jj tag delete %s", tag)
+		runner.execute_command_async(cmd, function()
+			utils.notify(string.format("Tag `%s` deleted.", tag), vim.log.levels.INFO)
+			if terminal.is_log_buffer_open() then
+				vim.schedule(function()
+					M.log()
+				end)
+			end
+		end, "Failed to delete tag")
+		return
+	end
+
+	local should_refresh = terminal.is_log_buffer_open()
+	if not should_refresh then
+		M.log({})
+		should_refresh = true
+	end
+
+	local tags = utils.get_all_tags()
+	if #tags == 0 then
+		utils.notify("No tags found to delete", vim.log.levels.ERROR)
+		return
+	end
+
+	vim.ui.select(tags, { prompt = "Select tag to delete: " }, function(choice)
+		if choice then
+			local cmd = string.format("jj tag delete %s", choice)
+			runner.execute_command_async(cmd, function()
+				utils.notify(string.format("Tag `%s` deleted.", choice), vim.log.levels.INFO)
+				if should_refresh then
+					vim.schedule(function()
+						M.log()
+					end)
+				end
+			end, "Failed to delete tag")
+		end
+	end)
+end
+
+--- Push all tags but only on collocated reposiotries
+function M.tag_push()
+	if not utils.ensure_jj() then
+		return
+	end
+
+	local should_refresh = terminal.is_log_buffer_open()
+	local is_colocated = utils.is_colocated()
+	local has_git = utils.has_executable("git")
+
+	if not is_colocated then
+		utils.notify("Current repository is not colocated. Cannot push tags.", vim.log.levels.ERROR)
+		return
+	elseif not has_git then
+		utils.notify("Git executable not found. Cannot push tags.", vim.log.levels.ERROR)
+		return
+	end
+
+	local remotes = utils.get_remotes()
+	if not remotes or #remotes == 0 then
+		utils.notify("No git remotes found. Cannot push tags.", vim.log.levels.ERROR)
+		return
+	end
+
+	-- If many remotes we are forced to request the user what to do
+	if remotes and #remotes > 1 then
+		vim.ui.select(remotes, {
+			prompt = "Select remote to push tags to: ",
+			format_item = function(item)
+				return string.format("%s (%s)", item.name, item.url)
+			end,
+		}, function(choice)
+			if choice then
+				local tags = utils.get_all_tags()
+				if not tags or #tags == 0 then
+					utils.notify("No tags found to push", vim.log.levels.ERROR)
+					return
+				end
+
+				vim.ui.select(tags, {
+					prompt = "Select tag to push: ",
+				}, function(tag_choice)
+					if tag_choice then
+						local cmd = string.format("git push %s %s", choice.name, tag_choice)
+						runner.execute_command_async(cmd, function()
+							utils.notify(
+								string.format("Tag `%s` pushed successfully to remote `%s`.", tag_choice, choice.name),
+								vim.log.levels.INFO
+							)
+							if should_refresh then
+								vim.schedule(function()
+									M.log()
+								end)
+							end
+						end, "Failed to push tag")
+					end
+				end)
+			end
+		end)
+	end
+
+	-- Otherwise we can push directly to the only remote
+	if remotes and #remotes == 1 then
+		local tags = utils.get_all_tags()
+		if not tags or #tags == 0 then
+			utils.notify("No tags found to push", vim.log.levels.ERROR)
+			return
+		end
+
+		vim.ui.select(tags, {
+			prompt = "Select tag to push: ",
+		}, function(tag_choice)
+			if tag_choice then
+				local cmd = string.format("git push %s %s", remotes[1].name, tag_choice)
+				runner.execute_command_async(cmd, function()
+					utils.notify(
+						string.format("Tag `%s` pushed successfully to remote `%s`.", tag_choice, remotes[1].name),
+						vim.log.levels.INFO
+					)
+					if should_refresh then
+						vim.schedule(function()
+							M.log()
+						end)
+					end
+				end, "Failed to push tag")
+			end
+		end)
+	end
+end
+
 --- @param args string|string[] jj command arguments
 function M.j(args)
 	if not utils.ensure_jj() then
@@ -964,6 +1147,22 @@ function M.j(args)
 		commit = function()
 			M.commit(remaining_args_str ~= "" and remaining_args_str or nil)
 		end,
+		tag = function()
+			if remaining_args[1] == "set" or remaining_args[1] == "s" then
+				-- If the user provided a revision, set the tag on that revision, otherwise ask for it in the flow of the command
+				if remaining_args[2] then
+					M.tag_set(remaining_args[2])
+				else
+					M.tag_set(remaining_args[2])
+				end
+			elseif remaining_args[1] == "delete" or remaining_args[1] == "d" then
+				if remaining_args[2] then
+					M.tag_delete(remaining_args[2])
+				else
+					M.tag_delete()
+				end
+			end
+		end,
 	}
 
 	if handlers[subcommand] then
@@ -1012,6 +1211,7 @@ function M.register_command()
 				"annotate",
 				"annotate_line",
 				"commit",
+				"tag",
 			}
 			local matches = {}
 			for _, cmd in ipairs(subcommands) do
