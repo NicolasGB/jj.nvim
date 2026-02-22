@@ -516,6 +516,7 @@ function M.run(cmd, keymaps)
 			{ modes = { "n", "v" }, lhs = "i", rhs = function() end },
 			{ modes = { "n", "v" }, lhs = "c", rhs = function() end },
 			{ modes = { "n", "v" }, lhs = "a", rhs = function() end },
+			{ modes = { "n", "v" }, lhs = "<S-a>", rhs = function() end },
 			{ modes = { "n", "v" }, lhs = "u", rhs = function() end },
 		})
 
