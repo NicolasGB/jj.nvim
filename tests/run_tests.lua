@@ -393,6 +393,45 @@ run_test("parse_default_cmd: returns nil for nil", function()
 	assert_is_nil(parser.parse_default_cmd(nil))
 end)
 
+print("\n=== Running build_log_cmd tests ===\n")
+
+local log = require("jj.cmd.log")
+
+run_test("build_log_cmd: raw_flags with --no-pager does not duplicate it", function()
+	local cmd = log.build_log_cmd({ raw_flags = "--no-pager --limit 18" })
+	-- Should contain exactly one --no-pager
+	local _, count = cmd:gsub("%-%-no%-pager", "")
+	assert_equals(1, count, "Expected exactly one --no-pager")
+	assert_equals("jj log --no-pager --limit 18", cmd)
+end)
+
+run_test("build_log_cmd: raw_flags without --no-pager works normally", function()
+	local cmd = log.build_log_cmd({ raw_flags = "--limit 18" })
+	assert_equals("jj log --no-pager --limit 18", cmd)
+end)
+
+run_test("build_log_cmd: raw_flags that is only --no-pager", function()
+	local cmd = log.build_log_cmd({ raw_flags = "--no-pager" })
+	assert_equals("jj log --no-pager", cmd)
+end)
+
+run_test("build_log_cmd: structured opts with limit", function()
+	local cmd = log.build_log_cmd({ limit = 10 })
+	assert_equals(true, cmd:find("--limit 10") ~= nil, "Expected --limit 10 in command")
+	assert_equals(true, cmd:find("--no%-pager") ~= nil, "Expected --no-pager in command")
+end)
+
+run_test("build_log_cmd: structured opts with revisions", function()
+	local cmd = log.build_log_cmd({ revisions = "main" })
+	assert_equals(true, cmd:find("--revisions main") ~= nil, "Expected --revisions main in command")
+end)
+
+run_test("build_log_cmd: default opts produces valid command", function()
+	local cmd = log.build_log_cmd({})
+	assert_equals(true, cmd:find("^jj log %-%-no%-pager") ~= nil, "Expected command to start with jj log --no-pager")
+	assert_equals(true, cmd:find("--limit 20") ~= nil, "Expected default --limit 20")
+end)
+
 -- Print summary
 print(string.format("\n=== Test Summary ==="))
 print(string.format("Passed: %d", tests_passed))
