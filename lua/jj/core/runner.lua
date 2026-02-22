@@ -29,6 +29,22 @@ function M.execute_command(cmd, error_prefix, input, silent)
 	return output, success
 end
 
+--- Execute a system command synchronously and call success callback.
+--- @param cmd string The command to execute
+--- @param on_success function|nil Callback on success, receives output as parameter
+--- @param error_prefix string|nil Optional error message prefix
+--- @param input string|nil Optional input to pass to stdin
+--- @param silent boolean|nil Optional to silent the notification
+--- @return string|nil output The command output, or nil if failed
+--- @return boolean success Whether the command succeeded
+function M.execute_command_sync(cmd, on_success, error_prefix, input, silent)
+	local output, success = M.execute_command(cmd, error_prefix, input, silent)
+	if success and on_success then
+		on_success(output)
+	end
+	return output, success
+end
+
 --- Execute a system command asynchronously
 --- @param cmd string The command to execute
 --- @param on_success function|nil Callback on success, receives output as parameter
