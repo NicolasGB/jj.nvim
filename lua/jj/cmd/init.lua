@@ -370,6 +370,7 @@ function M.edit()
 	}, function(input)
 		if input then
 			runner.execute_command_async(string.format("jj edit %s", input), function()
+				utils.reload_changed_file_buffers()
 				M.log({})
 			end, "Error editing change")
 		else

@@ -397,6 +397,8 @@ function M.handle_log_edit(ignore_immut, close_on_exit)
 
 	-- Try to execute cmd
 	runner.execute_command_async(cmd, function()
+		utils.reload_changed_file_buffers()
+
 		-- Close the terminal buffer
 		if close_on_exit then
 			utils.notify(string.format("Editing change: `%s`", revset), vim.log.levels.INFO)
@@ -817,6 +819,7 @@ function M.handle_summary_edit(revset, ignore_immut)
 	end
 
 	runner.execute_command_async(cmd, function()
+		utils.reload_changed_file_buffers()
 		utils.notify(string.format("Editing revset: `%s`", revset), vim.log.levels.INFO)
 		-- Open the file in the current window
 		vim.cmd("edit " .. vim.fn.fnameescape(filepath.new_path))

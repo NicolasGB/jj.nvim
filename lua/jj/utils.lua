@@ -690,4 +690,9 @@ function M.extract_description_from_describe(lines)
 	return trimmed_description
 end
 
+--- Reload loaded file buffers after working-copy changes.
+function M.reload_changed_file_buffers()
+	vim.cmd.checktime()
+end
+
 return M
