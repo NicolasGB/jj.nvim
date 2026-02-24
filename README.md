@@ -10,165 +10,193 @@
 
 ## Table of Contents
 
-- [Current Features](#current-features)
-- [Enhanced Integrations](#enhanced-integrations)
-  - [View change summary from the log buffer](#view-change-summary-from-the-log-buffer)
-  - [Diff any change](#diff-any-change)
-  - [Describe a change](#describe-a-change)
-  - [Edit changes](#edit-changes)
-  - [Create new changes from the log buffer](#create-new-changes-from-the-log-buffer)
-  - [Undo/Redo from the log buffer](#undoredo-from-the-log-buffer)
-  - [Abandon changes from the log buffer](#abandon-changes-from-the-log-buffer)
-  - [Fetch and push from the log buffer](#fetch-and-push-from-the-log-buffer)
-  - [Manage bookmarks from the log buffer](#manage-bookmarks-from-the-log-buffer)
-  - [Manage tags from the log buffer](#manage-tags-from-the-log-buffer)
-  - [Squash changes from the log buffer](#squash-changes-from-the-log-buffer)
-  - [Split changes from the log buffer](#split-changes-from-the-log-buffer)
-  - [Rebase changes from the log buffer](#rebase-changes-from-the-log-buffer)
-  - [Open a PR/MR from the log buffer](#open-a-prmr-from-the-log-buffer)
-  - [Browse current file on remote](#browse-current-file-on-remote)
-  - [Open a changed file](#open-a-changed-file)
-  - [Restore a changed file](#restore-a-changed-file)
+- [Highlights](#highlights)
 - [Installation](#installation)
+  - [Requirements](#requirements)
+- [Quick Start](#quick-start)
 - [Cmdline Usage](#cmdline-usage)
   - [Diff Commands](#diff-commands)
-- [Default Config](#default-config)
-- [Configuration Examples](#configuration-examples)
-  - [New Command Options](#new-command-options)
-  - [Push Command Options](#push-command-options)
-  - [Bookmark Management Command Options](#bookmark-management-command-options)
-  - [Open PR/MR Command Options](#open-prmr-command-options)
-  - [Diff Module](#diff-module)
-    - [Functions](#functions)
-    - [Log Buffer Integration](#log-buffer-integration)
-  - [Custom Diff Backends](#custom-diff-backends)
-  - [Annotations](#annotations)
-- [Example config](#example-config)
-- [Requirements](#requirements)
-- [Contributing](#contributing)
-- [Documentation](#documentation)
+- [Log Buffer](#log-buffer)
+  - [Viewing & Navigation](#viewing--navigation)
+  - [Creating & Rewriting History](#creating--rewriting-history)
+  - [Remote Operations](#remote-operations)
+  - [Bookmarks & Tags](#bookmarks--tags)
+- [Status Buffer](#status-buffer)
+- [Diff](#diff)
+  - [Built-in Backends](#built-in-backends)
+  - [Custom Backends](#custom-backends)
+- [Annotations](#annotations)
+- [Browse on Remote](#browse-on-remote)
+- [Pickers](#pickers)
+- [Configuration](#configuration)
+  - [Default Config](#default-config)
+  - [Command Options](#command-options)
+  - [Full Example](#full-example)
 - [FAQ](#faq)
+- [Contributing](#contributing)
 - [License](#license)
 
-## Current Features
+## Highlights
 
-- Basic jj command execution through `:J` command
-- Terminal-based output display for jj commands
-- Support jj subcommands including your aliases through the cmdline.
-- First class citizens with ui integration
-  - `describe` / `desc` - Set change descriptions with a Git-style commit message editor
-  - `status` / `st` - Show repository status
-  - `log` - Display log history with configurable options
-  - `diff` - Show changes with optional filtering by current file
-  - `new` - Create a new change with optional parent selection
-  - `edit` - Edit a change
-  - `squash` - Squash the current diff to its parent or interactive squash mode from the log buffer
-  - `split` - Split a change interactively in a floating terminal
-  - `rebase` - Rebase changes to a destination
-  - `bookmark create/delete` - Create and delete bookmarks
-  - `tag set/delete/push` - Create, delete, and push tags (push requires colocated repos)
-  - `undo` - Undo the last operation
-  - `redo` - Redo the last undone operation
-  - `open_pr` - Open a PR/MR on your remote (GitHub, GitLab, Gitea, Forgejo, etc.)
-  - `browse` - Open the current file on your remote at the current line (or selected range)
-  - `annotate` / `annotate_line` - View file blame and line history with change ID, author, and timestamp
-  - `commit` - Describe the current change and create a new one after
-  - Diff commands
-  - `:Jdiff [revision]` - Vertical split diff against a jj revision
-  - `:Jhdiff [revision]` - Horizontal split diff
-- Picker for [Snacks.nvim](https://github.com/folke/snacks.nvim)
-  - `jj status` Displays the current changes diffs
-  - `jj file_history` Displays a buffer's history changes and allows to edit its change (including immutable changes)
+Here's a taste of what jj.nvim can do — all without leaving Neovim:
 
-## Enhanced integrations
+- **🔀 Live rebase with preview** — Enter rebase mode from the log, move your cursor to preview destinations with live highlighting, then confirm with a keypress. Supports visual selection for multi-revision rebases.
 
-Here are some cool features you can do with jj.nvim:
+![Rebase-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/rebase.gif)
 
-### View change summary from the log buffer
+- **📦 Interactive squash mode** — Select one or more changes, navigate to a destination with live-highlighted preview, and squash. Visual mode and quick-squash supported.
 
-Quickly preview the files changed in any revision without leaving the log:
+![Squash-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/squash.gif)
 
-- `<S-k>` - Show a tooltip with the revision's changed files
-- `<S-k>` - To enter the tooltip buffer
-
-From the summary view, you can:
-
-- `<S-d>` - Diff the file under cursor at that revision
-- `<CR>` - Edit the revision and open the file
-- `<S-CR>` - Edit the revision (ignoring immutability) and open the file
-
-![Summary-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/summary.gif)
-
-### Diff any change
-
-You can diff any change in your log history by pressing `<S-d>` on its line or on a summary file change. You can also visually select multiple changes to diff between the first and last selected.
-
-> [!NOTE]
-> Integrates with your preferred diff plugin or uses your native jj diff config. See [Diff Module](#diff-module).
+- **📝 Diff any change from the log** — Press `<S-d>` on any revision to view its diff. Works with your preferred diff backend (native, [diffview](https://github.com/sindrets/diffview.nvim), [codediff](https://github.com/esmuellert/codediff.nvim)).
 
 ![Diff-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/diff-log.gif)
 
-### Describe a change
+- **📋 Change summary tooltips** — Preview files changed in any revision with `<S-k>`, then jump into the diff or edit the file directly from the tooltip.
 
-You can describe any change directly from the log buffer:
+![Summary-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/summary.gif)
 
-- `d` - Describe the revision under cursor using your configured editor
+- **⚡ Edit any change instantly** — Press `<CR>` on any revision in the log to edit it. One keypress to jump anywhere in your history.
 
-### Edit changes
-
-Jumping up and down your log history ?
-
-In your log output press `CR` in a line to directly edit a `mutable` change.
-If you are sure what you are doing press `S-CR` (Shift Enter) to edit an `immutable` change.
 ![Edit-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/edit-log.gif)
 
-### Create new changes from the log buffer
+- **🌐 Open PRs from the log** — Detect your git platform, extract the bookmark, and open the PR/MR URL — all from one keypress in the log buffer.
 
-You can create new changes directly from the log buffer with multiple options:
+- **🔍 File annotations** — View blame with unique colors per change ID, author, and timestamp. Press `<CR>` on any line to see that change's diff.
 
-- `n` - Create a new change branching off the revision under the cursor
-- `<C-n>` - Create a new change after the revision under the cursor
-- `<S-n>` - Create a new change after while ignoring immutability constraints
+- **📂 Status buffer with restore** — Browse changed files, open them with `<CR>`, or restore them with `<S-x>`.
 
-### Undo/Redo from the log buffer
+## Installation
 
-You can undo/redo changes directly from the log buffer:
+Using [lazy.nvim](https://github.com/folke/lazy.nvim):
 
-- `<S-u>` - Undo the last operation
-- `<S-r>` - Redo the last undone operation
+```lua
+{
+    "nicolasgb/jj.nvim",
+    version = "*", -- Use latest stable release
+    -- Or from the main branch (uncomment the branch line and comment the version line)
+    -- branch = "main",
+    config = function()
+        require("jj").setup({})
+    end,
+}
+```
 
-### Abandon changes from the log buffer
+### Requirements
 
-You can abandon changes directly from the log buffer, works in visual mode to abandon multiple changes:
+- [Jujutsu](https://github.com/jj-vcs/jj) installed and available in PATH
+- [GitHub CLI (`gh`)](https://cli.github.com/) — Optional, required for `fetch_pr` command
 
-- `a` - Abandon the revision under the cursor
+## Quick Start
 
-### Fetch and push from the log buffer
+Minimal setup to get productive immediately:
 
-You can fetch and push directly from the log buffer:
+```lua
+require("jj").setup({})
 
-- `f` - Fetch from remote
-- `<S-p>` - Push a bookmark through the picker
-- `p` - Push bookmark of revision under cursor to remote
+local cmd = require("jj.cmd")
+vim.keymap.set("n", "<leader>jl", cmd.log, { desc = "JJ log" })
+vim.keymap.set("n", "<leader>jd", cmd.describe, { desc = "JJ describe" })
+vim.keymap.set("n", "<leader>js", cmd.status, { desc = "JJ status" })
+vim.keymap.set("n", "<leader>jn", cmd.new, { desc = "JJ new" })
+```
 
-### Manage bookmarks from the log buffer
+Open the log with `<leader>jl` and you get access to most features through the log buffer keymaps: edit (`<CR>`), describe (`d`), diff (`<S-d>`), rebase (`r`), squash (`s`), and more.
 
-- `b` - Create a new bookmark or move an existing one to the revision under cursor
-  - Select from existing bookmarks to move them
-  - Or create a new bookmark at that revision
+## Cmdline Usage
 
-### Manage tags from the log buffer
+The plugin provides a `:J` command that accepts jj subcommands:
 
-- `<S-t>` - Create a new tag on the revision under cursor
+```sh
+:J status
+:J log
+:J describe "Your change description"
+:J new
+:J push               " Push all changes
+:J push main         " Push only main bookmark
+:J fetch             " Fetch from remote
+:J open_pr           " Open PR for current change's bookmark
+:J open_pr --list    " Select bookmark from all and open PR
+:J fetch_pr          " Fetch a PR from GitHub
+:Jbrowse             " Open current file on remote at cursor line
+:Jbrowse main        " Open current file on remote at the given revset
+:J split             " Split a change interactively
+:J bookmark create/move/delete
+:J tag set           " Set a tag (prompts for revision and tag name)
+:J tag set abc123    " Set a tag on a specific revision
+:J tag delete        " Delete a tag via picker
+:J tag delete v1.0   " Delete a specific tag
+:J # This will use your defined default command
+:J <your-alias>
+:J commit            " Opens your configured editor describes @ and then creates a new change -A immediately
+:J commit <any text here> " Automatically describes @ and creates a new change -A immediately
+```
 
-Deleting and pushing tags (for colocated repositories) is also supported and changes are reflected if the log buffer is open. Set up some keybinds and you're good to go, please see [here](#tag-management-command-options).
+### Diff Commands
 
-### Squash changes from the log buffer
+The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing against specific revisions:
+
+```sh
+:Jdiff              " Vertical diff against @- (parent)
+:Jdiff @-2          " Vertical diff against specific revision
+:Jvdiff main        " Vertical diff against main bookmark
+:Jhdiff trunk()     " Horizontal diff against trunk
+```
+
+## Log Buffer
+
+The log buffer is the central hub of jj.nvim. Open it with `:J log` or `cmd.log()` and you get access to the full power of the plugin through keymaps.
+
+### Viewing & Navigation
+
+#### Change summary
+
+Quickly preview the files changed in any revision without leaving the log:
+
+- `<S-k>` — Show a tooltip with the revision's changed files
+- `<S-k>` — Press again to enter the tooltip buffer
+
+From the summary view:
+
+- `<S-d>` — Diff the file under cursor at that revision
+- `<CR>` — Edit the revision and open the file
+- `<S-CR>` — Edit the revision (ignoring immutability) and open the file
+
+![Summary-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/summary.gif)
+
+#### Diff any change
+
+Press `<S-d>` on any revision to view its diff. You can also visually select multiple changes to diff between the first and last selected.
+
+> [!NOTE]
+> Integrates with your preferred diff plugin or uses your native jj diff config. See [Diff](#diff).
+
+![Diff-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/diff-log.gif)
+
+#### Describe a change
+
+- `d` — Describe the revision under cursor using your configured editor
+
+#### Edit changes
+
+Press `<CR>` on a line to directly edit a `mutable` change. Press `<S-CR>` (Shift Enter) to edit an `immutable` change.
+
+![Edit-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/edit-log.gif)
+
+### Creating & Rewriting History
+
+#### Create new changes
+
+- `n` — Create a new change branching off the revision under the cursor
+- `<C-n>` — Create a new change after the revision under the cursor
+- `<S-n>` — Create a new change after while ignoring immutability constraints
+
+#### Squash changes
 
 Enter an interactive squash mode to squash one or more changes into a destination:
 
-- `s` - Enter squash mode targeting the revision under cursor (in normal mode) or selected revisions (in visual mode)
-- `<S-s>` - Quick squash the revision under cursor into its parent
+- `s` — Enter squash mode (normal mode: revision under cursor, visual mode: selected revisions)
+- `<S-s>` — Quick squash the revision under cursor into its parent
 
 Once in squash mode, the interface highlights your selection and the current squash destination:
 
@@ -176,23 +204,23 @@ Once in squash mode, the interface highlights your selection and the current squ
 - The cursor position (potential squash destination) is highlighted in your configured `targeted_hl` color (default: green)
 - Move the cursor to preview different squash destinations with live highlighting
 
-From squash mode, choose how to squash:
+From squash mode:
 
-- `<CR>` - Squash into (`-t`) the revision under cursor
-- `<S-CR>` - Squash into (`-t`) ignoring immutability
-- `<Esc>` or `<C-c>` - Exit squash mode without making changes
+- `<CR>` — Squash into (`-t`) the revision under cursor
+- `<S-CR>` — Squash into (`-t`) ignoring immutability
+- `<Esc>` or `<C-c>` — Exit squash mode without making changes
 
-**Visual mode selection:** Select multiple revisions in visual mode before pressing `s` to squash them all at once. The plugin extracts each selected revision and squashes them together.
+**Visual mode selection:** Select multiple revisions in visual mode before pressing `s` to squash them all at once.
 
 **Quick squash:** In normal mode, press `<S-s>` to quickly squash the current revision into its parent. This ignores immutability.
 
 ![Squash-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/squash.gif)
 
-### Split changes from the log buffer
+#### Split changes
 
 Split a change into two or more revisions directly from the log buffer or the command line:
 
-- `<C-s>` - Split the revision under cursor from the log buffer
+- `<C-s>` — Split the revision under cursor from the log buffer
 
 The split command opens an interactive floating terminal where jj guides you through selecting which changes go into the first commit. The remaining changes stay in the second commit.
 
@@ -224,11 +252,11 @@ cmd.split({ ignore_immutable = true })           -- Split an immutable revision
 
 The floating terminal size is configurable via the `split.width` and `split.height` options (ratios between `0.1` and `1.0`).
 
-### Rebase changes from the log buffer
+#### Rebase changes
 
-Enter an interactive rebase mode directly from the log buffer to rebase one or more changes:
+Enter an interactive rebase mode directly from the log buffer:
 
-- `r` - Enter rebase mode targeting the revision under cursor (in normal mode) or selected revisions (in visual mode)
+- `r` — Enter rebase mode (normal mode: revision under cursor, visual mode: selected revisions)
 
 Once in rebase mode, the interface highlights your selection and the current rebase destination:
 
@@ -236,26 +264,45 @@ Once in rebase mode, the interface highlights your selection and the current reb
 - The cursor position (potential rebase destination) is highlighted in your configured `targeted_hl` color (default: green)
 - Move the cursor to preview different rebase destinations with live highlighting
 
-From rebase mode, choose how to rebase:
+From rebase mode:
 
-- `<CR>` or `o` - Rebase onto (`-o`) the revision under cursor
-- `a` - Rebase after (`-A`) the revision under cursor
-- `b` - Rebase before (`-B`) the revision under cursor
-- `<S-CR>` or `<S-o>` - Rebase onto (`-o`) ignoring immutability
-- `<S-a>` - Rebase after (`-A`) ignoring immutability
-- `<S-b>` - Rebase before (`-B`) ignoring immutability
-- `<Esc>` or `<C-c>` - Exit rebase mode without making changes
+- `<CR>` or `o` — Rebase onto (`-o`) the revision under cursor
+- `a` — Rebase after (`-A`) the revision under cursor
+- `b` — Rebase before (`-B`) the revision under cursor
+- `<S-CR>` or `<S-o>` — Rebase onto (`-o`) ignoring immutability
+- `<S-a>` — Rebase after (`-A`) ignoring immutability
+- `<S-b>` — Rebase before (`-B`) ignoring immutability
+- `<Esc>` or `<C-c>` — Exit rebase mode without making changes
 
-**Visual mode selection:** Select multiple revisions in visual mode before pressing `r` to rebase them all at once. The plugin extracts each selected revision and rebases them together.
+**Visual mode selection:** Select multiple revisions in visual mode before pressing `r` to rebase them all at once.
 
 **Single revision:** In normal mode, place your cursor on a single revision and press `r` to rebase just that change.
 
 ![Rebase-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/rebase.gif)
 
-### Open a PR/MR from the log buffer
+#### Abandon changes
 
-- `o` - Open a PR/MR for the revision under cursor
-- `<S-o>` - Select a remote from all available bookmarks and open a PR/MR
+Works in visual mode to abandon multiple changes:
+
+- `a` — Abandon the revision under the cursor
+
+#### Undo / Redo
+
+- `<S-u>` — Undo the last operation
+- `<S-r>` — Redo the last undone operation
+
+### Remote Operations
+
+#### Fetch and push
+
+- `f` — Fetch from remote
+- `p` — Push bookmark of revision under cursor to remote
+- `<S-p>` — Push a bookmark through the picker
+
+#### Open a PR/MR
+
+- `o` — Open a PR/MR for the revision under cursor
+- `<S-o>` — Select a remote from all available bookmarks and open a PR/MR
 
 The plugin automatically:
 
@@ -265,9 +312,189 @@ The plugin automatically:
 - Handles both HTTPS and SSH remote URLs
 - Prompts you to select a remote if you have multiple
 
-**This is a jj.nvim exclusive feature** - the ability to seamlessly bridge from your Neovim jj workflow directly to your remote platform's PR/MR interface.
+**This is a jj.nvim exclusive feature** — the ability to seamlessly bridge from your Neovim jj workflow directly to your remote platform's PR/MR interface.
 
-### Browse current file on remote
+#### Fetch a PR from GitHub
+
+Fetch an open pull request from GitHub and import it into your local repository as a jj change:
+
+**Via `:J` command:**
+
+```sh
+:J fetch_pr           " Open a picker to select an open PR to fetch
+```
+
+**Via Lua API:**
+
+```lua
+local cmd = require("jj.cmd")
+cmd.fetch_pr()                   -- Fetch a PR (default limit: 100)
+cmd.fetch_pr({ limit = 50 })     -- Fetch with a custom PR list limit
+```
+
+The plugin:
+
+- Lists open PRs from GitHub using the `gh` CLI
+- Presents a picker to select a PR
+- Fetches the PR branch via `git fetch` and imports it with `jj git import`
+- Automatically refreshes the log buffer if it's open
+- Handles naming conflicts by retrying with incremented suffixes (e.g., `pr-42-1`, `pr-42-2`)
+
+> [!NOTE]
+> Requires a colocated repository and the [`gh` CLI](https://cli.github.com/) installed.
+
+### Bookmarks & Tags
+
+#### Manage bookmarks
+
+- `b` — Create a new bookmark or move an existing one to the revision under cursor
+  - Select from existing bookmarks to move them
+  - Or create a new bookmark at that revision
+
+#### Manage tags
+
+- `<S-t>` — Create a new tag on the revision under cursor
+
+Deleting and pushing tags (for colocated repositories) is also supported and changes are reflected if the log buffer is open. Set up some keybinds and you're good to go, please see [Tag Management](#tag-management) under Command Options.
+
+## Status Buffer
+
+The status buffer shows the current repository status. Open it with `:J status` or `cmd.status()`.
+
+### Open a changed file
+
+Press `<CR>` to open a file from the status output in your current window.
+
+![Open-status](https://github.com/NicolasGB/jj.nvim/raw/main/assets/enter-status.gif)
+
+### Restore a changed file
+
+Press `<S-x>` on a file from the status output to restore it.
+
+![Restore-status](https://github.com/NicolasGB/jj.nvim/raw/main/assets/x-status.gif)
+
+## Diff
+
+The diff module provides a unified API for viewing diffs with pluggable backend support.
+
+### Built-in Backends
+
+- **Native** — Diffs the current file in place and uses a floating buffer with your jj diff command when diffing changes (default)
+- **[codediff](https://github.com/esmuellert/codediff.nvim)** — Use codediff.nvim plugin
+- **[diffview](https://github.com/sindrets/diffview.nvim)** — Use diffview.nvim plugin
+
+**Functions:**
+
+```lua
+local diff = require("jj.diff")
+
+-- Diff current buffer against a revision (default: @-)
+-- The `layout` is only supported for the native backend
+diff.diff_current({ rev = "@-", layout = "vertical" })
+
+-- Show what changed in a single revision
+diff.show_revision({ rev = "abc123" })
+
+-- Diff between two revisions
+diff.diff_revisions({ left = "main", right = "@" })
+
+-- Convenience functions (LEGACY FUNCTIONS)
+diff.open_vdiff()                   -- Vertical split diff against parent
+diff.open_vdiff({ rev = "main" })   -- Vertical split against specific revision
+diff.open_hdiff()                   -- Horizontal split diff
+diff.open_hdiff({ rev = "@-2" })    -- Horizontal split against @-2
+```
+
+The diff module integrates seamlessly with the log buffer — `<S-d>` shows the diff for the revision under cursor using your configured backend.
+
+### Custom Backends
+
+The diff module supports pluggable backends. You can register your own:
+
+```lua
+local diff = require("jj.diff")
+
+diff.register_backend("my-backend", {
+  -- Diff current buffer against a revision
+  diff_current = function(opts)
+    -- opts.rev: revision to diff against (default: "@-")
+    -- opts.path: file path (default: current buffer)
+    -- opts.layout: "vertical" or "horizontal"
+  end,
+
+  -- Show what changed in a single revision
+  show_revision = function(opts)
+    -- opts.rev: revision to show
+    -- opts.path: optional file filter
+    -- opts.display: "floating", "tab", or "split"
+  end,
+
+  -- Diff between two revisions
+  diff_revisions = function(opts)
+    -- opts.left: left/base revision
+    -- opts.right: right/target revision
+    -- opts.path: optional file filter
+    -- opts.display: "floating", "tab", or "split"
+  end,
+})
+```
+
+Set your backend as default in the config:
+
+```lua
+require("jj").setup({
+  diff = {
+    backend = "my-backend"
+  }
+})
+```
+
+Or use it per-call:
+
+```lua
+diff.diff_current({ backend = "my-backend", rev = "main" })
+```
+
+All three functions are optional — missing ones fall back to the `native` implementation.
+
+## Annotations
+
+View file blame and line history using the annotate module. Can be invoked via command or Lua API.
+
+**Via `:J` command:**
+
+```sh
+:J annotate         " Show blame/annotations for entire file in vertical split
+:J annotate_line    " Show annotation for current line in floating buffer
+```
+
+**Via Lua API:**
+
+```lua
+local annotate = require("jj.annotate")
+annotate.file()    -- Show blame/annotations for entire file in vertical split
+annotate.line()    -- Show annotation for current line in a tooltip
+```
+
+The file annotation displays a vertical split showing:
+
+- Change ID (colored uniquely per commit)
+- Author name
+- Timestamp
+
+Press `<CR>` on any annotation line to view the diff for that change.
+
+The line annotation displays a floating tooltip with the current line's annotation and the commit description.
+
+Example keymaps:
+
+```lua
+local annotate = require("jj.annotate")
+vim.keymap.set("n", "<leader>ja", annotate.file, { desc = "JJ annotate file" })
+vim.keymap.set("n", "<leader>jA", annotate.line, { desc = "JJ annotate line" })
+```
+
+## Browse on Remote
 
 Open the current buffer's file in your browser on the hosted remote (GitHub/GitLab/Gitea/Forgejo, etc.) at the current cursor line or a visually selected range.
 
@@ -293,75 +520,19 @@ Open the current buffer's file in your browser on the hosted remote (GitHub/GitL
 
 In Visual mode, select lines and run `:Jbrowse` to open a range.
 
-### Open a changed file
+## Pickers
 
-Just press enter to open a file from the `status` output in your current window.
-![Open-status](https://github.com/NicolasGB/jj.nvim/raw/main/assets/enter-status.gif)
-
-### Restore a changed file
-
-Press `<S-x>` on a file from the `status` output and that's it, it's restored.
-
-![Restore-status](https://github.com/NicolasGB/jj.nvim/raw/main/assets/x-status.gif)
-
-## Installation
-
-Using [lazy.nvim](https://github.com/folke/lazy.nvim):
-
-Using the latest stable release:
+Pickers are available via [Snacks.nvim](https://github.com/folke/snacks.nvim):
 
 ```lua
-{
-    "nicolasgb/jj.nvim",
-    version = "*", -- Use latest stable release
-    -- Or from the main branch (uncomment the branch line and comment the version line)
-    -- branch = "main",
-    config = function()
-        require("jj").setup({})
-    end,
-}
+local picker = require("jj.picker")
+picker.status()        -- Displays the current changes diffs
+picker.file_history()  -- Displays a buffer's history changes and allows to edit its change (including immutable changes)
 ```
 
-## Cmdline Usage
+## Configuration
 
-The plugin provides a `:J` command that accepts jj subcommands:
-
-```sh
-:J status
-:J log
-:J describe "Your change description"
-:J new
-:J push               " Push all changes
-:J push main         " Push only main bookmark
-:J fetch             " Fetch from remote
-:J open_pr           " Open PR for current change's bookmark
-:J open_pr --list    " Select bookmark from all and open PR
-:Jbrowse             " Open current file on remote at cursor line
-:Jbrowse main        " Open current file on remote at the given revset
-:J split             " Split a change interactively
-:J bookmark create/move/delete
-:J tag set           " Set a tag (prompts for revision and tag name)
-:J tag set abc123    " Set a tag on a specific revision
-:J tag delete        " Delete a tag via picker
-:J tag delete v1.0   " Delete a specific tag
-:J # This will use your defined default command
-:J <your-alias>
-:J commit            " Opens your configured editor describes @ and then creates a new change -A immediately
-:J commit <any text here> " Automatically describes @ and creates a new change -A immediately
-```
-
-### Diff Commands
-
-The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing against specific revisions:
-
-```sh
-:Jdiff              " Vertical diff against @- (parent)
-:Jdiff @-2          " Vertical diff against specific revision
-:Jvdiff main        " Vertical diff against main bookmark
-:Jhdiff trunk()     " Horizontal diff against trunk
-```
-
-## Default Config
+### Default Config
 
 ```lua
 {
@@ -375,9 +546,8 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
   -- Customize syntax highlighting colors for the describe buffer
   highlights = {
     editor = {
-        added = { fg = "#3fb950", ctermfg = "Green" },      -- Added files
-        modified = { fg = "#56d4dd", ctermfg = "Cyan" },    -- Modified files
-        deleted = { fg = "#f85149", ctermfg = "Red" },      -- Deleted files
+        -- [Added/Modified/Deleted] are handled by nvim's builtin syntax coloring for the type
+        -- Although you can override them too.
         renamed = { fg = "#d29922", ctermfg = "Yellow" },   -- Renamed files
     },
     log = {
@@ -490,80 +660,57 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
       },
       -- Close keymaps (shared across all buffers)
       close = { "q", "<Esc>" },
+      -- Floating buffer keymaps
+      floating = {
+        close = "q",
+        hide = "<Esc>",
+      },
     },
 
-}}
+  }}
 
 ```
 
-### Describe Editor Modes
+### Command Options
+
+#### Describe Editor Modes
 
 The `describe.editor.type` option lets you choose how you want to write commit descriptions:
 
-- **`"buffer"`** (default) - Opens a full buffer editor similar to Git's commit message editor
-  - Shows file changes with syntax highlighting
-  - Multi-line editing with proper formatting
-  - Close with `q` or `<Esc>`, save with `:w` or `:wq`
-- **`"input"`** - Simple single-line input prompt
-  - Quick and minimal
-  - Good for short, single-line descriptions
-  - Uses `vim.ui.input()` which can be customized by UI plugins like dressing.nvim
-
-Example:
+- **`"buffer"`** (default) — Opens a full buffer editor similar to Git's commit message editor. Shows file changes with syntax highlighting. Multi-line editing with proper formatting. Close with `q` or `<Esc>`, save with `:w` or `:wq`.
+- **`"input"`** — Simple single-line input prompt. Uses `vim.ui.input()` which can be customized by UI plugins like dressing.nvim.
 
 ```lua
 require("jj").setup({
-  describe = {
-    editor = {
-      type = "input", -- Use simple input mode
-    }
-  }
-})
-```
-
-You can also customize the keymaps for the describe editor buffer:
-
-```lua
-require("jj").setup({
-  describe = {
-    editor = {
-      type = "buffer",
-      keymaps = {
-        close = { "q", "<Esc>", "<C-c>" }, -- Customize close keybindings
+  cmd = {
+    describe = {
+      editor = {
+        type = "input",                         -- Use simple input mode
+        keymaps = {
+          close = { "q", "<Esc>", "<C-c>" },    -- Customize close keybindings
+        }
       }
     }
   }
 })
 ```
 
-### Highlight Customization
+#### Highlight Customization
 
-The `highlights` option allows you to customize the colors used in the describe buffer's file status display. Each highlight accepts standard Neovim highlight attributes:
-
-- `fg` - Foreground color (hex or color name)
-- `bg` - Background color
-- `ctermfg` - Terminal foreground color
-- `ctermbg` - Terminal background color
-- `bold`, `italic`, `underline` - Text styles
-
-Example with custom colors:
+The `highlights` option allows you to customize the colors used in the describe buffer's file status display. Each highlight accepts standard Neovim highlight attributes (`fg`, `bg`, `ctermfg`, `ctermbg`, `bold`, `italic`, `underline`):
 
 ```lua
 require("jj").setup({
   highlights = {
-    modified = { fg = "#89ddff", bold = true },
-    added = { fg = "#c3e88d", ctermfg = "LightGreen" },
+    editor = {
+      modified = { fg = "#89ddff", bold = true },
+      added = { fg = "#c3e88d", ctermfg = "LightGreen" },
+    }
   }
 })
 ```
 
-## Lua API Usage
-
-Beyond the `:J` command, you can call functions directly from Lua for more control. The example config below shows how to use them with custom keymaps.
-
-### Log Command Options
-
-The `log` function accepts an options table:
+#### Log
 
 ```lua
 local cmd = require("jj.cmd")
@@ -582,11 +729,7 @@ cmd.log({ summary = true, limit = 100 })   -- Show summary with high limit
 cmd.log({ raw = "-r 'main::@' --summary --no-graph" }) -- Pass raw flags directly
 ```
 
-## Configuration Examples
-
-### New Command Options
-
-The `new` function accepts an options table:
+#### New
 
 ```lua
 local cmd = require("jj.cmd")
@@ -602,33 +745,26 @@ cmd.new({ show_log = true, with_input = true })        -- Prompt for parent
 cmd.new({ args = "--before @" })                       -- Pass custom args
 ```
 
-### Push Command Options
-
-The `push` function accepts an options table:
+#### Push
 
 ```lua
 local cmd = require("jj.cmd")
-cmd.push({
-  bookmark = "main"     -- Push specific bookmark (default: all changes)
-})
-
--- Examples:
-cmd.push()                    -- Push all changes
-cmd.push({ bookmark = "main" }) -- Push only main bookmark
+cmd.push()                          -- Push all changes
+cmd.push({ bookmark = "main" })    -- Push only main bookmark
 cmd.push({ bookmark = "feature" }) -- Push only feature bookmark
 ```
 
-### Bookmark Management Command Options
-
-The `bookmark_create` function creates a new bookmark:
+#### Bookmarks
 
 ```lua
 local cmd = require("jj.cmd")
-cmd.bookmark_create()                               -- Prompts for bookmark name, then prompts the revision
-cmd.bookmark_create({ prefix = "feature/" })        -- Uses prefix for default bookmark name
+cmd.bookmark_create()                            -- Prompts for bookmark name, then prompts the revision
+cmd.bookmark_create({ prefix = "feature/" })     -- Uses prefix for default bookmark name
+cmd.bookmark_move()                              -- Select bookmark, then specify new revset
+cmd.bookmark_delete()                            -- Select bookmark to delete
 ```
 
-You can also set a default bookmark prefix in the config:
+You can set a default bookmark prefix in the config:
 
 ```lua
 require("jj").setup({
@@ -640,187 +776,33 @@ require("jj").setup({
 })
 ```
 
-The `bookmark_move` function moves an existing bookmark to a new revision:
-
-```lua
-local cmd = require("jj.cmd")
-cmd.bookmark_move()  -- Select bookmark, then specify new revset
-```
-
-The `bookmark_delete` function deletes a bookmark:
-
-```lua
-local cmd = require("jj.cmd")
-cmd.bookmark_delete()  -- Select bookmark to delete
-```
-
-### Tag Management Command Options
-
-The `tag_set` function creates a tag on a revision:
+#### Tag Management
 
 ```lua
 local cmd = require("jj.cmd")
 cmd.tag_set()              -- Prompts for revision and tag name
 cmd.tag_set("abc123")      -- Set a tag on a specific revision (prompts for tag name)
-```
-
-The `tag_delete` function deletes a tag via picker:
-
-```lua
-local cmd = require("jj.cmd")
 cmd.tag_delete()           -- Select tag to delete from picker
-```
-
-The `tag_push` function pushes a tag to a remote (colocated repositories only):
-
-```lua
-local cmd = require("jj.cmd")
 cmd.tag_push()             -- Select tag to push from picker (prompts for remote if multiple)
 ```
 
-### Open PR/MR Command Options
-
-The `open_pr` function accepts an options table:
+#### Open PR/MR
 
 ```lua
 local cmd = require("jj.cmd")
-cmd.open_pr({
-  list_bookmarks = false    -- Whether to select from all bookmarks (default: false, uses current revision)
-})
-
--- Examples:
 cmd.open_pr()                          -- Open PR for current change's bookmark
 cmd.open_pr({ list_bookmarks = true }) -- Select bookmark from all and open PR
 ```
 
-### Diff Module
-
-The diff module provides a unified API for viewing diffs with pluggable backend support.
-
-The natively supported backends are:
-
-- Native (Diffs the current file in place and uses a floating buffer with your jj diff command when diffing changes)
-- [codediff](https://github.com/esmuellert/codediff.nvim)
-- [diffview](https://github.com/sindrets/diffview.nvim)
-
-#### Functions
+#### Fetch PR
 
 ```lua
-local diff = require("jj.diff")
-
--- Diff current buffer against a revision (default: @-)
--- The `layout` is only supported for the native backend
-diff.diff_current({ rev = "@-", layout = "vertical" })
-
--- Show what changed in a single revision
-diff.show_revision({ rev = "abc123" })
-
--- Diff between two revisions
-diff.diff_revisions({ left = "main", right = "@" })
-
--- Convenience functions (LEGACY FUNCTIONS)
-diff.open_vdiff()                   -- Vertical split diff against parent
-diff.open_vdiff({ rev = "main" })   -- Vertical split against specific revision
-diff.open_hdiff()                   -- Horizontal split diff
-diff.open_hdiff({ rev = "@-2" })    -- Horizontal split against @-2
+local cmd = require("jj.cmd")
+cmd.fetch_pr()                -- Fetch a PR with default limit
+cmd.fetch_pr({ limit = 50 }) -- Fetch with fewer results in the picker
 ```
 
-#### Log Buffer Integration
-
-The diff module integrates seamlessly with the log buffer:
-
-- `<S-d>` - Show diff for the revision under cursor in a floating window
-
-These actions use the configured diff backend, allowing you to leverage your preferred diff viewer directly from the log.
-
-### Custom Diff Backends
-
-The diff module supports pluggable backends. Built-in backends include `native`, `diffview`, and `codediff`. You can register your own backend:
-
-```lua
-local diff = require("jj.diff")
-
-diff.register_backend("my-backend", {
-  -- Diff current buffer against a revision
-  diff_current = function(opts)
-    -- opts.rev: revision to diff against (default: "@-")
-    -- opts.path: file path (default: current buffer)
-    -- opts.layout: "vertical" or "horizontal"
-  end,
-
-  -- Show what changed in a single revision
-  show_revision = function(opts)
-    -- opts.rev: revision to show
-    -- opts.path: optional file filter
-    -- opts.display: "floating", "tab", or "split"
-  end,
-
-  -- Diff between two revisions
-  diff_revisions = function(opts)
-    -- opts.left: left/base revision
-    -- opts.right: right/target revision
-    -- opts.path: optional file filter
-    -- opts.display: "floating", "tab", or "split"
-  end,
-})
-```
-
-Set your backend as default in the config:
-
-```lua
-require("jj").setup({
-  diff = {
-    backend = "my-backend"
-  }
-})
-```
-
-Or use it per-call:
-
-```lua
-diff.diff_current({ backend = "my-backend", rev = "main" })
-```
-
-All three functions are optional—missing ones fall back to the `native` implementation.
-
-### Annotations
-
-View file blame and line history using the annotate module. Can be invoked via command or Lua API.
-
-**Via `:J` command:**
-
-```sh
-:J annotate         " Show blame/annotations for entire file in vertical split
-:J annotate_line    " Show annotation for current line in floating buffer
-```
-
-**Via Lua API:**
-
-```lua
-local annotate = require("jj.annotate")
-annotate.file()    -- Show blame/annotations for entire file in vertical split
-annotate.line()    -- Show annotation for current line in a tooltip
-```
-
-The file annotation displays a vertical split showing:
-
-- Change ID (colored uniquely per commit)
-- Author name
-- Timestamp
-
-Press `<CR>` on any annotation line to view the diff for that change.
-
-The line annotation displays a floating tooltip with the current line's annotation and the commit description.
-
-Example keymaps:
-
-```lua
-local annotate = require("jj.annotate")
-vim.keymap.set("n", "<leader>ja", annotate.file, { desc = "JJ annotate file" })
-vim.keymap.set("n", "<leader>jA", annotate.line, { desc = "JJ annotate line" })
-```
-
-## Example config
+### Full Example
 
 ```lua
 
@@ -872,7 +854,9 @@ vim.keymap.set("n", "<leader>jA", annotate.line, { desc = "JJ annotate line" })
       },
       highlights = {
         -- Customize colors if desired
-        modified = { fg = "#89ddff" },
+        editor = {
+          modified = { fg = "#89ddff" },
+        }
       }
     })
 
@@ -902,6 +886,7 @@ vim.keymap.set("n", "<leader>jA", annotate.line, { desc = "JJ annotate line" })
     vim.keymap.set("n", "<leader>jpl", function()
         cmd.open_pr { list_bookmarks = true }
     end, { desc = "JJ open PR listing available bookmarks" })
+    vim.keymap.set("n", "<leader>jfp", cmd.fetch_pr, { desc = "JJ fetch PR from GitHub" })
 
 
     -- Diff commands
@@ -934,21 +919,13 @@ vim.keymap.set("n", "<leader>jA", annotate.line, { desc = "JJ annotate line" })
 
 ```
 
-## Requirements
+## FAQ
 
-- [Jujutsu](https://github.com/jj-vcs/jj) installed and available in PATH
+- Telescope Support? Planned but I don't use it, it's already thought of by design, will implement it at some point or if someone submits a PR I'll accept it gladly.
 
 ## Contributing
 
 This is an early-stage project. Contributions are welcome, but please be aware that the API and features are likely to change significantly.
-
-## Documentation
-
-Once the plugin is more complete I'll write docs for each of the commands.
-
-## FAQ
-
-- Telescope Support? Planned but I don't use it, it's already thought of by design, will implement it at some point or if someone submits a PR I'll accept it gladly.
 
 ## License
 
