@@ -695,4 +695,51 @@ function M.reload_changed_file_buffers()
 	vim.cmd.checktime()
 end
 
+--- Using the gh cli lists all open prs
+--- @param opts {limit: integer|nil}
+--- @return {number: integer, title: string, author: string}[]|nil
+function M.list_github_prs(opts)
+	if not M.has_executable("gh") then
+		M.notify("Missing `gh` executable to list prs", vim.log.levels.ERROR)
+		return
+	end
+
+	-- Set the default limit
+	local limit = 100
+
+	if opts and opts.limit then
+		limit = opts.limit
+	end
+
+	-- Start with a hardcoded limit of 100
+	local cmd =
+		[[gh pr list -L %s --json number,title,author --jq '.[] | "#\(.number);;;\(.title);;;(@\(.author.login))"']]
+	cmd = string.format(cmd, limit)
+
+	-- Run the command to get the pr's
+	local output, success = runner.execute_command_sync(cmd, nil, "Failed to get prs")
+	if not success or not output then
+		return
+	end
+
+	local open_prs = {}
+	-- Split each line
+	local lines = vim.split(output, "\n", { trimempty = true })
+	for _, line in ipairs(lines) do
+		local parts = vim.split(line, ";;;", { trimempty = true })
+		if #parts == 3 then
+			local number = tonumber(parts[1]:match("#(%d+)"))
+			local title = parts[2]
+			local author = parts[3]
+			if number and title and author then
+				table.insert(open_prs, { number = number, title = title, author = author })
+			end
+		else
+			M.notify("Unexpected PR list format: " .. line, vim.log.levels.WARN)
+		end
+	end
+
+	return open_prs
+end
+
 return M

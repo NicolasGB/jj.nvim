@@ -127,6 +127,9 @@ local split_module = require("jj.cmd.split")
 --- @class jj.cmd.open_pr_opts
 --- @field list_bookmarks? boolean Whether to select from all bookmarks instead of current revision
 
+--- @class jj.cmd.fetch_pr_opts
+--- @field limit? number Limit the number of PRs to select from
+
 --- @type jj.cmd.opts
 M.config = {
 	describe = {
@@ -1008,6 +1011,91 @@ function M.tag_push()
 	end
 end
 
+--- Opens a picker to localy fetch a PR from a github repository
+--- @param opts? jj.cmd.fetch_pr_opts Options for fetching PRs
+function M.fetch_pr(opts)
+	if not utils.ensure_jj() then
+		return
+	end
+
+	if not utils.has_executable("git") then
+		return
+	end
+
+	if not utils.is_colocated() then
+		utils.notify("Current repository is not colocated. Cannot fetch PR.", vim.log.levels.ERROR)
+		return
+	end
+
+	-- Create a new opts table with the default limit if not provided
+	opts = vim.tbl_deep_extend("force", {
+		limit = 100,
+	}, opts or {})
+
+	-- Get the prs from github
+	local prs = utils.list_github_prs(opts)
+	if not prs or #prs == 0 then
+		return
+	end
+
+	local needs_refresh = terminal.is_log_buffer_open()
+
+	vim.ui.select(prs, {
+		prompt = "Select PR to fetch: ",
+		format_item = function(pr)
+			return string.format("#%s %s %s", pr.number, pr.title, pr.author)
+		end,
+	}, function(choice)
+		if choice then
+			utils.notify("Pulling PR #" .. choice.number .. "...", vim.log.levels.INFO)
+			local pr = choice.number
+			local count = 1
+			local max_retries = 30
+
+			-- the function that actually tries to fetch recursively
+			local function try_fetch()
+				if count > max_retries then
+					utils.notify(
+						string.format("Failed to fetch PR #%s. Tried %d times.", pr, max_retries),
+						vim.log.levels.ERROR
+					)
+					return
+				end
+
+				local ref = string.format("pull/%s/head:pr-%s-%d", pr, pr, count)
+				local cmd = string.format("git fetch origin %s", ref)
+
+				runner.execute_command_async(
+					cmd,
+					function()
+						-- If we successfully pulled the PR, notify the user and refresh the log if it's open
+						runner.execute_command_async("jj git import", function()
+							utils.notify(
+								string.format("PR #%s fetched as pr-%s-%d.", pr, pr, count),
+								vim.log.levels.INFO
+							)
+							if needs_refresh then
+								M.log({})
+							end
+						end, "Failed to import git refs")
+					end,
+					"",
+					nil,
+					true,
+					function()
+						-- If we errored increment the counter by one and try and fetch it again
+						count = count + 1
+						try_fetch()
+					end
+				)
+			end
+
+			-- Try and pull it once
+			try_fetch()
+		end
+	end)
+end
+
 --- @param args string|string[] jj command arguments
 function M.j(args)
 	if not utils.ensure_jj() then
@@ -1164,6 +1252,9 @@ function M.j(args)
 				end
 			end
 		end,
+		fetch_pr = function()
+			M.fetch_pr()
+		end,
 	}
 
 	if handlers[subcommand] then
@@ -1213,6 +1304,7 @@ function M.register_command()
 				"annotate_line",
 				"commit",
 				"tag",
+				"fetch_pr",
 			}
 			local matches = {}
 			for _, cmd in ipairs(subcommands) do
