@@ -95,7 +95,7 @@ function M.create(opts)
 	if opts.buftype then
 		vim.bo[buf].buftype = opts.buftype
 	end
-	vim.bo[buf].modifiable = opts.modifiable ~= nil and opts.modifiable or true
+	vim.bo[buf].modifiable = opts.modifiable == nil and true or opts.modifiable
 	vim.bo[buf].swapfile = false
 	vim.bo[buf].buflisted = false
 
@@ -153,7 +153,7 @@ function M.create_float(opts)
 		height = height,
 		row = row,
 		col = col,
-		style = opts.style or "minimal",
+		-- style = opts.style or "minimal",
 		border = opts.border or "rounded",
 	}
 
@@ -173,7 +173,7 @@ function M.create_float(opts)
 	if opts.buftype then
 		vim.bo[buf].buftype = opts.buftype
 	end
-	vim.bo[buf].modifiable = opts.modifiable ~= nil and opts.modifiable or true
+	vim.bo[buf].modifiable = opts.modifiable == nil and true or opts.modifiable
 	vim.bo[buf].swapfile = false
 	vim.bo[buf].buflisted = false
 	if opts.bufhidden then
@@ -253,22 +253,29 @@ function M.create_tooltip(opts)
 
 	-- Create float with tooltip defaults
 	local buf, win = M.create_float({
-		width = math.min(max_width + 2, vim.o.columns - 4),
+		width = math.min(max_width + 2, 100),
 		height = #lines,
 		relative = "cursor",
 		row = 1,
 		col = 0,
-		style = "minimal",
 		border = "rounded",
 		title = opts.title,
-		modifiable = false,
 		buftype = "nofile",
 		bufhidden = "wipe",
+		win_options = {
+			wrap = true,
+			number = false,
+			relativenumber = false,
+			cursorline = false,
+			signcolumn = "no",
+		},
 	})
 
 	-- Set the text
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 	vim.bo[buf].modified = false
+	-- Set modifiable to false
+	M.set_modifiable(buf, false)
 
 	-- Close when cursor moves in other windows
 	vim.api.nvim_create_autocmd("CursorMoved", {
