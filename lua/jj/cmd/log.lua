@@ -27,6 +27,70 @@ local HIGHLIGHT_RANGE = 2 -- Revision line + description line
 ---@type jj.cmd.log_opts
 local default_log_opts = { summary = false, reversed = false, no_graph = false, limit = 20, raw_flags = nil }
 
+--- @param modes string|string[]
+--- @return string[]
+local function as_mode_list(modes)
+	if type(modes) == "table" then
+		return modes
+	end
+	return { modes }
+end
+
+--- @param lhs string
+--- @param lhs_list string[]
+--- @return boolean
+local function has_longer_prefix(lhs, lhs_list)
+	for _, other in ipairs(lhs_list) do
+		if lhs ~= other and other:sub(1, #lhs) == lhs then
+			return true
+		end
+	end
+	return false
+end
+
+--- @param keymaps jj.core.buffer.keymap[]
+--- @return jj.core.buffer.keymap[]
+local function split_keymaps_by_mode(keymaps)
+	local split_keymaps = {}
+
+	for _, keymap in ipairs(keymaps) do
+		local modes = keymap.modes or keymap.mode or "n"
+		for _, mode in ipairs(as_mode_list(modes)) do
+			local mode_keymap = vim.deepcopy(keymap)
+			mode_keymap.modes = mode
+			mode_keymap.mode = nil
+			table.insert(split_keymaps, mode_keymap)
+		end
+	end
+
+	return split_keymaps
+end
+
+--- Set nowait=true for per-mode keymaps that are not a prefix of another keymap in the same mode.
+--- @param keymaps jj.core.buffer.keymap[]
+--- @return jj.core.buffer.keymap[]
+local function apply_nowait_to_unique_keymaps(keymaps)
+	local split_keymaps = split_keymaps_by_mode(keymaps)
+	local lhs_by_mode = {}
+
+	for _, keymap in ipairs(split_keymaps) do
+		local lhs = keymap.lhs
+		local mode = keymap.modes
+		lhs_by_mode[mode] = lhs_by_mode[mode] or {}
+		table.insert(lhs_by_mode[mode], lhs)
+	end
+
+	for _, keymap in ipairs(split_keymaps) do
+		local lhs = keymap.lhs
+		local mode = keymap.modes
+		if not has_longer_prefix(lhs, lhs_by_mode[mode]) then
+			keymap.opts = vim.tbl_extend("force", keymap.opts or {}, { nowait = true })
+		end
+	end
+
+	return split_keymaps
+end
+
 --- Init log highlight groups
 function M.init_log_highlights()
 	local cfg = require("jj").config.highlights.log
@@ -1066,7 +1130,8 @@ function M.log_keymaps()
 		},
 	}
 
-	return cmd.merge_keymaps(cmd.resolve_keymaps_from_specs(keymaps, specs), cmd.terminal_keymaps())
+	local merged_keymaps = cmd.merge_keymaps(cmd.resolve_keymaps_from_specs(keymaps, specs), cmd.terminal_keymaps())
+	return apply_nowait_to_unique_keymaps(merged_keymaps)
 end
 
 --- Rebase mode keymaps
@@ -1120,7 +1185,7 @@ function M.rebase_keymaps()
 		},
 	}
 
-	return cmd.resolve_keymaps_from_specs(keymaps, spec)
+	return apply_nowait_to_unique_keymaps(cmd.resolve_keymaps_from_specs(keymaps, spec))
 end
 
 --- Squash mode keymaps
@@ -1150,7 +1215,7 @@ function M.squash_keymaps()
 		},
 	}
 
-	return cmd.resolve_keymaps_from_specs(keymaps, spec)
+	return apply_nowait_to_unique_keymaps(cmd.resolve_keymaps_from_specs(keymaps, spec))
 end
 
 --- Get keymaps for a specific mode
