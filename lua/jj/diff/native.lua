@@ -124,4 +124,10 @@ diff.register_backend("native", {
 		local cmd = string.format("jj diff -f %s -t %s --quiet --no-pager", opts.left, opts.right)
 		terminal.run_floating(cmd, require("jj.cmd").floating_keymaps())
 	end,
+	diff_history_revisions = function(_)
+		utils.notify(
+			"Diffing revisions with history mode is not supported on the `native` backend.",
+			vim.log.levels.WARN
+		)
+	end,
 })

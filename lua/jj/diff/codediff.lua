@@ -28,6 +28,20 @@ local function diff_two_changes(left, right)
 	vim.cmd(string.format("CodeDiff %s %s", commit_id_right, commit_id_left))
 end
 
+local function diff_two_changes_with_history(left, right)
+	local commit_id_left = utils.get_commit_id(left)
+	if commit_id_left == nil then
+		return
+	end
+
+	local commit_id_right = utils.get_commit_id(right)
+	if commit_id_right == nil then
+		return
+	end
+
+	vim.cmd(string.format("CodeDiff history %s..%s", commit_id_right, commit_id_left))
+end
+
 -----------------------------------------------------------------------
 -- Codediff Backend
 -----------------------------------------------------------------------
@@ -66,5 +80,13 @@ diff.register_backend("codediff", {
 		end
 
 		diff_two_changes(opts.left, opts.right)
+	end,
+
+	diff_history_revisions = function(opts)
+		if not utils.has_dependency("codediff") then
+			return
+		end
+
+		diff_two_changes_with_history(opts.left, opts.right)
 	end,
 })
