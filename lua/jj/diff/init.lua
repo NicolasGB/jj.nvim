@@ -28,6 +28,7 @@ local utils = require("jj.utils")
 ---@field diff_current? fun(opts: jj.diff.current_opts)
 ---@field show_revision? fun(opts: jj.diff.revision_opts)
 ---@field diff_revisions? fun(opts: jj.diff.revisions_opts)
+---@field diff_history_revisions? fun(opts: jj.diff.revisions_opts)
 
 ---@class jj.diff.config
 ---@field backend? jj.diff.backend
@@ -99,7 +100,7 @@ end
 -----------------------------------------------------------------------
 
 --- Single dispatcher (canonical entry point)
----@param kind "current"|"revision"|"revisions"
+---@param kind "current"|"revision"|"revisions"|"history"
 ---@param opts table
 function M.open(kind, opts)
 	opts = opts or {}
@@ -120,6 +121,10 @@ function M.open(kind, opts)
 			return backend.diff_revisions(opts)
 		end
 		return backends.native.diff_revisions(opts)
+	elseif kind == "history" then
+		if backend.diff_history_revisions then
+			return backend.diff_history_revisions(opts)
+		end
 	else
 		utils.notify("[Diff] unknown diff kind: " .. tostring(kind), vim.log.levels.ERROR)
 	end
@@ -141,6 +146,12 @@ end
 ---@param opts jj.diff.revisions_opts
 function M.diff_revisions(opts)
 	return M.open("revisions", opts)
+end
+
+-- Diff between two revisions with history mode active
+--- @param opts jj.diff.revisions_opts
+function M.diff_history_revisions(opts)
+	return M.open("history", opts)
 end
 
 ---
