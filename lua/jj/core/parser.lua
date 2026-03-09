@@ -229,4 +229,20 @@ function M.parse_annotation_line(line)
 	return result
 end
 
+-- Given a range with the format "left..right", parse and return the two revisions
+--- @param range_str string The range string to parse (e.g., "left..right")
+--- @return {left: string, right: string}|nil A table
+function M.parse_diff_range(range_str)
+	if not range_str then
+		return nil
+	end
+
+	local left, right = range_str:match("^(%S+)%.%.(%S+)$")
+	if left and right then
+		return { left = left, right = right }
+	end
+
+	return nil
+end
+
 return M

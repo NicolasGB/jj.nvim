@@ -131,6 +131,10 @@ local split_module = require("jj.cmd.split")
 --- @class jj.cmd.fetch_pr_opts
 --- @field limit? number Limit the number of PRs to select from
 
+--- @class jj.cmd.diff_history_opts
+--- @field left? string The left revision for the range
+--- @field right? string The right revision for the range
+
 --- @type jj.cmd.opts
 M.config = {
 	describe = {
@@ -421,6 +425,34 @@ function M.diff(opts)
 	else
 		diff_module.show_revision({ rev = "@" })
 	end
+end
+
+-- Diff history between two revisions
+--- @param opts? jj.cmd.diff_history_opts
+function M.diff_history(opts)
+	if not utils.ensure_jj() then
+		return
+	end
+
+	local diff_module = require("jj.diff")
+
+	if opts then
+		return diff_module.diff_history_revisions({ left = opts.left, right = opts.right })
+	end
+
+	-- Otherwise prompt the user for input
+	vim.ui.input({ prompt = "Range to diff with history" }, function(choice)
+		if choice then
+			local range = parser.parse_diff_range(choice)
+			if range then
+				diff_module.diff_history_revisions({ left = range.left, right = range.right })
+			else
+				utils.notify("Invalid range format. Use `left..right` or `left...right`.", vim.log.levels.ERROR)
+			end
+		else
+			terminal.close_terminal_buffer()
+		end
+	end)
 end
 
 -- Jujutsu rebase
@@ -1190,6 +1222,20 @@ function M.j(args)
 		diff = function()
 			M.diff({ current = false })
 		end,
+		diff_history = function()
+			if remaining_args_str == "" then
+				return M.diff_history()
+			end
+
+			-- Otherwise it means a range has been provided
+			local parts = parser.parse_diff_range(remaining_args_str)
+			if not parts then
+				utils.notify("Invalid history range. Formant must be `<left>..<right>`", vim.log.levels.ERROR)
+				return
+			end
+
+			M.diff_history({ left = parts.left, right = parts.right })
+		end,
 		status = function()
 			M.status()
 		end,
@@ -1288,6 +1334,7 @@ function M.register_command()
 				"bookmark",
 				"describe",
 				"diff",
+				"diff_history",
 				"edit",
 				"fetch",
 				"git",
