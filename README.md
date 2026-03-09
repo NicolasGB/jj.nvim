@@ -14,6 +14,7 @@
 - [Enhanced Integrations](#enhanced-integrations)
   - [View change summary from the log buffer](#view-change-summary-from-the-log-buffer)
   - [Diff any change](#diff-any-change)
+  - [Diff revision history](#diff-revision-history)
   - [Describe a change](#describe-a-change)
   - [Edit changes](#edit-changes)
   - [Create new changes from the log buffer](#create-new-changes-from-the-log-buffer)
@@ -73,6 +74,7 @@
   - `browse` - Open the current file on your remote at the current line (or selected range)
   - `annotate` / `annotate_line` - View file blame and line history with change ID, author, and timestamp
   - `commit` - Describe the current change and create a new one after
+  - `diff_history` - Open a history-aware diff between two revisions when supported by your diff backend
   - Diff commands
   - `:Jdiff [revision]` - Vertical split diff against a jj revision
   - `:Jhdiff [revision]` - Horizontal split diff
@@ -101,12 +103,24 @@ From the summary view, you can:
 
 ### Diff any change
 
-You can diff any change in your log history by pressing `<S-d>` on its line or on a summary file change. You can also visually select multiple changes to diff between the first and last selected.
+You can diff any change in your log history by pressing `<S-d>` on its line or on a summary file change. This opens the configured diff backend for the revision under the cursor.
 
 > [!NOTE]
 > Integrates with your preferred diff plugin or uses your native jj diff config. See [Diff Module](#diff-module).
 
 ![Diff-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/diff-log.gif)
+
+### Diff revision history
+
+You can now open a history-aware diff between two revisions:
+
+- In the log buffer, visually select multiple revisions and press `<S-h>`
+- `jj.nvim` uses the first and last selected revisions as the range boundaries
+- `diffview` opens `DiffviewFileHistory` for that range
+- `codediff` opens `CodeDiff history` for that range
+- The `native` backend currently shows a warning because history mode is not supported there yet
+
+This is useful when you want to inspect the evolution of a stack or compare a revision range with commit history preserved instead of showing a single plain diff.
 
 ### Describe a change
 
@@ -339,6 +353,8 @@ The plugin provides a `:J` command that accepts jj subcommands:
 :Jbrowse             " Open current file on remote at cursor line
 :Jbrowse main        " Open current file on remote at the given revset
 :J split             " Split a change interactively
+:J diff_history      " Prompt for a `left..right` range and open a history-aware diff
+:J diff_history main..@ " Open a history-aware diff between main and the working copy
 :J bookmark create/move/delete
 :J tag set           " Set a tag (prompts for revision and tag name)
 :J tag set abc123    " Set a tag on a specific revision
@@ -475,6 +491,7 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
         },
         quick_squash = "<S-s>",             -- Quick squash revision under cursor into its parent (ignore immutability)
         split = "<C-s>",                    -- Split the revision under cursor
+        history = "<S-h>",                  -- Show a history-aware diff for the selected revision range
         tag_create = "<S-t>",               -- Create a tag on the revision under cursor
         summary = "<S-k>",                  -- Show summary tooltip for revision under cursor
         summary_tooltip = {
@@ -718,6 +735,11 @@ diff.show_revision({ rev = "abc123" })
 -- Diff between two revisions
 diff.diff_revisions({ left = "main", right = "@" })
 
+-- Open a history-aware diff between two revisions
+-- Supported by the `diffview` and `codediff` backends
+-- The `native` backend currently warns instead
+diff.diff_history_revisions({ left = "main", right = "@" })
+
 -- Convenience functions (LEGACY FUNCTIONS)
 diff.open_vdiff()                   -- Vertical split diff against parent
 diff.open_vdiff({ rev = "main" })   -- Vertical split against specific revision
@@ -730,6 +752,7 @@ diff.open_hdiff({ rev = "@-2" })    -- Horizontal split against @-2
 The diff module integrates seamlessly with the log buffer:
 
 - `<S-d>` - Show diff for the revision under cursor in a floating window
+- `<S-h>` - In visual mode, open a history-aware diff for the first and last selected revisions
 
 These actions use the configured diff backend, allowing you to leverage your preferred diff viewer directly from the log.
 
@@ -762,6 +785,12 @@ diff.register_backend("my-backend", {
     -- opts.path: optional file filter
     -- opts.display: "floating", "tab", or "split"
   end,
+
+  -- Open a history-aware diff between two revisions
+  diff_history_revisions = function(opts)
+    -- opts.left: left/base revision
+    -- opts.right: right/target revision
+  end,
 })
 ```
 
@@ -781,7 +810,7 @@ Or use it per-call:
 diff.diff_current({ backend = "my-backend", rev = "main" })
 ```
 
-All three functions are optional—missing ones fall back to the `native` implementation.
+All four backend functions are optional—missing ones fall back to the `native` implementation.
 
 ### Annotations
 
