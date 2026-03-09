@@ -39,6 +39,7 @@ local function diff_two_changes_with_history(left, right)
 		return
 	end
 
+	-- test
 	vim.cmd(string.format("CodeDiff history %s..%s", commit_id_right, commit_id_left))
 end
 
