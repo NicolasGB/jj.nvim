@@ -17,7 +17,7 @@ M.highlights = {
 	renamed = { fg = "#d29922", ctermfg = "Yellow" },
 }
 M.highlights_initialized = false
-M.auto_insert = false
+M.auto_insert = true
 
 -- Initialize highlight groups once
 local function init_highlights()
