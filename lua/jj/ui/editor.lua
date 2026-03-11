@@ -2,6 +2,7 @@
 local M = {}
 
 local buffer = require("jj.core.buffer")
+local utils = require("jj.utils")
 
 --- @class jj.ui.editor.highlights
 ---@field added? table Highlight settings for added lines
@@ -10,7 +11,7 @@ local buffer = require("jj.core.buffer")
 ---@field renamed? table Highlight settings for renamed lines
 
 --- @class jj.ui.editor.opts
----@field auto_insert? boolean Automatically enter insert mode when opening editor buffers
+---@field auto_insert? boolean Smart insert: enter insert mode when description is empty, stay in normal mode when one exists
 
 M.highlights = {
 	-- Only init this one by default since it's not handled natively by neovim
@@ -134,9 +135,18 @@ function M.open_editor(initial_text, on_write, on_unload, keymaps)
 	-- Apply highlights initially
 	apply_highlights(buf)
 
-	-- Enter insert mode if auto_insert is enabled
+	-- Smart insert mode: insert when description is empty, normal mode otherwise
 	if M.auto_insert then
-		buffer.start_insert(buf)
+		vim.schedule(function()
+			if not vim.api.nvim_buf_is_valid(buf) then
+				return
+			end
+			local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+			local desc = utils.extract_description_from_describe(lines)
+			if not desc or desc == "" then
+				vim.cmd("startinsert")
+			end
+		end)
 	end
 
 	-- Reapply highlights when text changes
