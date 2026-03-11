@@ -2,7 +2,6 @@
 local M = {}
 
 local buffer = require("jj.core.buffer")
-local utils = require("jj.utils")
 
 --- @class jj.ui.editor.highlights
 ---@field added? table Highlight settings for added lines
@@ -142,7 +141,7 @@ function M.open_editor(initial_text, on_write, on_unload, keymaps)
 				return
 			end
 			local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-			local desc = utils.extract_description_from_describe(lines)
+			local desc = require("jj.utils").extract_description_from_describe(lines)
 			if not desc or desc == "" then
 				vim.cmd("startinsert")
 			end
