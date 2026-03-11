@@ -21,10 +21,12 @@
   - [Abandon changes from the log buffer](#abandon-changes-from-the-log-buffer)
   - [Fetch and push from the log buffer](#fetch-and-push-from-the-log-buffer)
   - [Manage bookmarks from the log buffer](#manage-bookmarks-from-the-log-buffer)
+  - [Manage tags from the log buffer](#manage-tags-from-the-log-buffer)
   - [Squash changes from the log buffer](#squash-changes-from-the-log-buffer)
   - [Split changes from the log buffer](#split-changes-from-the-log-buffer)
   - [Rebase changes from the log buffer](#rebase-changes-from-the-log-buffer)
   - [Open a PR/MR from the log buffer](#open-a-prmr-from-the-log-buffer)
+  - [Browse current file on remote](#browse-current-file-on-remote)
   - [Open a changed file](#open-a-changed-file)
   - [Restore a changed file](#restore-a-changed-file)
 - [Installation](#installation)
@@ -64,9 +66,11 @@
   - `split` - Split a change interactively in a floating terminal
   - `rebase` - Rebase changes to a destination
   - `bookmark create/delete` - Create and delete bookmarks
+  - `tag set/delete/push` - Create, delete, and push tags (push requires colocated repos)
   - `undo` - Undo the last operation
   - `redo` - Redo the last undone operation
   - `open_pr` - Open a PR/MR on your remote (GitHub, GitLab, Gitea, Forgejo, etc.)
+  - `browse` - Open the current file on your remote at the current line (or selected range)
   - `annotate` / `annotate_line` - View file blame and line history with change ID, author, and timestamp
   - `commit` - Describe the current change and create a new one after
   - Diff commands
@@ -152,6 +156,12 @@ You can fetch and push directly from the log buffer:
 - `b` - Create a new bookmark or move an existing one to the revision under cursor
   - Select from existing bookmarks to move them
   - Or create a new bookmark at that revision
+
+### Manage tags from the log buffer
+
+- `<S-t>` - Create a new tag on the revision under cursor
+
+Deleting and pushing tags (for colocated repositories) is also supported and changes are reflected if the log buffer is open. Set up some keybinds and you're good to go, please see [here](#tag-management-command-options).
 
 ### Squash changes from the log buffer
 
@@ -257,6 +267,32 @@ The plugin automatically:
 
 **This is a jj.nvim exclusive feature** - the ability to seamlessly bridge from your Neovim jj workflow directly to your remote platform's PR/MR interface.
 
+### Browse current file on remote
+
+Open the current buffer's file in your browser on the hosted remote (GitHub/GitLab/Gitea/Forgejo, etc.) at the current cursor line or a visually selected range.
+
+**Usage:**
+
+```sh
+:Jbrowse          " Use @ (best-effort chooses a remote-reachable ref)
+:Jbrowse main     " Use an explicit revset (no walkback)
+```
+
+**How it works:**
+
+- Takes the current buffer path and makes it repo-relative (must be inside a jj repo)
+- Collects git remotes; if there's more than one, prompts you to pick one
+- Normalizes the remote URL to an HTTPS base repo URL
+- Picks a ref that is expected to exist on the remote:
+  - With default `@`: walks back first-parent up to 20 parents to find a commit reachable from that remote's bookmarks; falls back to `trunk()` if needed
+  - With an explicit revset (e.g. `main`, `@-2`): uses that revset directly (no walkback)
+  - If there's a single unambiguous remote bookmark pointing at the chosen commit, uses that bookmark name; otherwise uses the commit SHA
+- Builds a provider-specific URL and adds a line anchor:
+  - GitHub-style: `#L<start>` or `#L<start>-L<end>`
+  - GitLab-style: `#L<start>` or `#L<start>-<end>`
+
+In Visual mode, select lines and run `:Jbrowse` to open a range.
+
 ### Open a changed file
 
 Just press enter to open a file from the `status` output in your current window.
@@ -300,8 +336,14 @@ The plugin provides a `:J` command that accepts jj subcommands:
 :J fetch             " Fetch from remote
 :J open_pr           " Open PR for current change's bookmark
 :J open_pr --list    " Select bookmark from all and open PR
+:Jbrowse             " Open current file on remote at cursor line
+:Jbrowse main        " Open current file on remote at the given revset
 :J split             " Split a change interactively
 :J bookmark create/move/delete
+:J tag set           " Set a tag (prompts for revision and tag name)
+:J tag set abc123    " Set a tag on a specific revision
+:J tag delete        " Delete a tag via picker
+:J tag delete v1.0   " Delete a specific tag
 :J # This will use your defined default command
 :J <your-alias>
 :J commit            " Opens your configured editor describes @ and then creates a new change -A immediately
@@ -433,6 +475,7 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
         },
         quick_squash = "<S-s>",             -- Quick squash revision under cursor into its parent (ignore immutability)
         split = "<C-s>",                    -- Split the revision under cursor
+        tag_create = "<S-t>",               -- Create a tag on the revision under cursor
         summary = "<S-k>",                  -- Show summary tooltip for revision under cursor
         summary_tooltip = {
             diff = "<S-d>",                   -- Diff file at this revision
@@ -609,6 +652,30 @@ The `bookmark_delete` function deletes a bookmark:
 ```lua
 local cmd = require("jj.cmd")
 cmd.bookmark_delete()  -- Select bookmark to delete
+```
+
+### Tag Management Command Options
+
+The `tag_set` function creates a tag on a revision:
+
+```lua
+local cmd = require("jj.cmd")
+cmd.tag_set()              -- Prompts for revision and tag name
+cmd.tag_set("abc123")      -- Set a tag on a specific revision (prompts for tag name)
+```
+
+The `tag_delete` function deletes a tag via picker:
+
+```lua
+local cmd = require("jj.cmd")
+cmd.tag_delete()           -- Select tag to delete from picker
+```
+
+The `tag_push` function pushes a tag to a remote (colocated repositories only):
+
+```lua
+local cmd = require("jj.cmd")
+cmd.tag_push()             -- Select tag to push from picker (prompts for remote if multiple)
 ```
 
 ### Open PR/MR Command Options
@@ -825,6 +892,9 @@ vim.keymap.set("n", "<leader>jA", annotate.line, { desc = "JJ annotate line" })
     vim.keymap.set("n", "<leader>jbc", cmd.bookmark_create, { desc = "JJ bookmark create" })
     vim.keymap.set("n", "<leader>jbd", cmd.bookmark_delete, { desc = "JJ bookmark delete" })
     vim.keymap.set("n", "<leader>jbm", cmd.bookmark_move, { desc = "JJ bookmark move" })
+    vim.keymap.set("n", "<leader>jts", cmd.tag_set, { desc = "JJ tag set" })
+    vim.keymap.set("n", "<leader>jtd", cmd.tag_delete, { desc = "JJ tag delete" })
+    vim.keymap.set("n", "<leader>jtp", cmd.tag_push, { desc = "JJ tag push" })
     vim.keymap.set("n", "<leader>ja", cmd.abandon, { desc = "JJ abandon" })
     vim.keymap.set("n", "<leader>jf", cmd.fetch, { desc = "JJ fetch" })
     vim.keymap.set("n", "<leader>jp", cmd.push, { desc = "JJ push" })

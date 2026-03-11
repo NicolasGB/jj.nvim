@@ -149,6 +149,7 @@ function M.file_log_history(opts, log_lines)
 			)
 
 			if ok then
+				utils.reload_changed_file_buffers()
 				utils.notify(string.format("Editing revision `%s`", item.rev), vim.log.levels.INFO)
 			end
 		end,

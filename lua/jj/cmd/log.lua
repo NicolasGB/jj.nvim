@@ -27,6 +27,70 @@ local HIGHLIGHT_RANGE = 2 -- Revision line + description line
 ---@type jj.cmd.log_opts
 local default_log_opts = { summary = false, reversed = false, no_graph = false, limit = 20, raw_flags = nil }
 
+--- @param modes string|string[]
+--- @return string[]
+local function as_mode_list(modes)
+	if type(modes) == "table" then
+		return modes
+	end
+	return { modes }
+end
+
+--- @param lhs string
+--- @param lhs_list string[]
+--- @return boolean
+local function has_longer_prefix(lhs, lhs_list)
+	for _, other in ipairs(lhs_list) do
+		if lhs ~= other and other:sub(1, #lhs) == lhs then
+			return true
+		end
+	end
+	return false
+end
+
+--- @param keymaps jj.core.buffer.keymap[]
+--- @return jj.core.buffer.keymap[]
+local function split_keymaps_by_mode(keymaps)
+	local split_keymaps = {}
+
+	for _, keymap in ipairs(keymaps) do
+		local modes = keymap.modes or keymap.mode or "n"
+		for _, mode in ipairs(as_mode_list(modes)) do
+			local mode_keymap = vim.deepcopy(keymap)
+			mode_keymap.modes = mode
+			mode_keymap.mode = nil
+			table.insert(split_keymaps, mode_keymap)
+		end
+	end
+
+	return split_keymaps
+end
+
+--- Set nowait=true for per-mode keymaps that are not a prefix of another keymap in the same mode.
+--- @param keymaps jj.core.buffer.keymap[]
+--- @return jj.core.buffer.keymap[]
+local function apply_nowait_to_unique_keymaps(keymaps)
+	local split_keymaps = split_keymaps_by_mode(keymaps)
+	local lhs_by_mode = {}
+
+	for _, keymap in ipairs(split_keymaps) do
+		local lhs = keymap.lhs
+		local mode = keymap.modes
+		lhs_by_mode[mode] = lhs_by_mode[mode] or {}
+		table.insert(lhs_by_mode[mode], lhs)
+	end
+
+	for _, keymap in ipairs(split_keymaps) do
+		local lhs = keymap.lhs
+		local mode = keymap.modes
+		if not has_longer_prefix(lhs, lhs_by_mode[mode]) then
+			keymap.opts = vim.tbl_extend("force", keymap.opts or {}, { nowait = true })
+		end
+	end
+
+	return split_keymaps
+end
+
 --- Init log highlight groups
 function M.init_log_highlights()
 	local cfg = require("jj").config.highlights.log
@@ -232,6 +296,36 @@ local function setup_selected_highlights()
 	end
 end
 
+--- Build the jj log command string from options
+--- @param opts? jj.cmd.log_opts Optional command options
+--- @return string The full jj log command
+function M.build_log_cmd(opts)
+	local jj_cmd = "jj log --no-pager"
+	local merged_opts = vim.tbl_extend("force", default_log_opts, opts or {})
+
+	if merged_opts.raw_flags then
+		-- Strip --no-pager from raw_flags since it's already in the base command
+		local flags = vim.trim(merged_opts.raw_flags:gsub("%-%-no%-pager", ""):gsub("%s+", " "))
+		if flags ~= "" then
+			return string.format("%s %s", jj_cmd, flags)
+		end
+		return jj_cmd
+	end
+
+	for key, value in pairs(merged_opts) do
+		key = key:gsub("_", "-")
+		if key == "limit" and value then
+			jj_cmd = string.format("%s --%s %d", jj_cmd, key, value)
+		elseif key == "revisions" and value then
+			jj_cmd = string.format("%s --%s %s", jj_cmd, key, value)
+		elseif value then
+			jj_cmd = string.format("%s --%s", jj_cmd, key)
+		end
+	end
+
+	return jj_cmd
+end
+
 --- Jujutsu log
 --- @param opts? jj.cmd.log_opts Optional command options
 function M.log(opts)
@@ -247,26 +341,7 @@ function M.log(opts)
 		vim.api.nvim_buf_clear_namespace(terminal.state.buf, log_special_mode_target_ns_id, 0, -1)
 	end
 
-	local jj_cmd = "jj log"
-	local merged_opts = vim.tbl_extend("force", default_log_opts, opts or {})
-
-	-- If a raw has been given simply execute it as is
-	if merged_opts.raw_flags then
-		return terminal.run(string.format("%s %s", jj_cmd, merged_opts.raw_flags), M.log_keymaps())
-	end
-
-	for key, value in pairs(merged_opts) do
-		key = key:gsub("_", "-")
-		if key == "limit" and value then
-			jj_cmd = string.format("%s --%s %d", jj_cmd, key, value)
-		elseif key == "revisions" and value then
-			jj_cmd = string.format("%s --%s %s", jj_cmd, key, value)
-		elseif value then
-			jj_cmd = string.format("%s --%s", jj_cmd, key)
-		end
-	end
-
-	terminal.run(jj_cmd, M.log_keymaps())
+	terminal.run(M.build_log_cmd(opts), M.log_keymaps())
 end
 
 ---
@@ -397,6 +472,8 @@ function M.handle_log_edit(ignore_immut, close_on_exit)
 
 	-- Try to execute cmd
 	runner.execute_command_async(cmd, function()
+		utils.reload_changed_file_buffers()
+
 		-- Close the terminal buffer
 		if close_on_exit then
 			utils.notify(string.format("Editing change: `%s`", revset), vim.log.levels.INFO)
@@ -580,6 +657,19 @@ function M.handle_log_push_bookmark()
 		utils.notify(string.format("Pushing bookmark `%s`...", bookmark), vim.log.levels.INFO)
 		push(cmd)
 	end
+end
+
+--- Handle seting a tag from `jj log` buffer for the revision under cursor
+--- @param revset? string Revset to set the tag on, if not provided it will do nothing.
+function M.handle_log_tag_set(revset)
+	if not revset or revset == "" then
+		revset = revset or get_revset()
+		if not revset or revset == "" then
+			return
+		end
+	end
+
+	require("jj.cmd").tag_set(revset)
 end
 
 --- Handle opening a PR/MR from `jj log` buffer for the revision under cursor
@@ -804,6 +894,7 @@ function M.handle_summary_edit(revset, ignore_immut)
 	end
 
 	runner.execute_command_async(cmd, function()
+		utils.reload_changed_file_buffers()
 		utils.notify(string.format("Editing revset: `%s`", revset), vim.log.levels.INFO)
 		-- Open the file in the current window
 		vim.cmd("edit " .. vim.fn.fnameescape(filepath.new_path))
@@ -1032,9 +1123,15 @@ function M.log_keymaps()
 			handler = M.handle_log_split,
 			modes = { "n" },
 		},
+		tag_set = {
+			desc = "Set a tag under the current revset",
+			handler = M.handle_log_tag_set,
+			modes = { "n" },
+		},
 	}
 
-	return cmd.merge_keymaps(cmd.resolve_keymaps_from_specs(keymaps, specs), cmd.terminal_keymaps())
+	local merged_keymaps = cmd.merge_keymaps(cmd.resolve_keymaps_from_specs(keymaps, specs), cmd.terminal_keymaps())
+	return apply_nowait_to_unique_keymaps(merged_keymaps)
 end
 
 --- Rebase mode keymaps
@@ -1088,7 +1185,7 @@ function M.rebase_keymaps()
 		},
 	}
 
-	return cmd.resolve_keymaps_from_specs(keymaps, spec)
+	return apply_nowait_to_unique_keymaps(cmd.resolve_keymaps_from_specs(keymaps, spec))
 end
 
 --- Squash mode keymaps
@@ -1118,7 +1215,7 @@ function M.squash_keymaps()
 		},
 	}
 
-	return cmd.resolve_keymaps_from_specs(keymaps, spec)
+	return apply_nowait_to_unique_keymaps(cmd.resolve_keymaps_from_specs(keymaps, spec))
 end
 
 --- Get keymaps for a specific mode

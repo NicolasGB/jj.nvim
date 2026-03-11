@@ -29,13 +29,30 @@ function M.execute_command(cmd, error_prefix, input, silent)
 	return output, success
 end
 
+--- Execute a system command synchronously and call success callback.
+--- @param cmd string The command to execute
+--- @param on_success function|nil Callback on success, receives output as parameter
+--- @param error_prefix string|nil Optional error message prefix
+--- @param input string|nil Optional input to pass to stdin
+--- @param silent boolean|nil Optional to silent the notification
+--- @return string|nil output The command output, or nil if failed
+--- @return boolean success Whether the command succeeded
+function M.execute_command_sync(cmd, on_success, error_prefix, input, silent)
+	local output, success = M.execute_command(cmd, error_prefix, input, silent)
+	if success and on_success then
+		on_success(output)
+	end
+	return output, success
+end
+
 --- Execute a system command asynchronously
 --- @param cmd string The command to execute
 --- @param on_success function|nil Callback on success, receives output as parameter
 --- @param error_prefix string|nil Optional error message prefix
 --- @param input string|nil Optional input to pass to stdin
 --- @param silent boolean|nil Optional to silent the notification
-function M.execute_command_async(cmd, on_success, error_prefix, input, silent)
+--- @param on_error function|nil Callback on error, receives ouptut as the parameter
+function M.execute_command_async(cmd, on_success, error_prefix, input, silent, on_error)
 	local output_lines = {}
 
 	local job_id = vim.fn.jobstart({ "sh", "-c", cmd }, {
@@ -68,6 +85,9 @@ function M.execute_command_async(cmd, on_success, error_prefix, input, silent)
 				end
 				if not silent then
 					vim.notify(error_message, vim.log.levels.ERROR, { title = "JJ" })
+				end
+				if on_error then
+					on_error(output)
 				end
 			end
 		end,
