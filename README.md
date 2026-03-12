@@ -36,6 +36,7 @@
   - [Diff Commands](#diff-commands)
 - [Default Config](#default-config)
 - [Configuration Examples](#configuration-examples)
+  - [Editor Options](#editor-options)
   - [New Command Options](#new-command-options)
   - [Push Command Options](#push-command-options)
   - [Bookmark Management Command Options](#bookmark-management-command-options)
@@ -397,6 +398,13 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
     snacks = {}
   },
 
+  -- Configure editor behavior for describe/commit buffers
+  editor = {
+    -- When true, automatically enter insert mode only if the description is empty.
+    -- If a description already exists, stay in normal mode.
+    auto_insert = false,
+  },
+
   -- Customize syntax highlighting colors for the describe buffer
   highlights = {
     editor = {
@@ -559,6 +567,36 @@ require("jj").setup({
         close = { "q", "<Esc>", "<C-c>" }, -- Customize close keybindings
       }
     }
+  }
+})
+```
+
+### Editor Options
+
+The top-level `editor` config controls behavior for the describe/commit editor buffers.
+
+#### `editor.auto_insert`
+
+When `auto_insert = true`, `jj.nvim` automatically enters Insert mode when opening a describe or commit buffer **only if the description is empty**.
+
+If the change already has a description, the buffer stays in Normal mode so you can review or edit the existing message without being dropped straight into Insert mode.
+
+Default:
+
+```lua
+require("jj").setup({
+  editor = {
+    auto_insert = false,
+  }
+})
+```
+
+Enable smart auto-insert:
+
+```lua
+require("jj").setup({
+  editor = {
+    auto_insert = true,
   }
 })
 ```
