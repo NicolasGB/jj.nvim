@@ -428,6 +428,26 @@ function M.handle_log_diff()
 	end
 end
 
+--- Handle log history
+function M.handle_log_history()
+	local revsets = extract_revsets_from_terminal_buffer()
+	if not revsets then
+		utils.notify("No valid revision found in the log line", vim.log.levels.ERROR)
+		return
+	end
+
+	-- Delete the pipes from the revsets string since jj new expects space separated revsets
+	revsets = revsets:gsub("| ", "")
+
+	local is_multiple = revsets:find(" ") ~= nil
+
+	if is_multiple then
+		-- Get the first and the last revset to diff
+		local list = vim.split(revsets, "%s+", { trimempty = true })
+		diff.diff_history_revisions({ left = list[1], right = list[#list] })
+	end
+end
+
 --- Handle describing a log line
 function M.handle_log_describe()
 	-- Store the cursor pos for when we exit the describe
@@ -1127,6 +1147,11 @@ function M.log_keymaps()
 			desc = "Set a tag under the current revset",
 			handler = M.handle_log_tag_set,
 			modes = { "n" },
+		},
+		history = {
+			desc = "Show history diff between revisions (only works with multiple revsets selected)",
+			handler = M.handle_log_history,
+			modes = { "v" },
 		},
 	}
 

@@ -24,6 +24,21 @@ local function diff_two_changes(left, right)
 	vim.cmd(string.format("DiffviewOpen %s..%s", commit_id_right, commit_id_left))
 end
 
+local function diff_two_changes_with_history(left, right)
+	local commit_id_left = utils.get_commit_id(left)
+	if commit_id_left == nil then
+		return
+	end
+
+	local commit_id_right = utils.get_commit_id(right)
+	if commit_id_right == nil then
+		return
+	end
+
+	-- test
+	vim.cmd(string.format("DiffviewFileHistory --range=%s..%s", commit_id_right, commit_id_left))
+end
+
 -- Register the diffview backend
 diff.register_backend("diffview", {
 	diff_current = function(opts)
@@ -58,5 +73,12 @@ diff.register_backend("diffview", {
 		end
 
 		diff_two_changes(opts.left, opts.right)
+	end,
+	diff_history_revisions = function(opts)
+		if not utils.has_dependency("diffview") then
+			return
+		end
+
+		diff_two_changes_with_history(opts.left, opts.right)
 	end,
 })
