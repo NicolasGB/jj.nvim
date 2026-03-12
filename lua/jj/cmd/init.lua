@@ -607,6 +607,36 @@ function M.bookmark_track()
 	end)
 end
 
+-- Jujutsu forget bookmark
+function M.bookmark_forget()
+	if not utils.ensure_jj() then
+		return
+	end
+
+	local bookmarks = utils.get_all_bookmarks()
+	if #bookmarks == 0 then
+		utils.notify("No bookmarks to forget", vim.log.levels.ERROR)
+		return
+	end
+
+	local log_open = terminal.is_log_buffer_open()
+
+	vim.ui.select(bookmarks, { prompt = "Which bookmark do you want to forget?" }, function(choice)
+		if choice then
+			runner.execute_command_async(
+				string.format("jj bookmark forget %s --quiet", vim.fn.shellescape(choice)),
+				function()
+					utils.notify(string.format("Bookmark `%s` is now untracked.", choice))
+					if log_open then
+						M.log()
+					end
+				end,
+				"Could not forget bookmark"
+			)
+		end
+	end)
+end
+
 -- Jujutsu undo
 function M.undo()
 	if not utils.ensure_jj() then
@@ -1269,6 +1299,8 @@ function M.j(args)
 				M.bookmark_move()
 			elseif remaining_args[1] == "delete" or remaining_args[1] == "d" then
 				M.bookmark_delete()
+			elseif remaining_args[1] == "forget" or remaining_args[1] == "f" then
+				M.bookmark_forget()
 			elseif remaining_args[1] == "track" or remaining_args[1] == "t" then
 				M.bookmark_track()
 			else
