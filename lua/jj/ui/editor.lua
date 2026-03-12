@@ -9,11 +9,15 @@ local buffer = require("jj.core.buffer")
 ---@field deleted? table Highlight settings for deleted lines
 ---@field renamed? table Highlight settings for renamed lines
 
+--- @class jj.ui.editor.opts
+---@field auto_insert? boolean Smart insert: enter insert mode when description is empty, stay in normal mode when one exists
+
 M.highlights = {
 	-- Only init this one by default since it's not handled natively by neovim
 	renamed = { fg = "#d29922", ctermfg = "Yellow" },
 }
 M.highlights_initialized = false
+M.auto_insert = true
 
 -- Initialize highlight groups once
 local function init_highlights()
@@ -43,13 +47,18 @@ local function init_highlights()
 end
 
 --- Setup function to configure highlights and other options
----@param opts? { highlights: jj.ui.editor.highlights } Configuration options
+---@param opts? { highlights: jj.ui.editor.highlights, auto_insert?: boolean } Configuration options
 function M.setup(opts)
 	opts = opts or {}
 
 	-- Merge user highlights with defaults
 	if opts.highlights then
 		M.highlights = vim.tbl_deep_extend("force", M.highlights, opts.highlights)
+	end
+
+	-- Store auto_insert option
+	if opts.auto_insert ~= nil then
+		M.auto_insert = opts.auto_insert
 	end
 
 	-- Reset highlights flag to force re-initialization with new highlights
@@ -124,6 +133,20 @@ function M.open_editor(initial_text, on_write, on_unload, keymaps)
 
 	-- Apply highlights initially
 	apply_highlights(buf)
+
+	-- Smart insert mode: insert when description is empty, normal mode otherwise
+	if M.auto_insert then
+		vim.schedule(function()
+			if not vim.api.nvim_buf_is_valid(buf) then
+				return
+			end
+			local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+			local desc = require("jj.utils").extract_description_from_describe(lines)
+			if not desc or desc == "" then
+				vim.cmd("startinsert")
+			end
+		end)
+	end
 
 	-- Reapply highlights when text changes
 	vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
