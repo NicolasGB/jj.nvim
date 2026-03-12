@@ -68,7 +68,7 @@
   - `squash` - Squash the current diff to its parent or interactive squash mode from the log buffer
   - `split` - Split a change interactively in a floating terminal
   - `rebase` - Rebase changes to a destination
-  - `bookmark create/delete/forget` - Create, delete, and forget bookmarks
+  - `bookmark create/delete/track/forget` - Create, delete, track, and forget (untrack) bookmarks
   - `tag set/delete/push` - Create, delete, and push tags (push requires colocated repos)
   - `undo` - Undo the last operation
   - `redo` - Redo the last undone operation
@@ -365,7 +365,7 @@ The plugin provides a `:J` command that accepts jj subcommands:
 :J split             " Split a change interactively
 :J diff_history      " Prompt for a `left..right` range and open a history-aware diff
 :J diff_history main..@ " Open a history-aware diff between main and the working copy
-:J bookmark create/move/delete/forget
+:J bookmark create/move/delete/track/forget
 :J tag set           " Set a tag (prompts for revision and tag name)
 :J tag set abc123    " Set a tag on a specific revision
 :J tag delete        " Delete a tag via picker
@@ -719,11 +719,18 @@ local cmd = require("jj.cmd")
 cmd.bookmark_delete()  -- Select bookmark to delete
 ```
 
-The `bookmark_forget` function forgets a bookmark:
+The `bookmark_track` function tracks an untracked bookmark:
 
 ```lua
 local cmd = require("jj.cmd")
-cmd.bookmark_forget()  -- Select bookmark to forget
+cmd.bookmark_track()  -- Select bookmark to track
+```
+
+The `bookmark_forget` function forgets a bookmark (untracks it locally):
+
+```lua
+local cmd = require("jj.cmd")
+cmd.bookmark_forget()  -- Select bookmark to forget/untrack
 ```
 
 ### Tag Management Command Options
