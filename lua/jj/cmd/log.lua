@@ -979,7 +979,7 @@ function M.handle_log_summary()
 	for _, line in ipairs(lines) do
 		max_width = math.max(max_width, vim.fn.strdisplaywidth(line))
 	end
-	local width = math.min(max_width + 2, vim.o.columns - 4)
+	local width = math.min(max_width + 2, 100)
 	local height = #lines
 
 	local buf, _ = terminal.run_tooltip(cmd, {
