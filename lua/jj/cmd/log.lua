@@ -692,6 +692,15 @@ function M.handle_log_tag_set(revset)
 	require("jj.cmd").tag_set(revset)
 end
 
+--- Handle log change revset
+function M.handle_log_change_revset()
+	vim.ui.input({ prompt = "Enter new revset: " }, function(input)
+		if input and input ~= "" then
+			M.log({ revisions = input })
+		end
+	end)
+end
+
 --- Handle opening a PR/MR from `jj log` buffer for the revision under cursor
 --- @param list_bookmarks? boolean If true, prompt to select from all bookmarks instead of using current revision
 function M.handle_log_open_pr(list_bookmarks)
@@ -1152,6 +1161,11 @@ function M.log_keymaps()
 			desc = "Show history diff between revisions (only works with multiple revsets selected)",
 			handler = M.handle_log_history,
 			modes = { "v" },
+		},
+		change_revset = {
+			desc = "Change the revset(s) being viewed",
+			handler = M.handle_log_change_revset,
+			modes = { "n", "v" },
 		},
 	}
 

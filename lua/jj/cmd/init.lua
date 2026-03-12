@@ -56,6 +56,7 @@ local split_module = require("jj.cmd.split")
 --- @field summary_tooltip? jj.cmd.summary_tooltip.keymaps
 --- @field tag_set? string|string[]
 --- @field history? string|string[]
+--- @field change_revset? string|string[]
 
 --- @class jj.cmd.rebase.keymaps
 --- @field onto? string|string[]
@@ -199,6 +200,7 @@ M.config = {
 			split = "<C-s>",
 			tag_set = "<S-t>",
 			history = "<S-h>",
+			change_revset = "<C-r>",
 		},
 		status = {
 			open_file = "<CR>",

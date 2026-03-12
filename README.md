@@ -15,6 +15,7 @@
   - [View change summary from the log buffer](#view-change-summary-from-the-log-buffer)
   - [Diff any change](#diff-any-change)
   - [Diff revision history](#diff-revision-history)
+  - [Change the log revset from the log buffer](#change-the-log-revset-from-the-log-buffer)
   - [Describe a change](#describe-a-change)
   - [Edit changes](#edit-changes)
   - [Create new changes from the log buffer](#create-new-changes-from-the-log-buffer)
@@ -59,7 +60,7 @@
 - First class citizens with ui integration
   - `describe` / `desc` - Set change descriptions with a Git-style commit message editor
   - `status` / `st` - Show repository status
-  - `log` - Display log history with configurable options
+  - `log` - Display log history with configurable options and change the displayed revset from the log buffer
   - `diff` - Show changes with optional filtering by current file
   - `new` - Create a new change with optional parent selection
   - `edit` - Edit a change
@@ -121,6 +122,14 @@ You can now open a history-aware diff between two revisions:
 - The `native` backend currently shows a warning because history mode is not supported there yet
 
 This is useful when you want to inspect the evolution of a stack or compare a revision range with commit history preserved instead of showing a single plain diff.
+
+### Change the log revset from the log buffer
+
+You can change which revset the log buffer is displaying without closing and reopening it:
+
+- `<C-r>` - Prompt for a new revset and reload the log buffer with it
+
+This is useful for quickly narrowing the log to something like `main::@`, `mutable()`, or any other revset while staying in the same log view.
 
 ### Describe a change
 
@@ -492,6 +501,7 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
         quick_squash = "<S-s>",             -- Quick squash revision under cursor into its parent (ignore immutability)
         split = "<C-s>",                    -- Split the revision under cursor
         history = "<S-h>",                  -- Show a history-aware diff for the selected revision range
+        change_revset = "<C-r>",            -- Change the revset(s) being viewed in the log buffer
         tag_create = "<S-t>",               -- Create a tag on the revision under cursor
         summary = "<S-k>",                  -- Show summary tooltip for revision under cursor
         summary_tooltip = {
