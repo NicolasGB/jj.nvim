@@ -542,20 +542,32 @@ function M.get_describe_text(revset)
 	return text
 end
 ---
---- Get the commit id from a given revision
+--- Get the commit id from a given revision. Returns nil and notifies an error if multiple commit_ids are found for a single revset
 --- @param revset string The revset to extract the commit id from
 --- @return string|nil
 function M.get_commit_id(revset)
 	local output, success = runner.execute_command(
-		string.format("jj log --no-graph -r '%s' -T 'commit_id' --quiet", revset),
+		string.format([[jj log --no-graph -r '%s' -T 'commit_id ++ "\n"' --quiet]], revset),
 		"Error extracting commit id",
 		nil,
 		true
 	)
-	-- Test quie
 
 	if not success or not output then
 		return nil
+	end
+
+	local id = vim.split(output, "\n", { trimempty = true })
+	if #id > 1 then
+		M.notify(
+			string.format(
+				"A unique `commit_id` for revision `%s` was expected, but it has multiple ones.\nThis is not currently supported.",
+				revset
+			),
+			vim.log.levels.ERROR,
+			5000
+		)
+		return
 	end
 
 	return vim.trim(output)
