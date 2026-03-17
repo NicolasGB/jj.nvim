@@ -787,7 +787,7 @@ function M.handle_log_bookmark()
 				end)
 			else
 				-- Move existing bookmark to the revision
-				local cmd = string.format("jj bookmark move %s --to %s", choice, revset)
+				local cmd = string.format("jj bookmark move %s --to %s -B", choice, revset)
 				runner.execute_command_async(cmd, function()
 					utils.notify(string.format("Moved bookmark `%s` to `%s`", choice, revset), vim.log.levels.INFO)
 					M.log({})

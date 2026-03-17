@@ -539,7 +539,7 @@ function M.bookmark_move()
 				default = "@",
 			}, function(revset)
 				if revset then
-					local cmd = string.format("jj b m %s --to %s", choice, revset)
+					local cmd = string.format("jj b m %s --to %s -B", choice, revset)
 					runner.execute_command_async(cmd, function()
 						utils.notify(
 							string.format("Bookmark `%s` moved successfully to %s", choice, revset),
