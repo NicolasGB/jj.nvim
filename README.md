@@ -406,12 +406,14 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
   },
 
   -- Customize syntax highlighting colors for the describe buffer
+  -- Note: added, modified, deleted use Neovim's built-in highlight groups (Added, Changed, Removed)
+  -- Only renamed has a custom default since Neovim doesn't have a built-in group for it
   highlights = {
     editor = {
-        added = { fg = "#3fb950", ctermfg = "Green" },      -- Added files
-        modified = { fg = "#56d4dd", ctermfg = "Cyan" },    -- Modified files
-        deleted = { fg = "#f85149", ctermfg = "Red" },      -- Deleted files
-        renamed = { fg = "#d29922", ctermfg = "Yellow" },   -- Renamed files
+        -- added = { fg = "#3fb950", ctermfg = "Green" },   -- Optional: override Added highlight
+        -- modified = { fg = "#56d4dd", ctermfg = "Cyan" }, -- Optional: override Changed highlight
+        -- deleted = { fg = "#f85149", ctermfg = "Red" },   -- Optional: override Removed highlight
+        renamed = { fg = "#d29922", ctermfg = "Yellow" },   -- Renamed files (custom default)
     },
     log = {
         selected = { bg = "#3d2c52", ctermbg = "DarkMagenta" },
@@ -473,8 +475,8 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
     keymaps = {
       -- Log buffer keymaps (set to nil to disable)
       log = {
-        checkout = "<CR>",                  -- Edit revision under cursor
-        checkout_immutable = "<S-CR>",      -- Edit revision (ignore immutability)
+        edit = "<CR>",                      -- Edit revision under cursor
+        edit_immutable = "<S-CR>",          -- Edit revision (ignore immutability)
         describe = "d",                     -- Describe revision under cursor
         diff = "<S-d>",                     -- Diff revision under cursor
         edit = "e",                         -- Edit revision under cursor
@@ -493,8 +495,8 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
         rebase = "r",                       -- Enter rebase mode targeting revision under cursor or selected revisions
         rebase_mode = {
             onto = { "<CR>", "o" },           -- Select revision under cursor as rebase onto destination
-            after = { "a", "A" },             -- Rebase after revision under cursor
-            before = { "b", "B" },            -- Rebase before revision under cursor
+            after = "a",                      -- Rebase after revision under cursor
+            before = "b",                     -- Rebase before revision under cursor
             onto_immutable = { "<S-CR>", "<S-o>" }, -- Select revision  as a rebase onto destination (ignore immutability)
             after_immutable = "<S-a>",              -- Rebase after revision under cursor (ignore immutability)
             before_immutable = "<S-b>",             -- Rebase before revision under cursor (ignore immutability)
@@ -510,7 +512,7 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
         split = "<C-s>",                    -- Split the revision under cursor
         history = "<S-h>",                  -- Show a history-aware diff for the selected revision range
         change_revset = "<C-r>",            -- Change the revset(s) being viewed in the log buffer
-        tag_create = "<S-t>",               -- Create a tag on the revision under cursor
+        tag_set = "<S-t>",                  -- Create a tag on the revision under cursor
         summary = "<S-k>",                  -- Show summary tooltip for revision under cursor
         summary_tooltip = {
             diff = "<S-d>",                   -- Diff file at this revision
@@ -525,6 +527,11 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
       },
       -- Close keymaps (shared across all buffers)
       close = { "q", "<Esc>" },
+      -- Floating buffer keymaps (for diff floating windows from log buffer)
+      floating = {
+        close = "q",                          -- Close floating buffer
+        hide = "<Esc>",                       -- Hide floating buffer
+      },
     },
 
 }}
@@ -948,7 +955,7 @@ vim.keymap.set("n", "<leader>jA", annotate.line, { desc = "JJ annotate line" })
         },
         keymaps = {
           log = {
-            checkout = "<CR>",
+            edit = "<CR>",
             describe = "d",
             diff = "<S-d>",
             abandon = "<S-a>",
@@ -962,8 +969,10 @@ vim.keymap.set("n", "<leader>jA", annotate.line, { desc = "JJ annotate line" })
         },
       },
       highlights = {
-        -- Customize colors if desired
-        modified = { fg = "#89ddff" },
+        editor = {
+          -- Customize colors if desired
+          modified = { fg = "#89ddff" },
+        }
       }
     })
 
@@ -998,7 +1007,7 @@ vim.keymap.set("n", "<leader>jA", annotate.line, { desc = "JJ annotate line" })
     -- Diff commands
     local diff = require("jj.diff")
     vim.keymap.set("n", "<leader>df", function() diff.open_vdiff() end, { desc = "JJ diff current buffer" })
-    vim.keymap.set("n", "<leader>dF", function() diff.open_hsplit() end, { desc = "JJ hdiff current buffer" })
+    vim.keymap.set("n", "<leader>dF", function() diff.open_hdiff() end, { desc = "JJ hdiff current buffer" })
 
     -- Pickers
     local picker = require("jj.picker")
