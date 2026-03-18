@@ -201,6 +201,8 @@ M.config = {
 			tag_set = "<S-t>",
 			history = "<S-h>",
 			change_revset = "<C-r>",
+			select_next_revision = "gj",
+			select_prev_revision = "gk",
 		},
 		status = {
 			open_file = "<CR>",
