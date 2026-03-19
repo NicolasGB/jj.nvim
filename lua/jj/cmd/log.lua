@@ -1023,6 +1023,37 @@ function M.handle_log_summary()
 	end
 end
 
+--- Move cursor to the next or previous revision line in the log buffer.
+--- @param direction integer 1 for next, -1 for previous
+local function select_revision(direction)
+	local buf = terminal.state.buf or vim.api.nvim_get_current_buf()
+	local total_lines = vim.api.nvim_buf_line_count(buf)
+
+	-- Start scanning from the line after/before the current revision line
+	local revset_line, _ = get_revset_line()
+	local start = revset_line + 1 + direction -- revset_line is 0-indexed; convert to 1-indexed then step
+
+	local line = start
+	while line >= 1 and line <= total_lines do
+		local content = vim.api.nvim_buf_get_lines(buf, line - 1, line, false)[1]
+		if parser.get_revset(content) then
+			buffer.set_cursor(buf, { line, 0 })
+			return
+		end
+		line = line + direction
+	end
+end
+
+--- Move cursor to the next revision in the log buffer
+function M.handle_log_select_next_revision()
+	select_revision(1)
+end
+
+--- Move cursor to the previous revision in the log buffer
+function M.handle_log_select_prev_revision()
+	select_revision(-1)
+end
+
 --- Resolve log keymaps from config, filtering out nil values
 --- @return jj.core.buffer.keymap[]
 function M.log_keymaps()
@@ -1165,6 +1196,16 @@ function M.log_keymaps()
 		change_revset = {
 			desc = "Change the revset(s) being viewed",
 			handler = M.handle_log_change_revset,
+			modes = { "n", "v" },
+    },
+		select_next_revision = {
+			desc = "Move cursor to the next revision",
+			handler = M.handle_log_select_next_revision,
+			modes = { "n", "v" },
+		},
+		select_prev_revision = {
+			desc = "Move cursor to the previous revision",
+			handler = M.handle_log_select_prev_revision,
 			modes = { "n", "v" },
 		},
 	}

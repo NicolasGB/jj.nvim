@@ -514,6 +514,8 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
         change_revset = "<C-r>",            -- Change the revset(s) being viewed in the log buffer
         tag_set = "<S-t>",                  -- Create a tag on the revision under cursor
         summary = "<S-k>",                  -- Show summary tooltip for revision under cursor
+        select_next_revision = "gj",        -- Move cursor to the next revision in the log
+        select_prev_revision = "gk",        -- Move cursor to the previous revision in the log
         summary_tooltip = {
             diff = "<S-d>",                   -- Diff file at this revision
             edit = "<CR>",                    -- Edit revision and open file
