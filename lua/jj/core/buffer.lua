@@ -39,6 +39,7 @@ local M = {}
 --- @field on_exit? fun(buf: number) Callback when buffer is closed
 --- @field keymaps? jj.core.buffer.keymap[] Keymaps to set on the buffer
 --- @field win_options? table Window-specific options to set
+--- @field zindex? number Stacking order (default: 50)
 
 --- Create and configure a new buffer
 --- @param opts jj.core.buffer.opts Buffer configuration options
@@ -153,6 +154,7 @@ function M.create_float(opts)
 		height = height,
 		row = row,
 		col = col,
+		zindex = opts.zindex,
 		style = opts.style or "minimal",
 		border = opts.border or "rounded",
 	}

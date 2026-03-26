@@ -334,7 +334,7 @@ function M.log(opts)
 	end
 
 	-- If a log was already being displayed before this command we will want to maintain the cursor position
-	if terminal.state.buf_cmd == "log" then
+	if terminal.is_log_buffer_open() then
 		terminal.store_cursor_position()
 		-- Make sure to clear highlights before rerunning since the previous log buffer might have some
 		vim.api.nvim_buf_clear_namespace(terminal.state.buf, log_selected_ns_id, 0, -1)
@@ -856,9 +856,17 @@ function M.handle_log_split()
 		on_exit = function(exit_code)
 			if exit_code == 0 then
 				utils.notify(string.format("Successfully split `%s`", revset), vim.log.levels.INFO)
-				M.log({})
+				vim.schedule(function()
+					M.log({})
+				end)
 			else
 				utils.notify(string.format("Cancelled splitting `%s`", revset), vim.log.levels.WARN)
+				-- Since we previously replaced the floating with the split we actually want to re run the log cmd
+				if require("jj").config.terminal.window.type == "floating" then
+					vim.schedule(function()
+						M.log({})
+					end)
+				end
 			end
 		end,
 	})
@@ -1197,7 +1205,7 @@ function M.log_keymaps()
 			desc = "Change the revset(s) being viewed",
 			handler = M.handle_log_change_revset,
 			modes = { "n", "v" },
-    },
+		},
 		select_next_revision = {
 			desc = "Move cursor to the next revision",
 			handler = M.handle_log_select_next_revision,

@@ -246,8 +246,6 @@ cmd.split({ filesets = { "src/" } })             -- Only include specific filese
 cmd.split({ ignore_immutable = true })           -- Split an immutable revision
 ```
 
-The floating terminal size is configurable via the `split.width` and `split.height` options (ratios between `0.1` and `1.0`).
-
 ### Rebase changes from the log buffer
 
 Enter an interactive rebase mode directly from the log buffer to rebase one or more changes:
@@ -427,6 +425,13 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
     -- If cursor column is being reset to 0 when refreshing commands, try increasing this value
     -- This delay allows the terminal emulator to complete rendering before restoring cursor position
     cursor_render_delay = 10,
+ 
+    -- Configure terminal window
+    window = {
+      type = "split",   -- Type of window the terminal is displayed in
+      width = 0.99,     -- Width % of the floating window (between 0.1 and 1.0)
+      height = 0.95,    -- Height % of the floating window (between 0.1 and 1.0)
+    },
   },
 
   -- Configure diff module
@@ -458,12 +463,6 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
     -- Configure log command behavior
     log = {
       close_on_edit = false,                                     -- Close log buffer after editing a change
-    },
-
-    -- Configure split command
-    split = {
-      width = 0.99,                                              -- Width ratio of the floating terminal (0.1 to 1.0)
-      height = 0.95,                                             -- Height ratio of the floating terminal (0.1 to 1.0)
     },
 
     -- Configure bookmark command
@@ -529,7 +528,7 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
       },
       -- Close keymaps (shared across all buffers)
       close = { "q", "<Esc>" },
-      -- Floating buffer keymaps (for diff floating windows from log buffer)
+      -- Floating buffer keymaps
       floating = {
         close = "q",                          -- Close floating buffer
         hide = "<Esc>",                       -- Hide floating buffer
