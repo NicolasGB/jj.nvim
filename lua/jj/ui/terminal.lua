@@ -261,6 +261,7 @@ function M.run_floating(cmd, keymaps, float_opts)
 			relativenumber = false,
 			cursorline = false,
 			signcolumn = "no",
+			winfixbuf = true,
 		},
 		on_exit = function(b)
 			if state.floating_buf == b then
@@ -445,6 +446,8 @@ function M.run(cmd, keymaps)
 	})
 
 	local win = vim.api.nvim_get_current_win()
+	vim.wo[win].winfixbuf = true
+
 	vim.bo[state.buf].bufhidden = "wipe"
 
 	-- Create new terminal channel
@@ -650,6 +653,7 @@ function M.run_tooltip(cmd, tool_opts)
 			relativenumber = false,
 			cursorline = false,
 			signcolumn = "no",
+			winfixbuf = true,
 		},
 	})
 
