@@ -116,13 +116,13 @@ diff.register_backend("native", {
 		local terminal = require("jj.ui.terminal")
 
 		local cmd = string.format("jj show -r %s --quiet --no-pager", opts.rev)
-		terminal.run_floating(cmd, require("jj.cmd").floating_keymaps())
+		terminal.run_floating(cmd)
 	end,
 	diff_revisions = function(opts)
 		local terminal = require("jj.ui.terminal")
 
 		local cmd = string.format("jj diff -f %s -t %s --quiet --no-pager", opts.left, opts.right)
-		terminal.run_floating(cmd, require("jj.cmd").floating_keymaps())
+		terminal.run_floating(cmd)
 	end,
 	diff_history_revisions = function(_)
 		utils.notify(

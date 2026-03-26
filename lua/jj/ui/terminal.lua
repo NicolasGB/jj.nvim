@@ -220,7 +220,10 @@ end
 --- @param keymaps jj.core.buffer.keymap[]|nil Additional keymaps to set for this floating buffer
 --- @param float_opts? {title?: string, height?: number, width?: number, modifiable?: boolean, keep_modifiable?: boolean, on_exit?: fun(exit_code: integer), interactive?: boolean}
 function M.run_floating(cmd, keymaps, float_opts)
+	local jj_cmd = require("jj.cmd")
+	keymaps = jj_cmd.merge_keymaps(keymaps or {}, jj_cmd.floating_keymaps())
 	float_opts = float_opts or {}
+
 	-- Clean up previous state if invalid
 	if state.floating_buf and not vim.api.nvim_buf_is_valid(state.floating_buf) then
 		state.floating_buf = nil
@@ -398,6 +401,8 @@ function M.run(cmd, keymaps)
 	if type(cmd) == "string" then
 		cmd = { cmd }
 	end
+	local jj_cmd = require("jj.cmd")
+	keymaps = jj_cmd.merge_keymaps(keymaps or {}, jj_cmd.terminal_keymaps())
 
 	-- Clean up previous state if invalid
 	if state.buf and not vim.api.nvim_buf_is_valid(state.buf) then

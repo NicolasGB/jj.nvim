@@ -1209,7 +1209,7 @@ function M.j(args)
 			if #remaining_args == 0 then
 				M.edit()
 			else
-				terminal.run(cmd, M.terminal_keymaps())
+				terminal.run(cmd)
 			end
 		end,
 		new = function()
@@ -1308,7 +1308,7 @@ function M.j(args)
 			elseif remaining_args[1] == "track" or remaining_args[1] == "t" then
 				M.bookmark_track()
 			else
-				terminal.run(cmd, M.terminal_keymaps())
+				terminal.run(cmd)
 			end
 		end,
 		annotate = function()
@@ -1348,7 +1348,7 @@ function M.j(args)
 		if type(cmd) == "table" and cmd[1] ~= "jj" then
 			table.insert(cmd, 1, "jj")
 		end
-		terminal.run(cmd, M.terminal_keymaps())
+		terminal.run(cmd)
 	end
 end
 

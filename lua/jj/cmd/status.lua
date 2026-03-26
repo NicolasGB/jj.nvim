@@ -99,9 +99,7 @@ function M.status(opts)
 		end
 	else
 		-- Default behavior: show in buffer
-		local cmd = require("jj.cmd")
-		local keymaps = cmd.merge_keymaps(M.status_keymaps(), cmd.terminal_keymaps())
-		terminal.run(cmd_str, keymaps)
+		terminal.run(cmd_str, M.status_keymaps())
 	end
 end
 
