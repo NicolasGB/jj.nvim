@@ -7,7 +7,7 @@ local M = {}
 --- @field window? jj.terminal.window Options for the window used
 ---
 --- @class jj.terminal.window
---- @field type? "split"|"floating" Type of window the terminal is displayed in
+--- @field type? "hsplit"|"vsplit"|"floating"|"tab" Type of window the terminal is displayed in
 --- @field width? number Width % of the floating window (between 0.1 and 1.0)
 --- @field height? number Height % of the floating window (between 0.1 and 1.0)
 
@@ -19,7 +19,7 @@ local opts = {
 	cursor_render_delay = 10,
 
 	window = {
-		type = "split",
+		type = "hsplit",
 		width = 0.99,
 		height = 0.95,
 	},
@@ -497,9 +497,13 @@ function M.run(cmd, keymaps)
 	end
 
 	-- Create new terminal buffer
+	local split_type = opts.window.type == "hsplit" and "horizontal"
+		or opts.window.type == "vsplit" and "vertical"
+		or opts.window.type == "tab" and "tab"
+	local full_size = opts.window.type == "hsplit" and vim.o.lines or vim.o.columns
 	state.buf = buffer.create({
-		split = "horizontal",
-		size = math.floor(vim.o.lines / 2),
+		split = split_type,
+		size = math.floor(full_size / 2),
 		on_exit = function(buf)
 			if state.buf == buf then
 				state.buf = nil
