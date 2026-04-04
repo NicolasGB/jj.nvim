@@ -1254,7 +1254,20 @@ function M.j(args)
 			require("jj.cmd.split").split(opts)
 		end,
 		diff = function()
-			M.diff({ current = false })
+			if remaining_args_str == "" then
+				M.diff({ current = false })
+			else
+				local parts = parser.parse_diff_range(remaining_args_str)
+				utils.notify(vim.inspect(parts))
+				if parts then
+					require("jj.diff").diff_revisions({ left = parts.left, right = parts.right })
+				else
+					utils.notify(
+						"Invalid diff range. Format must be `<left>..<right>` or `<left>...<right>`",
+						vim.log.levels.ERROR
+					)
+				end
+			end
 		end,
 		diff_history = function()
 			if remaining_args_str == "" then
