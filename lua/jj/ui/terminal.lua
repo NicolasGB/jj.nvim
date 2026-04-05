@@ -8,8 +8,9 @@ local M = {}
 ---
 --- @class jj.terminal.window
 --- @field type? "hsplit"|"vsplit"|"floating"|"tab" Type of window the terminal is displayed in
---- @field width? number Width % of the floating window (between 0.1 and 1.0)
---- @field height? number Height % of the floating window (between 0.1 and 1.0)
+--- @field split_size? number Size % of the split window, either height (hsplit) or width (vsplit) (between 0.1 and 1.0)
+--- @field floating_width? number Width % of the floating window (between 0.1 and 1.0)
+--- @field floating_height? number Height % of the floating window (between 0.1 and 1.0)
 
 local utils = require("jj.utils")
 local buffer = require("jj.core.buffer")
@@ -20,8 +21,9 @@ local opts = {
 
 	window = {
 		type = "hsplit",
-		width = 0.99,
-		height = 0.95,
+		split_size = 0.5,
+		floating_width = 0.99,
+		floating_height = 0.95,
 	},
 }
 
@@ -97,8 +99,9 @@ function M.setup(user_opts)
 	opts = vim.tbl_deep_extend("force", opts, user_opts or {})
 
 	-- Clamp window ratios
-	opts.window.width = clamp_ratio(opts.window.width, "terminal.window.width")
-	opts.window.height = clamp_ratio(opts.window.height, "terminal.window.height")
+	opts.window.split_size = clamp_ratio(opts.window.split_size, "terminal.window.split_size")
+	opts.window.floating_width = clamp_ratio(opts.window.floating_width, "terminal.window.floating_width")
+	opts.window.floating_height = clamp_ratio(opts.window.floating_height, "terminal.window.floating_height")
 end
 
 --- Help for terminal buffer
@@ -295,8 +298,8 @@ function M.run_floating(cmd, keymaps, float_opts)
 		title_pos = "center",
 		enter = true,
 		bufhidden = "hide",
-		height = math.floor(vim.o.lines * opts.window.height),
-		width = math.floor(vim.o.columns * opts.window.width),
+		height = math.floor(vim.o.lines * opts.window.floating_height),
+		width = math.floor(vim.o.columns * opts.window.floating_width),
 		modifiable = float_opts.modifiable ~= nil and float_opts.modifiable or true,
 		win_options = {
 			wrap = true,
@@ -503,7 +506,7 @@ function M.run(cmd, keymaps)
 	local full_size = opts.window.type == "hsplit" and vim.o.lines or vim.o.columns
 	state.buf = buffer.create({
 		split = split_type,
-		size = math.floor(full_size / 2),
+		size = math.floor(full_size * opts.window.split_size),
 		on_exit = function(buf)
 			if state.buf == buf then
 				state.buf = nil

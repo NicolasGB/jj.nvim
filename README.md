@@ -428,9 +428,10 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
  
     -- Configure terminal window
     window = {
-      type = "hsplit",  -- Type of window the terminal is displayed in
-      width = 0.99,     -- Width % of the floating window (between 0.1 and 1.0)
-      height = 0.95,    -- Height % of the floating window (between 0.1 and 1.0)
+       type = "hsplit",           -- Type of window the terminal is displayed in
+       split_size = 0.5,          -- Size % of the split window, either height (hsplit) or width (vsplit) (between 0.1 and 1.0)
+       floating_width = 0.99,     -- Width % of the floating window (between 0.1 and 1.0)
+       floating_height = 0.95,    -- Height % of the floating window (between 0.1 and 1.0)
     },
   },
 
