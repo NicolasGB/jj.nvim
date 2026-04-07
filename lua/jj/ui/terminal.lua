@@ -328,9 +328,6 @@ function M.run_floating(cmd, keymaps, float_opts)
 		end,
 	})
 	state.floating_buf = buf
-	if state.cursor_restore_pos then
-		M.restore_cursor_position()
-	end
 
 	local jid
 	local chan
@@ -398,6 +395,10 @@ function M.run_floating(cmd, keymaps, float_opts)
 						buffer.set_modifiable(state.floating_buf, false)
 					end
 					buffer.stop_insert(state.floating_buf)
+					-- Restore the cursor position now that the command is done
+					if state.cursor_restore_pos then
+						M.restore_cursor_position()
+					end
 				end)
 			end,
 		})
