@@ -50,6 +50,10 @@ function M.handle_status_enter()
 		return
 	end
 
+	if require("jj").config.terminal.window.type == "floating" then
+		terminal.close_floating_buffer()
+	end
+
 	local filepath = file_info.new_path
 	local stat = vim.uv.fs_stat(filepath)
 	if not stat then
@@ -90,7 +94,7 @@ function M.status(opts)
 		return
 	end
 
-	local cmd_str = "jj st"
+	local cmd_str = "jj status"
 
 	if opts and opts.notify then
 		local output, success = runner.execute_command(cmd_str, "Failed to get status")
@@ -99,9 +103,7 @@ function M.status(opts)
 		end
 	else
 		-- Default behavior: show in buffer
-		local cmd = require("jj.cmd")
-		local keymaps = cmd.merge_keymaps(M.status_keymaps(), cmd.terminal_keymaps())
-		terminal.run(cmd_str, keymaps)
+		terminal.run(cmd_str, M.status_keymaps())
 	end
 end
 

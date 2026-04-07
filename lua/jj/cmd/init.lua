@@ -94,11 +94,7 @@ local split_module = require("jj.cmd.split")
 --- @field close? string|string[] Keymaps for the close keybind
 --- @field floating? jj.cmd.floating.keymaps Keymaps for the floating buffer
 
----@class jj.cmd.split.common
----@field height? number Height % for the split buffer (between 0.1 and 1.0)
----@field width? number Width % for the split buffer (between 0.1 and 1.0)
-
----@class jj.cmd.split.opts: jj.cmd.split.common
+---@class jj.cmd.split.opts
 ---@field rev? string Revision to split
 ---@field message? string Commit message for the new revision
 ---@field filesets? string[] Filesets to include in the split
@@ -106,12 +102,9 @@ local split_module = require("jj.cmd.split")
 ---@field parallel? boolean Run operations in parallel
 ---@field on_exit? fun(exit_code: number) Callback invoked when command exits
 
----@class jj.cmd.split: jj.cmd.split.common
-
 --- @class jj.cmd.opts
 --- @field describe? jj.cmd.describe
 --- @field log? jj.cmd.log
---- @field split? jj.cmd.split
 --- @field bookmark? jj.cmd.bookmark
 --- @field keymaps? jj.cmd.keymaps Keymaps for the buffers containing the  of the commands
 ---
@@ -148,10 +141,6 @@ M.config = {
 	},
 	log = {
 		close_on_edit = false,
-	},
-	split = {
-		width = 0.99,
-		height = 0.95,
 	},
 	bookmark = {
 		prefix = "",
@@ -401,7 +390,7 @@ function M.squash()
 	local cmd = "jj squash"
 	runner.execute_command_async(cmd, function()
 		utils.notify("Command `squash` was succesful.", vim.log.levels.INFO)
-		if terminal.state.buf_cmd == "log" then
+		if terminal.is_log_buffer_open() then
 			M.log()
 		end
 	end, "Failed to squash")
@@ -650,7 +639,7 @@ function M.undo()
 	local cmd = "jj undo"
 	runner.execute_command_async(cmd, function()
 		utils.notify("Command `undo` was succesful.", vim.log.levels.INFO)
-		if terminal.state.buf_cmd == "log" then
+		if terminal.is_log_buffer_open() then
 			M.log({})
 		end
 	end, "Failed to undo")
@@ -665,7 +654,7 @@ function M.redo()
 	local cmd = "jj redo"
 	runner.execute_command_async(cmd, function()
 		utils.notify("Command `redo` was succesful.", vim.log.levels.INFO)
-		if terminal.state.buf_cmd == "log" then
+		if terminal.is_log_buffer_open() then
 			M.log({})
 		end
 	end, "Failed to redo")
@@ -701,7 +690,7 @@ function M.fetch()
 	end
 
 	-- Save the lop one state to refresh
-	local log_open = terminal.state.buf_cmd == "log"
+	local log_open = terminal.is_log_buffer_open()
 
 	-- Get the list of remotes
 	local remotes = utils.get_remotes()
@@ -751,7 +740,7 @@ function M.push(opts)
 	opts = opts or {}
 
 	-- Save the lop one state to refresh
-	local log_open = terminal.state.buf_cmd == "log"
+	local log_open = terminal.is_log_buffer_open()
 
 	local cmd = "jj git push"
 	if opts.bookmark then
@@ -1209,7 +1198,7 @@ function M.j(args)
 			if #remaining_args == 0 then
 				M.edit()
 			else
-				terminal.run(cmd, M.terminal_keymaps())
+				terminal.run(cmd)
 			end
 		end,
 		new = function()
@@ -1321,7 +1310,7 @@ function M.j(args)
 			elseif remaining_args[1] == "track" or remaining_args[1] == "t" then
 				M.bookmark_track()
 			else
-				terminal.run(cmd, M.terminal_keymaps())
+				terminal.run(cmd)
 			end
 		end,
 		annotate = function()
@@ -1361,7 +1350,7 @@ function M.j(args)
 		if type(cmd) == "table" and cmd[1] ~= "jj" then
 			table.insert(cmd, 1, "jj")
 		end
-		terminal.run(cmd, M.terminal_keymaps())
+		terminal.run(cmd)
 	end
 end
 

@@ -4,12 +4,27 @@ local M = {}
 --- Terminal configuration
 --- @class jj.ui.terminal.opts
 --- @field cursor_render_delay integer The delay in ms when cursor rerendering the terminal state (default: 10ms). If you're loosing the column of the cursor try adding more delay. I currently did not find a better way to do so due to async handling of the ouptut in the terminal
+--- @field window? jj.terminal.window Options for the window used
+---
+--- @class jj.terminal.window
+--- @field type? "hsplit"|"vsplit"|"floating"|"tab" Type of window the terminal is displayed in
+--- @field split_size? number Size % of the split window, either height (hsplit) or width (vsplit) (between 0.1 and 1.0)
+--- @field floating_width? number Width % of the floating window (between 0.1 and 1.0)
+--- @field floating_height? number Height % of the floating window (between 0.1 and 1.0)
 
+local utils = require("jj.utils")
 local buffer = require("jj.core.buffer")
 
 --- @type jj.ui.terminal.opts
 local opts = {
 	cursor_render_delay = 10,
+
+	window = {
+		type = "hsplit",
+		split_size = 0.5,
+		floating_width = 0.99,
+		floating_height = 0.95,
+	},
 }
 
 --- @class jj.ui.terminal.state
@@ -36,6 +51,9 @@ local state = {
 	--- The floating job id for the terminal buffer
 	--- @type integer|nil
 	floating_job_id = nil,
+	-- The current floating command being displayed
+	--- @type string|nil
+	floating_buf_cmd = nil,
 
 	-- Cursor position
 	cursor_restore_pos = nil,
@@ -57,6 +75,21 @@ local state = {
 	tooltip_close_autocmd = nil,
 }
 
+--- Clamps a ratio value between 0.1 and 1.0, returning a default of 1.0 if the input is invalid.
+---@param value? number
+---@param field string
+---@return number
+local function clamp_ratio(value, field)
+	if type(value) ~= "number" or value < 0.1 or value > 1.0 then
+		utils.notify(
+			string.format("Value for field `%s` must be between `0.1` and `1.0`. Defaulted to `1.0`", field),
+			vim.log.levels.WARN
+		)
+		return 1.0
+	end
+	return value
+end
+
 -- Re-export
 M.state = state
 
@@ -64,6 +97,11 @@ M.state = state
 --- @param user_opts jj.ui.terminal.opts Configuration options
 function M.setup(user_opts)
 	opts = vim.tbl_deep_extend("force", opts, user_opts or {})
+
+	-- Clamp window ratios
+	opts.window.split_size = clamp_ratio(opts.window.split_size, "terminal.window.split_size")
+	opts.window.floating_width = clamp_ratio(opts.window.floating_width, "terminal.window.floating_width")
+	opts.window.floating_height = clamp_ratio(opts.window.floating_height, "terminal.window.floating_height")
 end
 
 --- Help for terminal buffer
@@ -158,6 +196,7 @@ function M.close_floating_buffer()
 	state.floating_chan = nil
 	state.floating_job_id = nil
 	state.floating_buf = nil
+	state.floating_buf_cmd = nil
 end
 
 --- Close the current tooltip buffer if it exists
@@ -212,20 +251,27 @@ function M.is_log_buffer_open()
 	if not state.buf or not vim.api.nvim_buf_is_valid(state.buf) then
 		return false
 	end
+	if opts.window.type == "floating" then
+		return state.floating_buf_cmd == "log"
+	end
 	return state.buf_cmd == "log"
 end
 
 --- Run the command in a floating window
 --- @param cmd string The command to run in the floating window
 --- @param keymaps jj.core.buffer.keymap[]|nil Additional keymaps to set for this floating buffer
---- @param float_opts? {title?: string, height?: number, width?: number, modifiable?: boolean, keep_modifiable?: boolean, on_exit?: fun(exit_code: integer), interactive?: boolean}
+--- @param float_opts? {title?: string, modifiable?: boolean, keep_modifiable?: boolean, on_exit?: fun(exit_code: integer), interactive?: boolean}
 function M.run_floating(cmd, keymaps, float_opts)
+	local jj_cmd = require("jj.cmd")
+	keymaps = jj_cmd.merge_keymaps(keymaps or {}, jj_cmd.floating_keymaps())
 	float_opts = float_opts or {}
+
 	-- Clean up previous state if invalid
 	if state.floating_buf and not vim.api.nvim_buf_is_valid(state.floating_buf) then
 		state.floating_buf = nil
 		state.floating_chan = nil
 		state.floating_job_id = nil
+		state.floating_buf_cmd = nil
 	end
 
 	-- Stop any running job first
@@ -252,8 +298,8 @@ function M.run_floating(cmd, keymaps, float_opts)
 		title_pos = "center",
 		enter = true,
 		bufhidden = "hide",
-		height = float_opts.height,
-		width = float_opts.width,
+		height = math.floor(vim.o.lines * opts.window.floating_height),
+		width = math.floor(vim.o.columns * opts.window.floating_width),
 		modifiable = float_opts.modifiable ~= nil and float_opts.modifiable or true,
 		win_options = {
 			wrap = true,
@@ -261,8 +307,12 @@ function M.run_floating(cmd, keymaps, float_opts)
 			relativenumber = false,
 			cursorline = false,
 			signcolumn = "no",
+			winfixbuf = true,
 		},
 		on_exit = function(b)
+			if state.buf == b then
+				state.buf = nil
+			end
 			if state.floating_buf == b then
 				state.floating_buf = nil
 			end
@@ -274,9 +324,13 @@ function M.run_floating(cmd, keymaps, float_opts)
 				vim.fn.jobstop(state.floating_job_id)
 				state.floating_job_id = nil
 			end
+			state.floating_buf_cmd = nil
 		end,
 	})
 	state.floating_buf = buf
+	if state.cursor_restore_pos then
+		M.restore_cursor_position()
+	end
 
 	local jid
 	local chan
@@ -332,12 +386,18 @@ function M.run_floating(cmd, keymaps, float_opts)
 					float_opts.on_exit(exit_code)
 				end
 				vim.schedule(function()
-					if state.floating_buf and vim.api.nvim_buf_is_valid(state.floating_buf) then
-						if not float_opts.keep_modifiable then
-							buffer.set_modifiable(state.floating_buf, false)
-						end
-						buffer.stop_insert(state.floating_buf)
+					if not state.floating_buf or not vim.api.nvim_buf_is_valid(state.floating_buf) then
+						return
 					end
+					-- Store the subcommand on successful exit
+					if exit_code == 0 then
+						state.floating_buf_cmd = vim.split(cmd, "%s+")[2]
+					end
+					-- Make the bufer optionally not modifiable
+					if not float_opts.keep_modifiable then
+						buffer.set_modifiable(state.floating_buf, false)
+					end
+					buffer.stop_insert(state.floating_buf)
 				end)
 			end,
 		})
@@ -357,6 +417,7 @@ function M.run_floating(cmd, keymaps, float_opts)
 	-- Set keymaps only if they haven't been set for this buffer
 	if not vim.b[state.floating_buf].jj_keymaps_set then
 		local default_keymaps = {
+			{ modes = { "n" }, lhs = "g?", rhs = M.keymap_help },
 			{ modes = { "n", "v" }, lhs = "i", rhs = function() end },
 			{ modes = { "n", "v" }, lhs = "c", rhs = function() end },
 			{ modes = { "n", "v" }, lhs = "a", rhs = function() end },
@@ -394,9 +455,23 @@ end
 --- @param keymaps jj.core.buffer.keymap[]|nil Additional keymaps to set for this command buffer
 --- @return integer|nil buf The buffer handle, or nil on failure
 function M.run(cmd, keymaps)
+	if opts.window.type == "floating" then
+		local subcmd = (type(cmd) == "string" and vim.split(cmd, " ") or cmd)[2]
+		subcmd = subcmd:sub(1, 1):upper() .. subcmd:sub(2)
+
+		M.run_floating(cmd, keymaps, {
+			title = " JJ " .. subcmd .. " ",
+		})
+		state.buf = state.floating_buf
+
+		return state.floating_buf
+	end
+
 	if type(cmd) == "string" then
 		cmd = { cmd }
 	end
+	local jj_cmd = require("jj.cmd")
+	keymaps = jj_cmd.merge_keymaps(keymaps or {}, jj_cmd.terminal_keymaps())
 
 	-- Clean up previous state if invalid
 	if state.buf and not vim.api.nvim_buf_is_valid(state.buf) then
@@ -425,9 +500,13 @@ function M.run(cmd, keymaps)
 	end
 
 	-- Create new terminal buffer
+	local split_type = opts.window.type == "hsplit" and "horizontal"
+		or opts.window.type == "vsplit" and "vertical"
+		or opts.window.type == "tab" and "tab"
+	local full_size = opts.window.type == "hsplit" and vim.o.lines or vim.o.columns
 	state.buf = buffer.create({
-		split = "horizontal",
-		size = math.floor(vim.o.lines / 2),
+		split = split_type,
+		size = math.floor(full_size * opts.window.split_size),
 		on_exit = function(buf)
 			if state.buf == buf then
 				state.buf = nil
@@ -445,6 +524,8 @@ function M.run(cmd, keymaps)
 	})
 
 	local win = vim.api.nvim_get_current_win()
+	vim.wo[win].winfixbuf = true
+
 	vim.bo[state.buf].bufhidden = "wipe"
 
 	-- Create new terminal channel
@@ -644,12 +725,14 @@ function M.run_tooltip(cmd, tool_opts)
 		col = 0,
 		width = width,
 		height = height,
+		zindex = 51,
 		win_options = {
 			wrap = true,
 			number = false,
 			relativenumber = false,
 			cursorline = false,
 			signcolumn = "no",
+			winfixbuf = true,
 		},
 	})
 
