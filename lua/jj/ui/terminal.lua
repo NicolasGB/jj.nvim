@@ -3,7 +3,7 @@ local M = {}
 
 --- Terminal configuration
 --- @class jj.ui.terminal.opts
---- @field cursor_render_delay integer The delay in ms when cursor rerendering the terminal state (default: 10ms). If you're loosing the column of the cursor try adding more delay. I currently did not find a better way to do so due to async handling of the ouptut in the terminal
+--- @field cursor_render_delay? integer The delay in ms when cursor rerendering the terminal state (default: 10ms). If you're loosing the column of the cursor try adding more delay. I currently did not find a better way to do so due to async handling of the ouptut in the terminal
 --- @field window? jj.terminal.window Options for the window used
 ---
 --- @class jj.terminal.window

@@ -425,10 +425,10 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
     -- If cursor column is being reset to 0 when refreshing commands, try increasing this value
     -- This delay allows the terminal emulator to complete rendering before restoring cursor position
     cursor_render_delay = 10,
- 
+
     -- Configure terminal window
     window = {
-       type = "hsplit",           -- Type of window the terminal is displayed in
+       type = "hsplit",           -- Type of window the terminal is displayed in (hsplit/vsplit/floating/tab)
        split_size = 0.5,          -- Size % of the split window, either height (hsplit) or width (vsplit) (between 0.1 and 1.0)
        floating_width = 0.99,     -- Width % of the floating window (between 0.1 and 1.0)
        floating_height = 0.95,    -- Height % of the floating window (between 0.1 and 1.0)
