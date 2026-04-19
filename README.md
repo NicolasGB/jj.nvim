@@ -314,7 +314,7 @@ Open the current buffer's file in your browser on the hosted remote (GitHub/GitL
 - Normalizes the remote URL to an HTTPS base repo URL
 - Picks a ref that is expected to exist on the remote:
   - With default `@`: walks back first-parent up to 20 parents to find a commit reachable from that remote's bookmarks; falls back to `trunk()` if needed
-  - With an explicit revset (e.g. `main`, `@-2`): uses that revset directly (no walkback)
+  - With an explicit revset (e.g. `main`, `@--`): uses that revset directly (no walkback)
   - If there's a single unambiguous remote bookmark pointing at the chosen commit, uses that bookmark name; otherwise uses the commit SHA
 - Builds a provider-specific URL and adds a line anchor:
   - GitHub-style: `#L<start>` or `#L<start>-L<end>`
@@ -387,7 +387,7 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
 
 ```sh
 :Jdiff              " Vertical diff against @- (parent)
-:Jdiff @-2          " Vertical diff against specific revision
+:Jdiff @--          " Vertical diff against specific revision
 :Jvdiff main        " Vertical diff against main bookmark
 :Jhdiff trunk()     " Horizontal diff against trunk
 ```
@@ -400,14 +400,14 @@ The plugin provides Fugitive-like file revision commands using `jj file show`:
 :Jread                   " Read @:% into current buffer (undoable)
 :Jread main:src/init.lua " Read file at revision into current buffer
 :Jedit                   " Open @:% in a new tab as read-only snapshot
-:Jedit @-2:%             " Open current file as it existed at @-2
+:Jedit @--:%             " Open current file as it existed at @--
 :Jsplit main:README.md   " Open snapshot in horizontal split
 :Jvsplit trunk():lua/jj/file.lua " Open snapshot in vertical split
 ```
 
 Target format is `<rev>:<path>`:
 
-- `<rev>` is any valid jj revset (`@`, `main`, `@-2`, `trunk()`, etc.)
+- `<rev>` is any valid jj revset (`@`, `main`, `@--`, `trunk()`, etc.)
 - `<path>` can be `%` (current buffer file), repo-relative, or absolute
 - If no argument is passed, defaults to `@:%`
 
@@ -843,7 +843,7 @@ diff.diff_history_revisions({ left = "main", right = "@" })
 diff.open_vdiff()                   -- Vertical split diff against parent
 diff.open_vdiff({ rev = "main" })   -- Vertical split against specific revision
 diff.open_hdiff()                   -- Horizontal split diff
-diff.open_hdiff({ rev = "@-2" })    -- Horizontal split against @-2
+diff.open_hdiff({ rev = "@--" })    -- Horizontal split against @--
 ```
 
 #### Log Buffer Integration
@@ -920,7 +920,7 @@ local file = require("jj.file")
 
 -- Read a file from a revision into the current buffer (undoable)
 file.read_target({ rev = "main", path = "lua/jj/init.lua" })
-file.read_target({ rev = "@-2", path = "%" }) -- current file at @-2
+file.read_target({ rev = "@--", path = "%" }) -- current file at @--
 
 -- Open read-only snapshot buffers
 file.open_target({ rev = "main", path = "README.md" })                -- tab (default)

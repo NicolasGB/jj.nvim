@@ -59,18 +59,18 @@ function M.open_target(opts)
 
 	local ft = vim.filetype.match({ filename = path })
 	local cmd = string.format("jj file show -r %s %s", vim.fn.shellescape(revision), vim.fn.shellescape(path))
-	local buf, _ = buffer.create({
-		name = string.format("jujutsu://%s:%s", revision, path),
-		split = opts.split or "tab",
-		modifiable = true,
-		buftype = "nofile",
-		bufhidden = "wipe",
-		filetype = ft,
-	})
-	-- Actually want to list the file
-	vim.bo[buf].buflisted = true
 
 	runner.execute_command_async(cmd, function(out)
+		local buf, _ = buffer.create({
+			name = string.format("jujutsu://%s:%s", revision, path),
+			split = opts.split or "tab",
+			modifiable = true,
+			buftype = "nofile",
+			bufhidden = "wipe",
+			filetype = ft,
+		})
+		-- Actually want to list the file
+		vim.bo[buf].buflisted = true
 		-- Preserve blank lines exactly; only drop the final trailing newline artifact.
 		local lines = vim.split(out, "\n", { plain = true, trimempty = false })
 		if #lines > 0 and lines[#lines] == "" then
