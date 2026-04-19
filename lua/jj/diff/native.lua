@@ -1,5 +1,6 @@
 local utils = require("jj.utils")
 local buffer = require("jj.core.buffer")
+local runner = require("jj.core.runner")
 
 local diff = require("jj.diff")
 
@@ -22,11 +23,23 @@ end
 --- @param rev string The revision
 --- @param path string The file path
 local function open_revision(rev, path)
+	local raw_ids, ok = runner.execute_command(
+		string.format([[jj log --no-graph -r %s -T 'change_id ++ "\n"' --quiet]], vim.fn.shellescape(rev)),
+		"jj: failed to resolve revision"
+	)
+	if not ok then return end
+	local ids = vim.split(vim.trim(raw_ids), "\n", { trimempty = true })
+	if #ids ~= 1 then
+		utils.notify(string.format("Revision '%s' is ambiguous", rev), vim.log.levels.ERROR)
+		return
+	end
+	local change_id = ids[1]
+
 	local lines = get_file_content(rev, path)
 
 	local buf = vim.api.nvim_create_buf(false, true)
 
-	local buf_name = string.format("jj://%s/%s", rev, path)
+	local buf_name = string.format("jj://%s/%s", change_id, path)
 	vim.api.nvim_buf_set_name(buf, buf_name)
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
