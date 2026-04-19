@@ -56,18 +56,24 @@ function M.execute_command_async(cmd, on_success, error_prefix, input, silent, o
 	local output_lines = {}
 
 	local job_id = vim.fn.jobstart({ "sh", "-c", cmd }, {
+		stdout_buffered = true,
+		stderr_buffered = true,
 		on_stdout = function(_, data)
+			if not data then
+				return
+			end
 			for _, line in ipairs(data) do
-				if line ~= "" then
-					table.insert(output_lines, line)
-				end
+				-- Keep empty lines to preserve command output fidelity.
+				table.insert(output_lines, line)
 			end
 		end,
 		on_stderr = function(_, data)
+			if not data then
+				return
+			end
 			for _, line in ipairs(data) do
-				if line ~= "" then
-					table.insert(output_lines, line)
-				end
+				-- Keep empty lines to preserve command output fidelity.
+				table.insert(output_lines, line)
 			end
 		end,
 		on_exit = function(_, exit_code)

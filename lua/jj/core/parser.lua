@@ -245,4 +245,21 @@ function M.parse_diff_range(range_str)
 	return nil
 end
 
+-- Given a file module input with the format "<rev>:<file>?" parse and return the revision and the optional file
+--- @param input string The input string to parse (e.g., "rev:file" or "rev")
+--- @return {rev: string|nil, path: string|nil}|nil A table with the
+function M.parse_file_module_input(input)
+	if not input then
+		return nil
+	end
+
+	local rev, file = input:match("^(%S+):(.+)$")
+	if rev then
+		return { rev = rev, path = file }
+	else
+		-- If there's no colon, treat the entire input as the revision with no file
+		return { rev = input, path = nil }
+	end
+end
+
 return M
