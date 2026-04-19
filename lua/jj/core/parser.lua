@@ -253,6 +253,11 @@ function M.parse_file_module_input(input)
 		return nil
 	end
 
+	input = vim.trim(input)
+	if input == "" then
+		return nil
+	end
+
 	local rev, file = input:match("^(%S+):(.+)$")
 	if rev then
 		return { rev = rev, path = file }

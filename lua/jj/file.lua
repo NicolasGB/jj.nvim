@@ -2,12 +2,18 @@
 local M = {}
 
 local runner = require("jj.core.runner")
+local buffer = require("jj.core.buffer")
 local utils = require("jj.utils")
 local parser = require("jj.core.parser")
 
 --- @class jj.file.read_target_opts
 --- @field rev string|nil Revision to read the file from
---- @field path? string Path to the file (`%`, absolute, or repository-relative)
+--- @field path? string|nil Path to the file (`%`, absolute, or repository-relative)
+
+--- @class jj.file.open_target_opts
+--- @field rev string|nil Revision to open the file from
+--- @field path string|nil Path to the file (`%`, absolute, or repository-relative)
+--- @field split "horizontal"|"vertical"|"tab" Open in split direction (default: "tab")
 
 --- Reads a target file revision into the current buffer (undoable)
 --- @param opts? jj.file.read_target_opts Options for reading the target file
@@ -37,6 +43,44 @@ function M.read_target(opts)
 		-- Set the buffer content to the file content
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 		vim.bo[buf].modified = true
+	end, "Could not show file", nil, nil, nil)
+end
+
+--- Opens a target file revision in a new buffer
+--- @param opts jj.file.open_target_opts Options for opening the target file
+function M.open_target(opts)
+	local revision = opts.rev or "@"
+	local raw_path = opts.path or "%"
+	local path, normalize_err = utils.normalize_repo_path(raw_path)
+	if not path then
+		utils.notify(normalize_err or "Could not normalize path", vim.log.levels.ERROR)
+		return
+	end
+
+	utils.notify(revision)
+	local ft = vim.filetype.match({ filename = path })
+	local cmd = string.format("jj file show -r %s %s", vim.fn.shellescape(revision), vim.fn.shellescape(path))
+	local buf, _ = buffer.create({
+		name = string.format("jujutsu:///%s:%s", revision, path),
+		split = opts.split or "tab",
+		modifiable = true,
+		buftype = "nofile",
+		bufhidden = "wipe",
+		filetype = ft,
+	})
+	-- Actually want to list the file
+	vim.bo[buf].buflisted = true
+
+	runner.execute_command_async(cmd, function(out)
+		-- Preserve blank lines exactly; only drop the final trailing newline artifact.
+		local lines = vim.split(out, "\n", { plain = true, trimempty = false })
+		if #lines > 0 and lines[#lines] == "" then
+			table.remove(lines, #lines)
+		end
+
+		vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+		vim.bo[buf].modified = false
+		buffer.set_modifiable(buf, false)
 	end, "Could not show file", nil, nil, nil)
 end
 
@@ -93,6 +137,27 @@ function M.register_command()
 			return complete_target(arglead)
 		end,
 	})
+
+	local function create_open_command(name, split, desc)
+		vim.api.nvim_create_user_command(name, function(opts)
+			local parsed = parser.parse_file_module_input(opts.args)
+			M.open_target({
+				rev = parsed and parsed.rev,
+				path = parsed and parsed.path,
+				split = split,
+			})
+		end, {
+			desc = desc,
+			nargs = "?",
+			complete = function(arglead, _, _)
+				return complete_target(arglead)
+			end,
+		})
+	end
+
+	create_open_command("Jedit", "tab", "Open the target file in a new tab")
+	create_open_command("Jsplit", "horizontal", "Open the target file in a horizontal split")
+	create_open_command("Jvsplit", "vertical", "Open the target file in a vertical split")
 end
 
 return M
