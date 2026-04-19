@@ -34,6 +34,7 @@
 - [Installation](#installation)
 - [Cmdline Usage](#cmdline-usage)
   - [Diff Commands](#diff-commands)
+  - [File Commands](#file-commands)
 - [Default Config](#default-config)
 - [Configuration Examples](#configuration-examples)
   - [Editor Options](#editor-options)
@@ -45,6 +46,7 @@
     - [Functions](#functions)
     - [Log Buffer Integration](#log-buffer-integration)
   - [Custom Diff Backends](#custom-diff-backends)
+  - [File Module](#file-module)
   - [Annotations](#annotations)
 - [Example config](#example-config)
 - [Requirements](#requirements)
@@ -80,6 +82,11 @@
   - Diff commands
   - `:Jdiff [revision]` - Vertical split diff against a jj revision
   - `:Jhdiff [revision]` - Horizontal split diff
+  - File revision commands
+  - `:Jread [<rev>:<path>]` - Read file content from a revision into the current buffer (undoable)
+  - `:Jedit [<rev>:<path>]` - Open a read-only snapshot of a file at a revision in a new tab
+  - `:Jsplit [<rev>:<path>]` - Open a read-only snapshot in a horizontal split
+  - `:Jvsplit [<rev>:<path>]` - Open a read-only snapshot in a vertical split
 - Picker for [Snacks.nvim](https://github.com/folke/snacks.nvim)
   - `jj status` Displays the current changes diffs
   - `jj file_history` Displays a buffer's history changes and allows to edit its change (including immutable changes)
@@ -384,6 +391,27 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
 :Jvdiff main        " Vertical diff against main bookmark
 :Jhdiff trunk()     " Horizontal diff against trunk
 ```
+
+### File Commands
+
+The plugin provides Fugitive-like file revision commands using `jj file show`:
+
+```sh
+:Jread                   " Read @:% into current buffer (undoable)
+:Jread main:src/init.lua " Read file at revision into current buffer
+:Jedit                   " Open @:% in a new tab as read-only snapshot
+:Jedit @-2:%             " Open current file as it existed at @-2
+:Jsplit main:README.md   " Open snapshot in horizontal split
+:Jvsplit trunk():lua/jj/file.lua " Open snapshot in vertical split
+```
+
+Target format is `<rev>:<path>`:
+
+- `<rev>` is any valid jj revset (`@`, `main`, `@-2`, `trunk()`, etc.)
+- `<path>` can be `%` (current buffer file), repo-relative, or absolute
+- If no argument is passed, defaults to `@:%`
+
+`Jedit`/`Jsplit`/`Jvsplit` open read-only, nofile snapshot buffers named `jujutsu:///<rev>:<path>`.
 
 ## Default Config
 
@@ -883,9 +911,30 @@ diff.diff_current({ backend = "my-backend", rev = "main" })
 
 All four backend functions are optional—missing ones fall back to the `native` implementation.
 
+### File Module
+
+The file module provides file-at-revision workflows similar to Fugitive's `Gread`/`Gedit`.
+
+```lua
+local file = require("jj.file")
+
+-- Read a file from a revision into the current buffer (undoable)
+file.read_target({ rev = "main", path = "lua/jj/init.lua" })
+file.read_target({ rev = "@-2", path = "%" }) -- current file at @-2
+
+-- Open read-only snapshot buffers
+file.open_target({ rev = "main", path = "README.md" })                -- tab (default)
+file.open_target({ rev = "@", path = "%", split = "horizontal" })    -- split
+file.open_target({ rev = "trunk()", path = "%", split = "vertical" }) -- vsplit
+```
+
+`split` accepts: `"tab"` (default), `"horizontal"`, or `"vertical"`.
+
 ### Annotations
 
 View file blame and line history using the annotate module. Can be invoked via command or Lua API.
+
+`annotate` also works from `Jedit`/`Jsplit`/`Jvsplit` virtual buffers and resolves the underlying `<rev>:<path>` target automatically.
 
 **Via `:J` command:**
 

@@ -43,7 +43,7 @@ function M.read_target(opts)
 		-- Set the buffer content to the file content
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 		vim.bo[buf].modified = true
-	end, "Could not show file", nil, nil, nil)
+	end, string.format("Could not open `%s` from `%s` to read it in the current buffer", path, revision), nil, nil, nil)
 end
 
 --- Opens a target file revision in a new buffer
@@ -57,11 +57,10 @@ function M.open_target(opts)
 		return
 	end
 
-	utils.notify(revision)
 	local ft = vim.filetype.match({ filename = path })
 	local cmd = string.format("jj file show -r %s %s", vim.fn.shellescape(revision), vim.fn.shellescape(path))
 	local buf, _ = buffer.create({
-		name = string.format("jujutsu:///%s:%s", revision, path),
+		name = string.format("jujutsu://%s:%s", revision, path),
 		split = opts.split or "tab",
 		modifiable = true,
 		buftype = "nofile",
@@ -81,7 +80,7 @@ function M.open_target(opts)
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 		vim.bo[buf].modified = false
 		buffer.set_modifiable(buf, false)
-	end, "Could not show file", nil, nil, nil)
+	end, string.format("Could not open edit file `%s` from `%s`", path, revision), nil, nil, nil)
 end
 
 --- Complete `Jread` target arguments for the `<rev>:<file>` form.
