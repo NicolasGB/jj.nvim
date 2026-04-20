@@ -21,9 +21,9 @@ local function get_annotate_target()
 		return nil, nil, "Could not extract file from buffer"
 	end
 
-	if vim.startswith(filename, "jujutsu://") then
-		local target = filename:gsub("^jujutsu://", "")
-		local rev, path = target:match("^(.-):(.+)$")
+	if vim.startswith(filename, "jj://") then
+		local target = filename:gsub("^jj://", "")
+		local rev, path = target:match("^(.-)/(.+)$")
 		if not rev or not path or rev == "" or path == "" then
 			return nil, nil, "Invalid jujutsu buffer name"
 		end

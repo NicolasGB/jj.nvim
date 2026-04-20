@@ -116,7 +116,7 @@ function M.open_editor(initial_text, on_write, on_unload, keymaps)
 
 	-- Create buffer
 	local buf = buffer.create({
-		name = "jujutsu:///DESCRIBE_EDITMSG",
+		name = "jj:///DESCRIBE_EDITMSG",
 		split = "horizontal",
 		size = math.floor(vim.o.lines / 2),
 		filetype = "jjdescription",

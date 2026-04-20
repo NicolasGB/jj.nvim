@@ -811,4 +811,19 @@ function M.list_github_prs(opts)
 	return open_prs
 end
 
+-- Given a revset, return it's change_id.
+--- @param rev string The revset to get the change_id for
+--- @return string|nil change_id if found, nil otherwise
+function M.get_revision_change(rev)
+	local change, ok = runner.execute_command(
+		string.format("jj log --no-graph -r %s -T 'change_id' --quiet", vim.fn.shellescape(rev)),
+		"Failed to resolve revision change_id"
+	)
+	if not ok or not change then
+		return nil
+	end
+
+	return vim.trim(change)
+end
+
 return M

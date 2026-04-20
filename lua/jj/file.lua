@@ -56,13 +56,18 @@ function M.open_target(opts)
 		utils.notify(normalize_err or "Could not normalize path", vim.log.levels.ERROR)
 		return
 	end
+	-- Get the actual change id instead fo working directly with the revset
+	local change_id = utils.get_revision_change(revision)
+	if not change_id then
+		return
+	end
 
 	local ft = vim.filetype.match({ filename = path })
 	local cmd = string.format("jj file show -r %s %s", vim.fn.shellescape(revision), vim.fn.shellescape(path))
 
 	runner.execute_command_async(cmd, function(out)
 		local buf, _ = buffer.create({
-			name = string.format("jujutsu://%s:%s", revision, path),
+			name = string.format("jj://%s/%s", change_id, path),
 			split = opts.split or "tab",
 			modifiable = true,
 			buftype = "nofile",
