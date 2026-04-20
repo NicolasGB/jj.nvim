@@ -13,7 +13,7 @@ local parser = require("jj.core.parser")
 --- @class jj.file.open_target_opts
 --- @field rev string|nil Revision to open the file from
 --- @field path string|nil Path to the file (`%`, absolute, or repository-relative)
---- @field split "horizontal"|"vertical"|"tab" Open in split direction (default: "tab")
+--- @field split "current"|"horizontal"|"vertical"|"tab" Open in split direction (default: "tab")
 
 --- Reads a target file revision into the current buffer (undoable)
 --- @param opts? jj.file.read_target_opts Options for reading the target file
@@ -61,19 +61,33 @@ function M.open_target(opts)
 	if not change_id then
 		return
 	end
+	local immutable = utils.is_change_immutable(change_id)
 
 	local ft = vim.filetype.match({ filename = path })
 	local cmd = string.format("jj file show -r %s %s", vim.fn.shellescape(revision), vim.fn.shellescape(path))
 
 	runner.execute_command_async(cmd, function(out)
-		local buf, _ = buffer.create({
-			name = string.format("jj://%s/%s", change_id, path),
-			split = opts.split or "tab",
-			modifiable = true,
-			buftype = "nofile",
-			bufhidden = "wipe",
-			filetype = ft,
-		})
+		local buf = vim.api.nvim_get_current_buf()
+		if opts.split == "current" and vim.bo[buf].modified then
+			utils.notify(
+				"Current buffer has unsaved changes, cannot open target file in a new split",
+				vim.log.levels.ERROR
+			)
+			return
+		elseif opts.split ~= "current" or (opts.split == "current" and immutable) then
+			-- Create the buffer ourselves instead of reusing
+			local requested_split = opts.split or "tab"
+			local target_split = immutable and "tab" or requested_split
+			buf, _ = buffer.create({
+				name = string.format("jj://%s/%s", change_id, path),
+				split = target_split,
+				modifiable = true,
+				buftype = "acwrite",
+				bufhidden = "wipe",
+				filetype = ft,
+			})
+		end
+
 		-- Actually want to list the file
 		vim.bo[buf].buflisted = true
 		-- Preserve blank lines exactly; only drop the final trailing newline artifact.
@@ -84,7 +98,7 @@ function M.open_target(opts)
 
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 		vim.bo[buf].modified = false
-		buffer.set_modifiable(buf, false)
+		buffer.set_modifiable(buf, not immutable)
 	end, string.format("Could not open edit file `%s` from `%s`", path, revision), nil, nil, nil)
 end
 
@@ -159,9 +173,10 @@ function M.register_command()
 		})
 	end
 
-	create_open_command("Jedit", "tab", "Open the target file in a new tab")
+	create_open_command("Jedit", "current", "Open the target file in a new tab")
 	create_open_command("Jsplit", "horizontal", "Open the target file in a horizontal split")
 	create_open_command("Jvsplit", "vertical", "Open the target file in a vertical split")
+	create_open_command("Jtabedit", "tab", "Open the target file in a new tab")
 end
 
 return M
