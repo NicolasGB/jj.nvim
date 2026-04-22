@@ -5,7 +5,7 @@ local runner = require("jj.core.runner")
 local diff = require("jj.diff")
 local file = require("jj.file")
 
---- Open a read-only buffer for a specific revision of a file
+--- Open a writable buffer for a specific revision of a file.
 --- @param rev string The revision
 --- @param path string The file path (absolute or repo-relative)
 local function open_revision(rev, path)
@@ -27,25 +27,34 @@ local function open_revision(rev, path)
 		return
 	end
 
-	local lines = file.get_file_content(change_id, rel_path)
+	local lines, had_eol = file.get_file_content(change_id, rel_path)
 
 	local buf = vim.api.nvim_create_buf(false, true)
 
 	local buf_name = string.format("jj://%s/%s", change_id, rel_path)
 	vim.api.nvim_buf_set_name(buf, buf_name)
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+	vim.bo[buf].eol = had_eol
 
 	local ft = vim.filetype.match({ filename = rel_path })
 	if ft then
 		vim.bo[buf].filetype = ft
 	end
 
-	vim.bo[buf].buftype = "nofile"
+	vim.bo[buf].buftype = "acwrite"
 	vim.bo[buf].bufhidden = "wipe"
-	vim.bo[buf].readonly = true
+	vim.bo[buf].readonly = false
 	vim.bo[buf].swapfile = false
 	vim.bo[buf].modifiable = true
 
+	vim.api.nvim_create_autocmd("BufWriteCmd", {
+		buffer = buf,
+		callback = function()
+			file.write_revision_file(buf, change_id, rel_path)
+		end,
+	})
+
+	vim.bo[buf].modified = false
 	vim.api.nvim_win_set_buf(0, buf)
 end
 

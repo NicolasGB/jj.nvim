@@ -67,6 +67,57 @@ function M.read_target(opts)
 	end, string.format("Could not read `%s` from `%s`", path, revision))
 end
 
+--- Write buffer content back into a jj revision, bypassing the working copy.
+--- @param buf integer
+--- @param change_id string
+--- @param rel_path string Repository-relative path of the file
+local function write_revision_file(buf, change_id, rel_path)
+	if utils.is_change_immutable(change_id) then
+		utils.notify("Cannot write to immutable revision: " .. change_id, vim.log.levels.ERROR)
+		return
+	end
+
+	local new_content = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
+	if vim.bo[buf].eol then
+		new_content = new_content .. "\n"
+	end
+
+	local tmp = vim.fn.tempname()
+	local cf = io.open(tmp, "w")
+	if not cf then
+		utils.notify("Failed to create temp file", vim.log.levels.ERROR)
+		return
+	end
+	cf:write(new_content)
+	cf:close()
+
+	-- Configure `cp` as the diffedit tool inline via --config.
+	-- jj expands $right to the directory it populates with <rev>'s content,
+	-- so the parent directory for rel_path already exists there.
+	local prog_config = 'merge-tools.jj-nvim-write.program="cp"'
+	-- json_encode produces valid TOML inline arrays.
+	local args_config = "merge-tools.jj-nvim-write.edit-args="
+		.. vim.fn.json_encode({ tmp, "$right/" .. rel_path })
+
+	local _, ok = runner.execute_command(
+		string.format(
+			"jj diffedit --from 'root()' --to %s --config %s --config %s --tool jj-nvim-write -- %s",
+			vim.fn.shellescape(change_id),
+			vim.fn.shellescape(prog_config),
+			vim.fn.shellescape(args_config),
+			vim.fn.shellescape(rel_path)
+		),
+		"jj: failed to edit revision"
+	)
+
+	os.remove(tmp)
+
+	if not ok then return end
+	vim.bo[buf].modified = false
+	utils.notify(string.format("Written to revision %s", change_id))
+end
+M.write_revision_file = write_revision_file
+
 --- Opens a target file revision in a new buffer.
 --- @param opts jj.file.open_target_opts
 function M.open_target(opts)
@@ -98,15 +149,26 @@ function M.open_target(opts)
 	local buf, _ = buffer.create({
 		name = string.format("jj://%s/%s", change_id, path),
 		split = opts.split or "current",
-		modifiable = false,
-		buftype = "nofile",
+		modifiable = true,
+		buftype = "acwrite",
 		bufhidden = "wipe",
 		filetype = ft,
 	})
 	vim.bo[buf].buflisted = true
 	vim.bo[buf].swapfile = false
+	local ul = vim.bo[buf].undolevels
+	vim.bo[buf].undolevels = -1
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+	vim.bo[buf].undolevels = ul
 	vim.bo[buf].eol = had_eol
+
+	vim.api.nvim_create_autocmd("BufWriteCmd", {
+		buffer = buf,
+		callback = function()
+			write_revision_file(buf, change_id, path)
+		end,
+	})
+
 	vim.bo[buf].modified = false
 end
 
@@ -151,8 +213,8 @@ function M.register_command()
 		nested = true,
 		callback = function()
 			local name = vim.api.nvim_buf_get_name(0)
-			local change_id, path = name:match("^jj://([^/]+)/(.+)$")
-			if not change_id or not path then return end
+			local change_id, path = utils.parse_jj_uri(name)
+			if not change_id then return end
 			local lines, had_eol = get_file_content(change_id, path)
 			local buf = vim.api.nvim_get_current_buf()
 			vim.bo[buf].modifiable = true
