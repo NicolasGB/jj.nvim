@@ -245,4 +245,32 @@ function M.parse_diff_range(range_str)
 	return nil
 end
 
+--- Parse a `<rev>:<path>` argument as used by file commands.
+--- With no colon, the whole input is treated as a revision with no file.
+--- A trailing colon (`<rev>:`) is accepted and treated as no file path.
+--- @param input string
+--- @return {rev: string|nil, path: string|nil}|nil
+function M.parse_file_module_input(input)
+	if not input then
+		return nil
+	end
+
+	input = vim.trim(input)
+	if input == "" then
+		return nil
+	end
+
+	local rev, file = input:match("^([^:]+):(.*)$")
+	if rev then
+		if file == "" then
+			return { rev = rev, path = nil }
+		end
+		return { rev = rev, path = file }
+	end
+	if input:find(":", 1, true) then
+		return nil
+	end
+	return { rev = input, path = nil }
+end
+
 return M
