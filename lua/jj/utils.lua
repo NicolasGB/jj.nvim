@@ -149,6 +149,18 @@ function M.is_file(path)
 	return st ~= nil and st.type == "file"
 end
 
+--- Parse a jj:// virtual buffer URI.
+--- Returns nil, nil if the name is not a jj:// URI or has an invalid format.
+--- @param name string
+--- @return string|nil change_id
+--- @return string|nil path
+function M.parse_jj_uri(name)
+	if not vim.startswith(name, "jj://") then
+		return nil, nil
+	end
+	return name:match("^jj://([^/]+)/(.+)$")
+end
+
 --- Compute a repository-relative path.
 --- Returns nil if `path` is outside of `root`.
 --- @param root string

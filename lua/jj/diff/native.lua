@@ -74,8 +74,10 @@ diff.register_backend("native", {
 		local prev_buf = vim.api.nvim_get_current_buf()
 		local prev_cur_pos = buffer.get_cursor(prev_buf) or { 1, 0 }
 
-		local rev = opts.rev or "@-"
-		local path = opts.path or vim.api.nvim_buf_get_name(0)
+		local buf_name = vim.api.nvim_buf_get_name(0)
+		local change_id, jj_path = utils.parse_jj_uri(buf_name)
+		local rev = opts.rev or (change_id and (change_id .. "-")) or "@-"
+		local path = opts.path or jj_path or buf_name
 		local layout = opts.layout or "vertical"
 
 		local split_fun = layout == "horizontal" and vim.cmd.split or vim.cmd.vsplit
