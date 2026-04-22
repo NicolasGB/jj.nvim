@@ -5,6 +5,7 @@ local editor = require("jj.ui.editor")
 local terminal = require("jj.ui.terminal")
 local diff = require("jj.diff")
 local browse = require("jj.browse")
+local file = require("jj.file")
 
 --- Jujutsu plugin configuration
 --- @class jj.Config
@@ -61,6 +62,7 @@ function M.setup(opts)
 	cmd.register_command()
 	browse.register_command()
 	diff.register_command()
+	file.register_command()
 end
 
 return M

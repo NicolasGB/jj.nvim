@@ -3,29 +3,11 @@ local buffer = require("jj.core.buffer")
 local runner = require("jj.core.runner")
 
 local diff = require("jj.diff")
-
---- Get the content of a file at a specific revision
---- @param rev string The revision
---- @param path string The file path
---- @return table lines The file content
-local function get_file_content(rev, path)
-	local cmd = string.format("jj file show -r %s %s", vim.fn.shellescape(rev), vim.fn.shellescape(path))
-	local content = vim.fn.system(cmd)
-	local success = vim.v.shell_error == 0
-	if success then
-		local lines = vim.split(content, "\n", { plain = true, trimempty = false })
-		if #lines > 0 and lines[#lines] == "" then
-			table.remove(lines, #lines)
-		end
-		return lines
-	else
-		return {}
-	end
-end
+local file = require("jj.file")
 
 --- Open a read-only buffer for a specific revision of a file
 --- @param rev string The revision
---- @param path string The file path
+--- @param path string The file path (absolute or repo-relative)
 local function open_revision(rev, path)
 	local raw_ids, ok = runner.execute_command(
 		string.format([[jj log --no-graph -r %s -T 'change_id ++ "\n"' --quiet]], vim.fn.shellescape(rev)),
@@ -39,15 +21,21 @@ local function open_revision(rev, path)
 	end
 	local change_id = ids[1]
 
-	local lines = get_file_content(rev, path)
+	local rel_path, err = utils.normalize_repo_path(path)
+	if not rel_path then
+		utils.notify(err or "Could not resolve path", vim.log.levels.ERROR)
+		return
+	end
+
+	local lines = file.get_file_content(change_id, rel_path)
 
 	local buf = vim.api.nvim_create_buf(false, true)
 
-	local buf_name = string.format("jj://%s/%s", change_id, path)
+	local buf_name = string.format("jj://%s/%s", change_id, rel_path)
 	vim.api.nvim_buf_set_name(buf, buf_name)
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
-	local ft = vim.filetype.match({ filename = path })
+	local ft = vim.filetype.match({ filename = rel_path })
 	if ft then
 		vim.bo[buf].filetype = ft
 	end
