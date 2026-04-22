@@ -13,7 +13,11 @@ local function get_file_content(rev, path)
 	local content = vim.fn.system(cmd)
 	local success = vim.v.shell_error == 0
 	if success then
-		return vim.split(content, "\n", { trimempty = true })
+		local lines = vim.split(content, "\n", { plain = true, trimempty = false })
+		if #lines > 0 and lines[#lines] == "" then
+			table.remove(lines, #lines)
+		end
+		return lines
 	else
 		return {}
 	end
