@@ -136,11 +136,11 @@ local function handle_enter()
 		return
 	end
 
-	-- Create a new buffer with the filetype gitdiff and the output
+	-- Create a new buffer with the filetype diff and the output
 	local buf, win = buffer.create({
 		name = "jj-diff://" .. vim.fn.fnamemodify(filename, ":t") .. "//" .. parts.rev.value,
 		split = "tab",
-		filetype = "gitdiff",
+		filetype = "diff",
 		bufhidden = "wipe",
 	})
 
