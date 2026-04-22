@@ -71,10 +71,13 @@ end
 --- @param buf integer
 --- @param change_id string
 --- @param rel_path string Repository-relative path of the file
-local function write_revision_file(buf, change_id, rel_path)
+--- @param force boolean Whether to bypass the immutability check (`:w!`)
+local function write_revision_file(buf, change_id, rel_path, force)
 	if utils.is_change_immutable(change_id) then
-		utils.notify("Cannot write to immutable revision: " .. change_id, vim.log.levels.ERROR)
-		return
+		if not force then
+			utils.notify("Cannot write to immutable revision: " .. change_id, vim.log.levels.ERROR)
+			return
+		end
 	end
 
 	local new_content = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
@@ -165,11 +168,12 @@ function M.open_target(opts)
 	vim.api.nvim_create_autocmd("BufWriteCmd", {
 		buffer = buf,
 		callback = function()
-			write_revision_file(buf, change_id, path)
+			write_revision_file(buf, change_id, path, vim.v.cmdbang == 1)
 		end,
 	})
 
 	vim.bo[buf].modified = false
+	vim.bo[buf].modifiable = not utils.is_change_immutable(change_id)
 end
 
 --- Complete `<rev>:<file>` arguments for file commands.
@@ -221,7 +225,7 @@ function M.register_command()
 			vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 			vim.bo[buf].eol = had_eol
 			vim.bo[buf].modified = false
-			vim.bo[buf].modifiable = false
+			vim.bo[buf].modifiable = not utils.is_change_immutable(change_id)
 			vim.api.nvim_exec_autocmds("BufReadPost", { buffer = buf })
 		end,
 	})
