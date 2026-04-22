@@ -380,10 +380,35 @@ The plugin also provides `:Jdiff`, `:Jvdiff`, and `:Jhdiff` commands for diffing
 
 ```sh
 :Jdiff              " Vertical diff against @- (parent)
-:Jdiff @-2          " Vertical diff against specific revision
+:Jdiff @--          " Vertical diff against specific revision
 :Jvdiff main        " Vertical diff against main bookmark
 :Jhdiff trunk()     " Horizontal diff against trunk
 ```
+
+### File Commands
+
+Fugitive-inspired commands for viewing and editing files at specific jj revisions:
+
+```sh
+:Jread                   " Read current file at @ into current buffer (undoable)
+:Jread main:src/init.lua " Read a file at a revision into the current buffer
+:Jedit                   " Open current file at @ in the current window
+:Jedit @--:%             " Open current file as it was at @--
+:Jtabedit main:README.md " Open a file at a revision in a new tab
+:Jsplit main:README.md   " Open a file at a revision in a horizontal split
+:Jvsplit trunk():lua/jj/file.lua " Open a file at a revision in a vertical split
+```
+
+Target format is `<rev>:<path>`:
+
+- `<rev>` is any valid jj revset (`@`, `main`, `@--`, `trunk()`, etc.)
+- `<path>` can be `%` (current buffer file), repo-relative, or absolute
+- If no argument is passed, defaults to `@:%`
+
+The open commands (`:Jedit`, `:Jtabedit`, `:Jsplit`, `:Jvsplit`) create a `jj://<change_id>/<path>`
+buffer. The revision expression is resolved to a stable change ID so the buffer name is unaffected
+by bookmark movement. Mutable revisions are editable — `:w` writes the buffer back into the
+revision via `jj diffedit`. Immutable revisions show an error on write.
 
 ## Default Config
 
@@ -882,6 +907,28 @@ diff.diff_current({ backend = "my-backend", rev = "main" })
 ```
 
 All four backend functions are optional—missing ones fall back to the `native` implementation.
+
+### File Module
+
+The file module provides file-at-revision workflows similar to Fugitive's `Gread`/`Gedit`.
+
+```lua
+local file = require("jj.file")
+
+-- Read a file from a revision into the current buffer (undoable)
+file.read_target({ rev = "main", path = "lua/jj/init.lua" })
+file.read_target({ rev = "@--", path = "%" }) -- current file at @--
+
+-- Open buffers at a given revision
+file.open_target({ rev = "main", path = "README.md" })                -- current window (default)
+file.open_target({ rev = "@", path = "%", split = "horizontal" })    -- split
+file.open_target({ rev = "trunk()", path = "%", split = "vertical" }) -- vsplit
+file.open_target({ rev = "@--", path = "%", split = "tab" })          -- new tab
+```
+
+`split` accepts: `"current"` (default), `"tab"`, `"horizontal"`, or `"vertical"`.
+
+Annotate also works from `jj://` virtual buffers and resolves the revision and path automatically.
 
 ### Annotations
 
