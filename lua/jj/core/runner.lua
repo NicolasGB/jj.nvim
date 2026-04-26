@@ -9,23 +9,23 @@ local M = {}
 --- @return string|nil output The command output, or nil if failed
 --- @return boolean success Whether the command succeeded
 function M.execute_command(cmd, error_prefix, input, silent)
-	local output = vim.fn.system({ "sh", "-c", cmd }, input)
+	local stderr_file = vim.fn.tempname()
+	local output = vim.fn.system({ "sh", "-c", string.format("(%s) 2>%s", cmd, vim.fn.shellescape(stderr_file)) }, input)
 	local success = vim.v.shell_error == 0
 
 	if not success then
-		local error_message
-		if error_prefix then
-			error_message = string.format("%s: %s", error_prefix, output)
-		else
-			error_message = output
-		end
+		local stderr_lines = vim.fn.readfile(stderr_file)
+		vim.fn.delete(stderr_file)
+		local error_output = table.concat(stderr_lines, "\n")
+		local msg = error_output ~= "" and error_output or output
+		local error_message = error_prefix and string.format("%s: %s", error_prefix, msg) or msg
 		if not silent then
 			vim.notify(error_message, vim.log.levels.ERROR, { title = "JJ" })
 		end
-
 		return nil, false
 	end
 
+	vim.fn.delete(stderr_file)
 	return output, success
 end
 
@@ -53,41 +53,33 @@ end
 --- @param silent boolean|nil Optional to silent the notification
 --- @param on_error function|nil Callback on error, receives ouptut as the parameter
 function M.execute_command_async(cmd, on_success, error_prefix, input, silent, on_error)
-	local output_lines = {}
+	local stdout_lines = {}
+	local stderr_lines = {}
 
 	local job_id = vim.fn.jobstart({ "sh", "-c", cmd }, {
+		stdout_buffered = true,
+		stderr_buffered = true,
 		on_stdout = function(_, data)
-			for _, line in ipairs(data) do
-				if line ~= "" then
-					table.insert(output_lines, line)
-				end
-			end
+			vim.list_extend(stdout_lines, data)
 		end,
 		on_stderr = function(_, data)
-			for _, line in ipairs(data) do
-				if line ~= "" then
-					table.insert(output_lines, line)
-				end
-			end
+			vim.list_extend(stderr_lines, data)
 		end,
 		on_exit = function(_, exit_code)
-			local output = table.concat(output_lines, "\n")
+			local output = table.concat(stdout_lines, "\n")
 			if exit_code == 0 then
 				if on_success then
 					on_success(output)
 				end
 			else
-				local error_message
-				if error_prefix then
-					error_message = string.format("%s: %s", error_prefix, output)
-				else
-					error_message = output
-				end
+				local error_output = table.concat(stderr_lines, "\n")
+				local msg = error_output ~= "" and error_output or output
+				local error_message = error_prefix and string.format("%s: %s", error_prefix, msg) or msg
 				if not silent then
 					vim.notify(error_message, vim.log.levels.ERROR, { title = "JJ" })
 				end
 				if on_error then
-					on_error(output)
+					on_error(msg)
 				end
 			end
 		end,

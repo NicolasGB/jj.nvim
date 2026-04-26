@@ -10,6 +10,48 @@ local parser = require("jj.core.parser")
 -- Track the last annotation tooltip buffer
 local last_tooltip_buf = nil
 
+--- Resolve current buffer into an annotate target.
+--- Supports normal file buffers and jj:// virtual buffers.
+--- @return string|nil path Repository-relative or absolute path for `jj file annotate`
+--- @return string|nil rev Optional revision for virtual buffers
+--- @return string|nil err Error message when target cannot be resolved
+local function get_annotate_target()
+	local filename = vim.api.nvim_buf_get_name(0)
+	if filename == "" then
+		return nil, nil, "Could not extract file from buffer"
+	end
+
+	local change_id, path = utils.parse_jj_uri(filename)
+	if change_id then
+		return path, change_id, nil
+	end
+	if vim.startswith(filename, "jj://") then
+		return nil, nil, "Invalid jj:// buffer name"
+	end
+
+	local normalized, err = utils.normalize_repo_path(filename)
+	if not normalized then
+		return nil, nil, err or "Could not normalize file path"
+	end
+
+	return normalized, nil, nil
+end
+
+--- Build `jj file annotate` command with optional revision.
+--- @param path string
+--- @param template string
+--- @param rev? string
+--- @return string
+local function build_annotate_cmd(path, template, rev)
+	local rev_flag = rev and rev ~= "" and string.format("-r %s ", vim.fn.shellescape(rev)) or ""
+	return string.format(
+		"jj file annotate %s%s -T %s",
+		rev_flag,
+		vim.fn.shellescape(path),
+		vim.fn.shellescape(template)
+	)
+end
+
 --- Sets the highlights for the blame bufer
 --- @param buf integer
 --- @param annotations string[]
@@ -136,11 +178,11 @@ local function handle_enter()
 		return
 	end
 
-	-- Create a new buffer with the filetype gitdiff and the output
+	-- Create a new buffer with the filetype diff and the output
 	local buf, win = buffer.create({
 		name = "jj-diff://" .. vim.fn.fnamemodify(filename, ":t") .. "//" .. parts.rev.value,
 		split = "tab",
-		filetype = "gitdiff",
+		filetype = "diff",
 		bufhidden = "wipe",
 	})
 
@@ -172,16 +214,14 @@ function M.file()
 	local template =
 		'join(" | ", commit.change_id().short(6), commit.author().name(), commit.author().timestamp().format("%Y-%m-%d %H:%M:%S %Z")) ++ "\n"'
 
-	local filename = vim.api.nvim_buf_get_name(0)
-	if filename == "" then
-		utils.notify("Could extract file from buffer", vim.log.levels.ERROR)
+	local filename, revision, err = get_annotate_target()
+	if not filename then
+		utils.notify(err or "Could not extract file from buffer", vim.log.levels.ERROR)
 		return
 	end
 
-	local raw_output, success = runner.execute_command(
-		string.format("jj file annotate %s -T '%s'", filename, template),
-		"Failed to annotate file"
-	)
+	local raw_output, success =
+		runner.execute_command(build_annotate_cmd(filename, template, revision), "Failed to annotate file")
 	if not success or not raw_output then
 		return
 	end
@@ -307,17 +347,15 @@ function M.line()
 	local template =
 		'join(" | ", commit.change_id().short(6), commit.author().name(), commit.author().timestamp().format("%Y-%m-%d %H:%M:%S %Z")) ++ "\n"'
 
-	local filename = vim.api.nvim_buf_get_name(0)
-	if filename == "" then
-		utils.notify("Could not extract file from buffer", vim.log.levels.ERROR)
+	local filename, revision, err = get_annotate_target()
+	if not filename then
+		utils.notify(err or "Could not extract file from buffer", vim.log.levels.ERROR)
 		return
 	end
 
 	local line_num = vim.fn.line(".")
-	local raw_output, success = runner.execute_command(
-		string.format("jj file annotate %s -T '%s'", filename, template),
-		"Failed to annotate line"
-	)
+	local raw_output, success =
+		runner.execute_command(build_annotate_cmd(filename, template, revision), "Failed to annotate line")
 	if not success or not raw_output then
 		return
 	end

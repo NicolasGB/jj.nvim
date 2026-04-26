@@ -149,6 +149,72 @@ function M.is_file(path)
 	return st ~= nil and st.type == "file"
 end
 
+--- Parse a jj:// virtual buffer URI.
+--- Returns nil, nil if the name is not a jj:// URI or has an invalid format.
+--- @param name string
+--- @return string|nil change_id
+--- @return string|nil path
+function M.parse_jj_uri(name)
+	if not vim.startswith(name, "jj://") then
+		return nil, nil
+	end
+	return name:match("^jj://([^/]+)/(.+)$")
+end
+
+--- Normalize a user-provided file path to a repository-relative path for jj commands.
+---
+--- Rules:
+--- - `%` resolves to the current buffer absolute file path.
+--- - Absolute paths are converted to repository-relative paths.
+--- - Relative paths are kept relative.
+---
+--- @param path string|nil Path provided by the user (`%`, absolute, or relative)
+--- @param root? string Repository root (defaults to current jj repo root)
+--- @return string|nil normalized_path Repository-relative normalized path
+--- @return string|nil err Error message when normalization fails
+function M.normalize_repo_path(path, root)
+	path = vim.trim(path or "")
+	if path == "" then
+		return nil, "Path is empty"
+	end
+
+	if path == "%" then
+		path = vim.api.nvim_buf_get_name(0)
+		if path == "" then
+			return nil, "Current buffer has no file path"
+		end
+		local _, jj_path = M.parse_jj_uri(path)
+		if jj_path then
+			return jj_path, nil
+		end
+	end
+
+	path = vim.fs.normalize(path)
+
+	root = root or M.get_jj_root()
+	if not root or root == "" then
+		return nil, "Not in a jj repository"
+	end
+
+	root = vim.fs.normalize(root)
+
+	local is_absolute = vim.startswith(path, "/") or path:match("^%a:/") ~= nil
+	if is_absolute then
+		local rel = M.relpath(root, path)
+		if not rel then
+			return nil, "Path is outside repository root"
+		end
+		path = rel
+	end
+
+	path = path:gsub("^%./", "")
+	if path == "" then
+		return nil, "Path is empty after normalization"
+	end
+
+	return path, nil
+end
+
 --- Compute a repository-relative path.
 --- Returns nil if `path` is outside of `root`.
 --- @param root string
