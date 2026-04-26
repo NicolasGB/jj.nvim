@@ -21,6 +21,7 @@ local parser = require("jj.core.parser")
 --- @param path string Repository-relative path
 --- @return string[] lines
 --- @return boolean had_eol Whether the content had a trailing newline
+--- @return boolean ok Whether the command succeeded
 local function get_file_content(rev, path)
 	local content, ok = runner.execute_command(
 		string.format("jj file show -r %s %s", vim.fn.shellescape(rev), vim.fn.shellescape(path)),
@@ -29,14 +30,14 @@ local function get_file_content(rev, path)
 		true
 	)
 	if not ok or not content then
-		return {}, false
+		return {}, false, false
 	end
 	local lines = vim.split(content, "\n", { plain = true, trimempty = false })
 	local had_eol = #lines > 0 and lines[#lines] == ""
 	if had_eol then
 		table.remove(lines, #lines)
 	end
-	return lines, had_eol
+	return lines, had_eol, true
 end
 M.get_file_content = get_file_content
 
@@ -146,7 +147,11 @@ function M.open_target(opts)
 	end
 	local change_id = ids[1]
 
-	local lines, had_eol = get_file_content(change_id, path)
+	local lines, had_eol, ok_read = get_file_content(change_id, path)
+	if not ok_read then
+		utils.notify(string.format("Could not read `%s` from `%s`", path, change_id), vim.log.levels.ERROR)
+		return
+	end
 	local ft = vim.filetype.match({ filename = path })
 
 	local buf, _ = buffer.create({
@@ -219,7 +224,11 @@ function M.register_command()
 			local name = vim.api.nvim_buf_get_name(0)
 			local change_id, path = utils.parse_jj_uri(name)
 			if not change_id then return end
-			local lines, had_eol = get_file_content(change_id, path)
+			local lines, had_eol, ok_read = get_file_content(change_id, path)
+			if not ok_read then
+				utils.notify(string.format("Could not read `%s` from `%s`", path, change_id), vim.log.levels.ERROR)
+				return
+			end
 			local buf = vim.api.nvim_get_current_buf()
 			vim.bo[buf].modifiable = true
 			vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)

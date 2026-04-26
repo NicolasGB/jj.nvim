@@ -27,7 +27,11 @@ local function open_revision(rev, path)
 		return
 	end
 
-	local lines, had_eol = file.get_file_content(change_id, rel_path)
+	local lines, had_eol, ok_read = file.get_file_content(change_id, rel_path)
+	if not ok_read then
+		utils.notify(string.format("Could not read `%s` from `%s`", rel_path, change_id), vim.log.levels.ERROR)
+		return
+	end
 
 	local buf = vim.api.nvim_create_buf(false, true)
 

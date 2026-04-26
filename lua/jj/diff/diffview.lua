@@ -46,15 +46,23 @@ diff.register_backend("diffview", {
 			return
 		end
 
-		-- Extract the commit id from opts.rev
-		local revset = opts.rev or "@-"
+		local buf_name = vim.api.nvim_buf_get_name(0)
+		local change_id, jj_path = utils.parse_jj_uri(buf_name)
+		local revset = opts.rev or (change_id and (change_id .. "-")) or "@-"
 
 		local commit_id = utils.get_commit_id(revset)
 		if not commit_id then
 			return
 		end
 
-		vim.cmd(string.format("DiffviewOpen %s -- %%", commit_id))
+		local raw_path = opts.path or jj_path or "%"
+		local path, err = utils.normalize_repo_path(raw_path)
+		if not path then
+			utils.notify(err or "Could not resolve file path for Diffview", vim.log.levels.ERROR)
+			return
+		end
+
+		vim.cmd(string.format("DiffviewOpen %s -- %s", commit_id, vim.fn.fnameescape(path)))
 		vim.cmd("DiffviewToggleFiles")
 	end,
 	show_revision = function(opts)
