@@ -76,6 +76,7 @@ local split_module = require("jj.cmd.split")
 --- @field diff? string|string[]
 --- @field edit? string|string[]
 --- @field edit_immutable? string|string[]
+--- @field edit_file? string|string[]
 
 --- @class jj.cmd.bookmark
 --- @field prefix? string Prefix to append when creating a bookmark
@@ -185,6 +186,7 @@ M.config = {
 				diff = "<S-d>",
 				edit = "<CR>",
 				edit_immutable = "<S-CR>",
+				edit_file = "o",
 			},
 			split = "<C-s>",
 			tag_set = "<S-t>",

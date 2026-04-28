@@ -938,6 +938,25 @@ function M.handle_summary_edit(revset, ignore_immut)
 	end, string.format("Error editing revset: `%s`", revset))
 end
 
+--- Handle edit action in summary tooltip but only for the file (like Jedit)
+--- Closes tooltip, edits the revision, and opens the file
+--- @param revset string The revision to edit
+function M.handle_summary_file_edit(revset)
+	local line = vim.api.nvim_get_current_line()
+	local filepath = parser.parse_file_info_from_status_line(line)
+	if not filepath then
+		utils.notify("No file found on this line", vim.log.levels.WARN)
+		return
+	end
+
+	-- Close the tooltip first
+	if terminal.state.tooltip_buf and vim.api.nvim_buf_is_valid(terminal.state.tooltip_buf) then
+		terminal.close_tooltip()
+	end
+
+	require("jj.file").open_target({ path = filepath.new_path, rev = revset, split = "tab" })
+end
+
 --- Get keymaps for summary tooltip
 --- @param revset string The revision being viewed
 --- @return jj.core.buffer.keymap[]
@@ -962,6 +981,12 @@ function M.summary_keymaps(revset)
 			handler = M.handle_summary_edit,
 			args = { revset, true },
 			opts = { desc = "Edit revision (ignore immutability) and open file" },
+		},
+		edit_file = {
+			modes = { "n" },
+			handler = M.handle_summary_file_edit,
+			args = { revset, true },
+			opts = { desc = "Read revision in buffer like `Jedit`" },
 		},
 	}
 	return cmd.resolve_keymaps_from_specs(keymaps, specs)

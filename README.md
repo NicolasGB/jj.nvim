@@ -545,6 +545,7 @@ revision via `jj diffedit`. Immutable revisions show an error on write.
             diff = "<S-d>",                   -- Diff file at this revision
             edit = "<CR>",                    -- Edit revision and open file
             edit_immutable = "<S-CR>",        -- Edit revision (ignore immutability) and open file
+            edit_file = "o",                  -- Open the file under cursor in a new tab like `:Jtabedit` would
         },
       },
       -- Status buffer keymaps (set to nil to disable)
