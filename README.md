@@ -180,6 +180,8 @@ You can fetch and push directly from the log buffer:
 - `b` - Create a new bookmark or move an existing one to the revision under cursor
   - Select from existing bookmarks to move them
   - Or create a new bookmark at that revision
+- `B` - Delete a bookmark at the revision under cursor
+  - If multiple bookmarks are present, select from the list or delete all of them
 
 ### Manage tags from the log buffer
 
@@ -512,6 +514,7 @@ revision via `jj diffedit`. Immutable revisions show an error on write.
         redo = "<S-r>",                     -- Redo last undone operation
         abandon = "a",                      -- Abandon revision under cursor
         bookmark = "b",                     -- Create or move bookmark to revision under cursor
+        bookmark_del = "B",                 -- Delete bookmark of revision under cursor
         fetch = "f",                        -- Fetch from remote
         push = "p",                         -- Push bookmark of revision under cursor
         push_all = "<S-p>",                 -- Push all changes to remote
