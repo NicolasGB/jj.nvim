@@ -9,6 +9,14 @@ package.path = package.path .. ";lua/?.lua;lua/?/init.lua"
 -- Load the parser module
 local parser = require("jj.core.parser")
 
+-- Mock the runner module to allow loading utils without it failing
+package.loaded["jj.core.runner"] = {
+	execute_command = function() end,
+	execute_command_async = function() end,
+	execute_command_sync = function() end,
+}
+local utils = require("jj.utils")
+
 local tests_passed = 0
 local tests_failed = 0
 local failures = {}
@@ -430,6 +438,46 @@ run_test("build_log_cmd: default opts produces valid command", function()
 	local cmd = log.build_log_cmd({})
 	assert_equals(true, cmd:find("^jj log %-%-no%-pager") ~= nil, "Expected command to start with jj log --no-pager")
 	assert_equals(true, cmd:find("--limit 20") ~= nil, "Expected default --limit 20")
+end)
+
+print("\n=== Running utils.parse_bookmark_names tests ===\n")
+
+run_test("parse_bookmark_names: parses simple bookmark", function()
+	local input = "main"
+	assert_table_equals({ "main" }, utils.parse_bookmark_names(input))
+end)
+
+run_test("parse_bookmark_names: parses multiple bookmarks", function()
+	local input = "main feature-1 feature-2"
+	assert_table_equals({ "main", "feature-1", "feature-2" }, utils.parse_bookmark_names(input))
+end)
+
+run_test("parse_bookmark_names: strips asterisks", function()
+	local input = "main* feature-1*"
+	assert_table_equals({ "main", "feature-1" }, utils.parse_bookmark_names(input))
+end)
+
+run_test("parse_bookmark_names: strips remote suffixes", function()
+	local input = "main@origin feature-1@remote"
+	assert_table_equals({ "main", "feature-1" }, utils.parse_bookmark_names(input))
+end)
+
+run_test("parse_bookmark_names: deduplicates bookmarks", function()
+	local input = "main main@origin main*"
+	assert_table_equals({ "main" }, utils.parse_bookmark_names(input))
+end)
+
+run_test("parse_bookmark_names: handles mixed input", function()
+	local input = "main* feature-1 feature-1@origin feature-2*"
+	assert_table_equals({ "main", "feature-1", "feature-2" }, utils.parse_bookmark_names(input))
+end)
+
+run_test("parse_bookmark_names: handles empty input", function()
+	assert_table_equals({}, utils.parse_bookmark_names(""))
+end)
+
+run_test("parse_bookmark_names: handles whitespace only", function()
+	assert_table_equals({}, utils.parse_bookmark_names("   "))
 end)
 
 -- Print summary

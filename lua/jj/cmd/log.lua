@@ -578,7 +578,7 @@ function M.handle_log_fetch()
 end
 
 --- Handle pushing from `jj log` buffer.
---- Askip the user for wich local bookmark to push.
+--- Ask the user which local bookmark to push.
 function M.handle_log_push_from_all()
 	local bookkmarks = utils.get_all_bookmarks()
 	local cmd = "jj git push"
@@ -614,14 +614,9 @@ function M.handle_log_push_bookmark()
 		return
 	end
 
-	-- If we found a revfision get it's bookmark and push it
-	local bookmark, success = runner.execute_command(
-		string.format("jj log -r %s -T 'bookmarks' --no-graph", revset),
-		string.format("Error retrieving bookmark for `%s`", revset),
-		nil,
-		false
-	)
-	if not success or not bookmark then
+	local bookmarks = utils.get_bookmarks_for_rev(revset)
+	if not bookmarks or #bookmarks == 0 then
+		utils.notify("No bookmark found for revision", vim.log.levels.ERROR)
 		return
 	end
 
@@ -637,33 +632,28 @@ function M.handle_log_push_bookmark()
 		end, string.format("Error pushing bookmark for `%s`", revset))
 	end
 
-	-- If there's a * trim it (bookmarks with modifications have *)
-	bookmark = bookmark:gsub("%*", ""):gsub("^%s+", ""):gsub("%s+$", "")
-
-	if bookmark == "" then
-		utils.notify("No bookmark found for revision", vim.log.levels.ERROR)
-		return
-	end
-
 	-- If there are multiple bookmarks user must choose
-	if bookmark:find(" ") then
-		-- Split by whitespace
-		local bookmarks = {}
-		bookmarks = vim.split(bookmark, "%s+", { trimempty = true })
-		table.insert(bookmarks, "[All]")
+	if #bookmarks > 1 then
+		table.insert(bookmarks, { name = "[All]", is_deleted = false })
 
 		vim.ui.select(bookmarks, {
 			prompt = "Which bookmark do you want to push?",
+			format_item = function(item)
+				if item.is_deleted then
+					return item.name .. " (deleted)"
+				end
+				return item.name
+			end,
 		}, function(choice)
 			if choice then
 				local cmd = "jj git push"
-				if choice == "[All]" then
+				if choice.name == "[All]" then
 					-- Push all bookmarks
 					cmd = string.format("%s --all", cmd)
 					utils.notify("Pushing `ALL` bookmarks", vim.log.levels.INFO)
 				else
-					utils.notify(string.format("Pushing bookmark `%s`...", choice), vim.log.levels.INFO)
-					cmd = string.format("%s -b %s", cmd, choice)
+					utils.notify(string.format("Pushing bookmark `%s`...", choice.name), vim.log.levels.INFO)
+					cmd = string.format("%s -b %s", cmd, choice.name)
 				end
 				push(cmd)
 			else
@@ -672,9 +662,9 @@ function M.handle_log_push_bookmark()
 		end)
 	else
 		-- If there's only one bookmark simply push it
-		-- Push the bookmark from the revset found
-		local cmd = string.format("jj git push -b %s", bookmark)
-		utils.notify(string.format("Pushing bookmark `%s`...", bookmark), vim.log.levels.INFO)
+		local b = bookmarks[1].name
+		local cmd = string.format("jj git push -b %s", b)
+		utils.notify(string.format("Pushing bookmark `%s`...", b), vim.log.levels.INFO)
 		push(cmd)
 	end
 end
@@ -732,27 +722,86 @@ function M.handle_log_open_pr(list_bookmarks)
 	end
 
 	-- Get the bookmark for this revision
-	local bookmark, success = runner.execute_command(
-		string.format("jj log -r %s -T 'bookmarks' --no-graph", revset),
-		string.format("Error retrieving bookmark for `%s`", revset),
-		nil,
-		false
-	)
-
-	if not success or not bookmark then
-		return
-	end
-
-	-- Trim and clean the bookmark (remove asterisks and whitespace)
-	bookmark = bookmark:match("^%*?(.-)%*?$"):gsub("%s+", "")
-
-	if bookmark == "" then
+	local bookmarks = utils.get_bookmarks_for_rev(revset)
+	if not bookmarks or #bookmarks == 0 then
 		utils.notify("[OPEN PR] No bookmark found for revision", vim.log.levels.ERROR)
 		return
 	end
 
-	-- Open the PR using the utility function
-	utils.open_pr_for_bookmark(bookmark)
+	if #bookmarks > 1 then
+		vim.ui.select(bookmarks, {
+			prompt = "Which bookmark do you want to open PR for?",
+			format_item = function(item)
+				if item.is_deleted then
+					return item.name .. " (deleted)"
+				end
+				return item.name
+			end,
+		}, function(choice)
+			if choice then
+				utils.open_pr_for_bookmark(choice.name)
+			end
+		end)
+	else
+		-- Open the PR using the utility function
+		utils.open_pr_for_bookmark(bookmarks[1].name)
+	end
+end
+
+function M.handle_log_bookmark_del()
+	local revset = get_revset()
+	if not revset or revset == "" then
+		return
+	end
+
+	local curr_bookmarks = utils.get_bookmarks_for_rev(revset)
+	if not curr_bookmarks or #curr_bookmarks == 0 then
+		utils.notify("No bookmark found for revision", vim.log.levels.ERROR)
+		return
+	end
+
+	---@param b_names string[] Bookmark names to delete
+	local function delete_bookmarks(b_names)
+		local escaped_list = {}
+		for _, b in ipairs(b_names) do
+			table.insert(escaped_list, vim.fn.shellescape(b))
+		end
+		local escaped_bookmarks = table.concat(escaped_list, " ")
+		local cmd = string.format("jj bookmark delete %s", escaped_bookmarks)
+		local b_str = table.concat(b_names, " ")
+		runner.execute_command_async(cmd, function()
+			utils.notify(string.format("Deleted bookmark `%s`", b_str), vim.log.levels.INFO)
+			M.log({})
+		end, string.format("Error deleting bookmark `%s`", b_str))
+	end
+
+	table.insert(curr_bookmarks, { name = "[All]", is_deleted = false })
+
+	vim.ui.select(curr_bookmarks, {
+		prompt = "Which bookmark do you want to delete?",
+		format_item = function(item)
+			if item.is_deleted then
+				return item.name .. " (deleted)"
+			end
+			return item.name
+		end,
+	}, function(choice)
+		if choice then
+			if choice.name == "[All]" then
+				local all_names = vim.iter(curr_bookmarks)
+					:filter(function(b)
+						return b.name ~= "[All]"
+					end)
+					:map(function(b)
+						return b.name
+					end)
+					:totable()
+				delete_bookmarks(all_names)
+			else
+				delete_bookmarks({ choice.name })
+			end
+		end
+	end)
 end
 
 -- Create or move bookmark at revision under cursor in `jj log` buffer
@@ -1164,6 +1213,11 @@ function M.log_keymaps()
 		bookmark = {
 			desc = "Create or move bookmark at revision under cursor",
 			handler = M.handle_log_bookmark,
+			modes = { "n" },
+		},
+		bookmark_del = {
+			desc = "Delete bookmark at revision under cursor",
+			handler = M.handle_log_bookmark_del,
 			modes = { "n" },
 		},
 		rebase = {
