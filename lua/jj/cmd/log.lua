@@ -755,6 +755,57 @@ function M.handle_log_open_pr(list_bookmarks)
 	utils.open_pr_for_bookmark(bookmark)
 end
 
+function M.handle_log_bookmark_del()
+	local revset = get_revset()
+	if not revset or revset == "" then
+		return
+	end
+
+	local bookmark, success = runner.execute_command(
+		string.format("jj log -r %s -T 'bookmarks' --no-graph", revset),
+		string.format("Error retrieving bookmark for `%s`", revset),
+		nil,
+		false
+	)
+	if not success or not bookmark then
+		return
+	end
+
+	bookmark = bookmark:gsub("%*", ""):gsub("^%s+", ""):gsub("%s+$", "")
+
+	if bookmark == "" then
+		utils.notify("No bookmark found for revision", vim.log.levels.ERROR)
+		return
+	end
+
+	local function delete_bookmark(name)
+		local cmd = string.format("jj bookmark delete %s", name)
+		runner.execute_command_async(cmd, function()
+			utils.notify(string.format("Deleted bookmark `%s`", name), vim.log.levels.INFO)
+			M.log({})
+		end, string.format("Error deleting bookmark `%s`", name))
+	end
+
+	local bookmarks = vim.split(bookmark, "%s+", { trimempty = true })
+	table.insert(bookmarks, "[All]")
+
+	vim.ui.select(bookmarks, {
+		prompt = "Which bookmark do you want to delete?",
+	}, function(choice)
+		if choice then
+			if choice == "[All]" then
+				for _, b in ipairs(bookmarks) do
+					if b ~= "[All]" then
+						delete_bookmark(b)
+					end
+				end
+			else
+				delete_bookmark(choice)
+			end
+		end
+	end)
+end
+
 -- Create or move bookmark at revision under cursor in `jj log` buffer
 function M.handle_log_bookmark()
 	local revset = get_revset()
@@ -1189,6 +1240,11 @@ function M.log_keymaps()
 		bookmark = {
 			desc = "Create or move bookmark at revision under cursor",
 			handler = M.handle_log_bookmark,
+			modes = { "n" },
+		},
+		bookmark_del = {
+			desc = "Delete bookmark at revision under cursor",
+			handler = M.handle_log_bookmark_del,
 			modes = { "n" },
 		},
 		rebase = {
