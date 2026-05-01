@@ -370,6 +370,37 @@ function M.get_all_bookmarks()
 	return bookmarks
 end
 
+--- Get all bookmarks in the repository, including deleted ones
+--- @return {name: string, is_deleted: boolean}[] bookmarks List of bookmarks
+function M.get_all_bookmarks_with_status()
+	local bookmarks_output, success = runner.execute_command(
+		[[jj bookmark list -T 'if(!self.remote(), name ++ if(!self.present(), " (deleted)", "") ++ "\n")' --quiet]],
+		"Failed to get bookmarks",
+		nil,
+		true
+	)
+
+	if not success or not bookmarks_output then
+		return {}
+	end
+
+	local bookmarks = {}
+	local seen = {}
+	for line in bookmarks_output:gmatch("[^\n]+") do
+		local trimmed = vim.trim(line)
+		if trimmed ~= "" then
+			local is_deleted = trimmed:match(" %(deleted%)$") ~= nil
+			local name = trimmed:gsub(" %(deleted%)$", "")
+			if not seen[name] then
+				table.insert(bookmarks, { name = name, is_deleted = is_deleted })
+				seen[name] = true
+			end
+		end
+	end
+
+	return bookmarks
+end
+
 --- Get unique base bookmark names from a string of space-separated bookmarks.
 --- Handles the output of the template `bookmarks.map(|b| b.name() ++ "::" ++ b.present()).join(" ")`
 --- Strips asterisks, strips @remote, and deduplicates.

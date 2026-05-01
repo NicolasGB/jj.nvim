@@ -580,27 +580,33 @@ end
 --- Handle pushing from `jj log` buffer.
 --- Ask the user which local bookmark to push.
 function M.handle_log_push_from_all()
-	local bookkmarks = utils.get_all_bookmarks()
+	local bookmarks = utils.get_all_bookmarks_with_status()
 	local cmd = "jj git push"
-	if not bookkmarks or #bookkmarks == 0 then
+	if not bookmarks or #bookmarks == 0 then
 		utils.notify("No bookmarks found to push", vim.log.levels.ERROR)
 		return
 	end
 
-	vim.ui.select(bookkmarks, {
+	vim.ui.select(bookmarks, {
 		prompt = "Select bookmark to push: ",
+		format_item = function(item)
+			if item.is_deleted then
+				return item.name .. " (deleted)"
+			end
+			return item.name
+		end,
 	}, function(choice)
 		if choice then
-			local push_cmd = string.format("%s -b %s", cmd, choice)
-			utils.notify(string.format("Pushing bookmark `%s`...", choice), vim.log.levels.INFO)
+			local push_cmd = string.format("%s -b %s", cmd, choice.name)
+			utils.notify(string.format("Pushing bookmark `%s`...", choice.name), vim.log.levels.INFO)
 			runner.execute_command_async(push_cmd, function(output)
 				if output and string.find(output, "Nothing changed%.") then
 					utils.notify("Nothing changed.", vim.log.levels.INFO)
 				else
-					utils.notify(string.format("Successfully pushed bookmark `%s`", choice), vim.log.levels.INFO)
+					utils.notify(string.format("Successfully pushed bookmark `%s`", choice.name), vim.log.levels.INFO)
 					M.log({})
 				end
-			end, string.format("Error pushing bookmark `%s`", choice))
+			end, string.format("Error pushing bookmark `%s`", choice.name))
 		else
 			return
 		end
