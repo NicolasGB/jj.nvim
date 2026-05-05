@@ -9,6 +9,8 @@ package.path = package.path .. ";lua/?.lua;lua/?/init.lua"
 -- Load the parser module
 local parser = require("jj.core.parser")
 
+local utils = require("jj.utils")
+
 local tests_passed = 0
 local tests_failed = 0
 local failures = {}
@@ -29,15 +31,19 @@ end
 
 local function assert_table_equals(expected, actual, msg)
 	if type(expected) ~= "table" or type(actual) ~= "table" then
-		error(string.format("%s\nExpected table, got: %s and %s", msg or "Assertion failed", type(expected), type(actual)))
+		error(
+			string.format("%s\nExpected table, got: %s and %s", msg or "Assertion failed", type(expected), type(actual))
+		)
 	end
-	if #expected ~= #actual then
-		error(string.format("%s\nLength mismatch: expected %d, got %d", msg or "Assertion failed", #expected, #actual))
-	end
-	for i, v in ipairs(expected) do
-		if v ~= actual[i] then
-			error(string.format("%s\nAt index %d: expected %s, got %s", msg or "Assertion failed", i, tostring(v), tostring(actual[i])))
-		end
+	if not vim.deep_equal(expected, actual) then
+		error(
+			string.format(
+				"%s\nExpected: %s\nGot: %s",
+				msg or "Assertion failed",
+				vim.inspect(expected),
+				vim.inspect(actual)
+			)
+		)
 	end
 end
 
@@ -430,6 +436,66 @@ run_test("build_log_cmd: default opts produces valid command", function()
 	local cmd = log.build_log_cmd({})
 	assert_equals(true, cmd:find("^jj log %-%-no%-pager") ~= nil, "Expected command to start with jj log --no-pager")
 	assert_equals(true, cmd:find("--limit 20") ~= nil, "Expected default --limit 20")
+end)
+
+print("\n=== Running utils.parse_bookmark_names tests ===\n")
+
+run_test("parse_bookmark_names: parses simple bookmark", function()
+	local input = "main::true"
+	assert_table_equals({ { name = "main", is_deleted = false } }, utils.parse_bookmark_names(input))
+end)
+
+run_test("parse_bookmark_names: parses multiple bookmarks", function()
+	local input = "main::true feature-1::true feature-2::false"
+	assert_table_equals(
+		{
+			{ name = "main", is_deleted = false },
+			{ name = "feature-1", is_deleted = false },
+			{ name = "feature-2", is_deleted = true },
+		},
+		utils.parse_bookmark_names(input)
+	)
+end)
+
+run_test("parse_bookmark_names: strips asterisks", function()
+	local input = "main*::true feature-1*::true"
+	assert_table_equals(
+		{ { name = "main", is_deleted = false }, { name = "feature-1", is_deleted = false } },
+		utils.parse_bookmark_names(input)
+	)
+end)
+
+run_test("parse_bookmark_names: strips remote suffixes", function()
+	local input = "main@origin::true feature-1@remote::false"
+	assert_table_equals(
+		{ { name = "main", is_deleted = false }, { name = "feature-1", is_deleted = true } },
+		utils.parse_bookmark_names(input)
+	)
+end)
+
+run_test("parse_bookmark_names: deduplicates bookmarks", function()
+	local input = "main::true main@origin::true main*::true"
+	assert_table_equals({ { name = "main", is_deleted = false } }, utils.parse_bookmark_names(input))
+end)
+
+run_test("parse_bookmark_names: handles mixed input", function()
+	local input = "main*::true feature-1::true feature-1@origin::true feature-2*::false"
+	assert_table_equals(
+		{
+			{ name = "main", is_deleted = false },
+			{ name = "feature-1", is_deleted = false },
+			{ name = "feature-2", is_deleted = true },
+		},
+		utils.parse_bookmark_names(input)
+	)
+end)
+
+run_test("parse_bookmark_names: handles empty input", function()
+	assert_table_equals({}, utils.parse_bookmark_names(""))
+end)
+
+run_test("parse_bookmark_names: handles whitespace only", function()
+	assert_table_equals({}, utils.parse_bookmark_names("   "))
 end)
 
 -- Print summary

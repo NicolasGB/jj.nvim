@@ -370,6 +370,84 @@ function M.get_all_bookmarks()
 	return bookmarks
 end
 
+--- Get all bookmarks in the repository, including deleted ones
+--- @return {name: string, is_deleted: boolean}[] bookmarks List of bookmarks
+function M.get_all_bookmarks_with_status()
+	local bookmarks_output, success = runner.execute_command(
+		[[jj bookmark list -T 'if(!self.remote(), name ++ if(!self.present(), " (deleted)", "") ++ "\n")' --quiet]],
+		"Failed to get bookmarks",
+		nil,
+		true
+	)
+
+	if not success or not bookmarks_output then
+		return {}
+	end
+
+	local bookmarks = {}
+	local seen = {}
+	for line in bookmarks_output:gmatch("[^\n]+") do
+		local trimmed = vim.trim(line)
+		if trimmed ~= "" then
+			local is_deleted = trimmed:match(" %(deleted%)$") ~= nil
+			local name = trimmed:gsub(" %(deleted%)$", "")
+			if not seen[name] then
+				table.insert(bookmarks, { name = name, is_deleted = is_deleted })
+				seen[name] = true
+			end
+		end
+	end
+
+	return bookmarks
+end
+
+--- Get unique base bookmark names from a string of space-separated bookmarks.
+--- Handles the output of the template `bookmarks.map(|b| b.name() ++ "::" ++ b.present()).join(" ")`
+--- Strips asterisks, strips @remote, and deduplicates.
+--- @param bookmark_str string
+--- @return {name: string, is_deleted: boolean}[] List of unique bookmark objects
+function M.parse_bookmark_names(bookmark_str)
+	local raw_items = vim.split(bookmark_str, "%s+", { trimempty = true })
+	local unique_bookmarks = {}
+	local seen = {}
+
+	for _, item in ipairs(raw_items) do
+		local parts = vim.split(item, "::", { plain = true })
+		if #parts == 2 then
+			-- Strip asterisks and @remote
+			local base_name = parts[1]:gsub("%*", ""):gsub("@.*$", "")
+			local is_deleted = parts[2] == "false"
+
+			if base_name ~= "" and not seen[base_name] then
+				table.insert(unique_bookmarks, { name = base_name, is_deleted = is_deleted })
+				seen[base_name] = true
+			end
+		end
+	end
+
+	return unique_bookmarks
+end
+
+--- Get unique base bookmark names and statuses for a given revset
+--- @param revset string
+--- @return {name: string, is_deleted: boolean}[]|nil ret List of bookmark objects, or nil on failure
+function M.get_bookmarks_for_rev(revset)
+	-- Retrieve name and deleted status
+	local cmd = string.format(
+		[[jj log -r %s -T 'bookmarks.map(|b| b.name() ++ "::" ++ b.present()).join(" ")' --no-graph]],
+		vim.fn.shellescape(revset)
+	)
+
+	local output, success =
+		runner.execute_command(cmd, string.format("Error retrieving bookmark for `%s`", revset), nil, false)
+
+	if not success or not output then
+		return nil
+	end
+
+	return M.parse_bookmark_names(output)
+end
+
 --- Get all tags in a repository
 --- @return string[] List of bookmarks, or empty list if none found
 function M.get_all_tags()

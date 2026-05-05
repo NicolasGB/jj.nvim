@@ -47,6 +47,7 @@ local split_module = require("jj.cmd.split")
 --- @field open_pr? string|string[]
 --- @field open_pr_list? string|string[]
 --- @field bookmark? string|string[]
+--- @field bookmark_del? string|string[]
 --- @field rebase? string|string[]
 --- @field rebase_mode? jj.cmd.rebase.keymaps
 --- @field squash? string|string[]
@@ -164,6 +165,7 @@ M.config = {
 			open_pr = "o",
 			open_pr_list = "<S-o>",
 			bookmark = "b",
+			bookmark_del = "B",
 			rebase = "r",
 			rebase_mode = {
 				onto = { "<CR>", "o" },
