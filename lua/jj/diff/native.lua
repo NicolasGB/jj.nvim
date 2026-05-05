@@ -21,7 +21,7 @@ local function open_revision(rev, path)
 	end
 	local change_id = ids[1]
 
-	local rel_path, err = utils.normalize_repo_path(path)
+	local rel_path, err = utils.normalize_relative_path(path)
 	if not rel_path then
 		utils.notify(err or "Could not resolve path", vim.log.levels.ERROR)
 		return

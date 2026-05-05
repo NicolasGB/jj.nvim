@@ -29,7 +29,7 @@ local function get_annotate_target()
 		return nil, nil, "Invalid jj:// buffer name"
 	end
 
-	local normalized, err = utils.normalize_repo_path(filename)
+	local normalized, err = utils.normalize_relative_path(filename)
 	if not normalized then
 		return nil, nil, err or "Could not normalize file path"
 	end

@@ -18,7 +18,7 @@ local parser = require("jj.core.parser")
 --- Fetch file content from jj synchronously.
 --- Returns lines with blank lines preserved; trailing empty line removed.
 --- @param rev string The revision (change ID or other revset)
---- @param path string Repository-relative path
+--- @param path string Cwd-relative path
 --- @return string[] lines
 --- @return boolean had_eol Whether the content had a trailing newline
 --- @return boolean ok Whether the command succeeded
@@ -46,7 +46,7 @@ M.get_file_content = get_file_content
 function M.read_target(opts)
 	local revision = opts and opts.rev or "@"
 	local raw_path = opts and opts.path or "%"
-	local path, normalize_err = utils.normalize_repo_path(raw_path)
+	local path, normalize_err = utils.normalize_relative_path(raw_path)
 	if not path then
 		utils.notify(normalize_err or "Could not normalize path", vim.log.levels.ERROR)
 		return
@@ -127,7 +127,7 @@ M.write_revision_file = write_revision_file
 function M.open_target(opts)
 	local revision = opts.rev or "@"
 	local raw_path = opts.path or "%"
-	local path, normalize_err = utils.normalize_repo_path(raw_path)
+	local path, normalize_err = utils.normalize_relative_path(raw_path)
 	if not path then
 		utils.notify(normalize_err or "Could not normalize path", vim.log.levels.ERROR)
 		return
