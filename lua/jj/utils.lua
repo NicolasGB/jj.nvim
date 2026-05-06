@@ -161,18 +161,17 @@ function M.parse_jj_uri(name)
 	return name:match("^jj://([^/]+)/(.+)$")
 end
 
---- Normalize a user-provided file path to a repository-relative path for jj commands.
+--- Normalize a user-provided file path to a cwd-relative path for jj commands.
 ---
 --- Rules:
 --- - `%` resolves to the current buffer absolute file path.
---- - Absolute paths are converted to repository-relative paths.
---- - Relative paths are kept relative.
+--- - Absolute paths are converted to cwd-relative paths.
+--- - Relative paths are kept relative (already cwd-relative).
 ---
 --- @param path string|nil Path provided by the user (`%`, absolute, or relative)
---- @param root? string Repository root (defaults to current jj repo root)
---- @return string|nil normalized_path Repository-relative normalized path
+--- @return string|nil normalized_path Cwd-relative normalized path
 --- @return string|nil err Error message when normalization fails
-function M.normalize_repo_path(path, root)
+function M.normalize_relative_path(path)
 	path = vim.trim(path or "")
 	if path == "" then
 		return nil, "Path is empty"
@@ -191,18 +190,16 @@ function M.normalize_repo_path(path, root)
 
 	path = vim.fs.normalize(path)
 
-	root = root or M.get_jj_root()
-	if not root or root == "" then
-		return nil, "Not in a jj repository"
-	end
-
-	root = vim.fs.normalize(root)
-
 	local is_absolute = vim.startswith(path, "/") or path:match("^%a:/") ~= nil
 	if is_absolute then
-		local rel = M.relpath(root, path)
+		local cwd = vim.uv.cwd()
+		if not cwd or cwd == "" then
+			return nil, "Could not determine current working directory"
+		end
+		cwd = vim.fs.normalize(cwd)
+		local rel = M.relpath(cwd, path)
 		if not rel then
-			return nil, "Path is outside repository root"
+			return nil, "Path is outside current working directory"
 		end
 		path = rel
 	end
@@ -685,6 +682,7 @@ function M.get_describe_text(revset)
 
 	return text
 end
+
 ---
 --- Get the commit id from a given revision. Returns nil and notifies an error if multiple commit_ids are found for a single revset
 --- @param revset string The revset to extract the commit id from

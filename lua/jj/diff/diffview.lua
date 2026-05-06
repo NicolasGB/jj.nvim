@@ -56,7 +56,7 @@ diff.register_backend("diffview", {
 		end
 
 		local raw_path = opts.path or jj_path or "%"
-		local path, err = utils.normalize_repo_path(raw_path)
+		local path, err = utils.normalize_relative_path(raw_path)
 		if not path then
 			utils.notify(err or "Could not resolve file path for Diffview", vim.log.levels.ERROR)
 			return
