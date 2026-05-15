@@ -37,6 +37,11 @@ M.config = {
 			targeted = { fg = "#5a9e6f", ctermfg = "Green" },
 		},
 	},
+	terminal = {
+		window = {
+			type = "hsplit",
+		},
+	},
 	diff = {
 		backend = "native",
 		backends = {},
@@ -49,13 +54,13 @@ function M.setup(opts)
 	M.config = vim.tbl_deep_extend("force", M.config, opts or {})
 
 	-- Setup for sub-modules
-	picker.setup(opts and opts.picker or {})
+	picker.setup(M.config.picker)
 	editor.setup({
 		highlights = M.config.highlights.editor,
 		auto_insert = M.config.editor.auto_insert,
 	})
-	cmd.setup(opts and opts.cmd or {})
-	terminal.setup(opts and opts.terminal or {})
+	cmd.setup(M.config.cmd or {})
+	terminal.setup(M.config.terminal or {})
 	diff.setup(M.config.diff)
 
 	-- Register the commands form the different modules
