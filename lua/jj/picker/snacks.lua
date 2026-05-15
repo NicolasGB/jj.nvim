@@ -28,6 +28,24 @@ function M.status(opts, files)
 		source = "jj",
 		items = files,
 		title = "JJ Status",
+		actions = {
+			open_and_diff = function(picker, item)
+				picker:close()
+				if item and item.file then
+					vim.schedule(function()
+						vim.cmd("edit " .. vim.fn.fnameescape(item.file))
+						vim.cmd("Jdiff")
+					end)
+				end
+			end,
+		},
+		win = {
+			input = {
+				keys = {
+					["<C-d>"] = { "open_and_diff", mode = { "i", "n" } },
+				},
+			},
+		},
 		preview = function(ctx)
 			if ctx.item.file then
 				snacks.picker.preview.cmd(ctx.item.diff_cmd, ctx, {})

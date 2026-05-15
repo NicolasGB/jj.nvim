@@ -328,6 +328,13 @@ Press `<S-x>` on a file from the `status` output and that's it, it's restored.
 
 ![Restore-status](https://github.com/NicolasGB/jj.nvim/raw/main/assets/x-status.gif)
 
+### Status picker (Snacks.nvim)
+
+When using the [Snacks.nvim](https://github.com/folke/snacks.nvim) picker integration, `picker.status()` opens a fuzzy-findable list of changed files with a live diff preview. Available keybindings:
+
+- `<Enter>` - Open the selected file
+- `<C-d>` - Open the selected file and run `Jdiff`
+
 ## Installation
 
 Using [lazy.nvim](https://github.com/folke/lazy.nvim):
