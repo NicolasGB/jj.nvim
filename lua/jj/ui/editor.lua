@@ -51,7 +51,8 @@ local function init_highlights()
 		vim.api.nvim_set_hl(0, "Removed", M.opts.highlights.deleted)
 	end
 
-	-- this one will always be executed since the default nvim highlight group does not exist for renames
+	-- Neovim's jj syntax uses jjRenamed for renamed files.
+	-- Also define Renamed for backward compatibility with existing user configs.
 	if M.opts.highlights.renamed then
 		vim.api.nvim_set_hl(0, "jjRenamed", M.opts.highlights.renamed)
 	end
@@ -79,40 +80,28 @@ function M.open_editor(initial_text, on_write, on_unload, keymaps)
 	-- Initialize highlight groups once
 	init_highlights()
 
-	-- Create a namespace for our highlights
+	-- Create a namespace for explicit renamed-line highlighting (independent of syntax file support)
 	local ns_id = vim.api.nvim_create_namespace("jj_describe_highlights")
 
-	-- Function to apply highlights to the buffer
+	-- Apply explicit highlight for renamed entries in JJ header lines.
+	-- Example line: "JJ:   R path/to/file"
 	local function apply_highlights(buf)
-		-- Clear existing highlights
-		vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
+		if not vim.api.nvim_buf_is_valid(buf) then
+			return
+		end
 
-		-- Get all lines
+		vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
 		local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 
 		for i, line in ipairs(lines) do
-			local line_idx = i - 1 -- 0-indexed
-
-			-- First, check if line starts with JJ: and highlight it as comment
-			if line:match("^JJ:") then
-				-- Then check for rename status indicator
-				local status_pos = line:find("[R] ", 4) -- Find status after "JJ:"
-				if status_pos then
-					local status = line:sub(status_pos, status_pos) -- Get the status character
-					local hl_group = nil
-
-					if status == "R" then
-						hl_group = "jjRenamed"
-					end
-
-					if hl_group then
-						-- Highlight from the status character to the end of the line
-						vim.api.nvim_buf_set_extmark(buf, ns_id, line_idx, status_pos - 1, {
-							end_col = #line,
-							hl_group = hl_group,
-						})
-					end
-				end
+			local status_pos = line:match("^JJ:%s+()R%s")
+			if status_pos then
+				-- Highlight only the status letter (R), like A/M/D syntax groups do.
+				vim.api.nvim_buf_set_extmark(buf, ns_id, i - 1, status_pos - 1, {
+					end_col = status_pos,
+					hl_group = "jjRenamed",
+					priority = 200,
+				})
 			end
 		end
 	end
@@ -124,9 +113,15 @@ function M.open_editor(initial_text, on_write, on_unload, keymaps)
 
 	-- Set buffer content
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, initial_text)
-
-	-- Apply highlights initially
 	apply_highlights(buf)
+
+	-- Keep explicit highlights up-to-date while editing
+	vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "BufEnter" }, {
+		buffer = buf,
+		callback = function()
+			apply_highlights(buf)
+		end,
+	})
 
 	-- Smart insert mode: insert when description is empty, normal mode otherwise
 	if M.opts.auto_insert then
@@ -141,14 +136,6 @@ function M.open_editor(initial_text, on_write, on_unload, keymaps)
 			end
 		end)
 	end
-
-	-- Reapply highlights when text changes
-	vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
-		buffer = buf,
-		callback = function()
-			apply_highlights(buf)
-		end,
-	})
 
 	-- Handle :w and :wq commands
 	vim.api.nvim_create_autocmd("BufWriteCmd", {

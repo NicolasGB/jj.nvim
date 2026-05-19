@@ -1,5 +1,6 @@
 local utils = require("jj.utils")
 local runner = require("jj.core.runner")
+local parser = require("jj.core.parser")
 
 --- @class jj.picker
 
@@ -7,8 +8,9 @@ local runner = require("jj.core.runner")
 --- @field snacks table|boolean The snacks config
 
 --- @class jj.picker.file
---- @field file string The path of the file
---- @field change string The type of change in the file
+--- @field file string The current path of the file
+--- @field status string JJ-style status code (e.g. "M ", "R ") for picker formatting
+--- @field rename? string Previous path when this item is a rename
 --- @field diff_cmd string The command to get the diff of the file
 
 --- @class jj.picker.log_line
@@ -51,14 +53,24 @@ local function get_files()
 	local lines = vim.split(diff_ouptut, "\n", { trimempty = true })
 
 	for _, line in ipairs(lines) do
-		local change, file_path = line:match("^(%a)%s(.+)$")
+		local change = line:match("^(%a)%s")
+		local file_info = parser.parse_file_info_from_status_line(line)
 
-		table.insert(files, {
-			text = file_path,
-			file = file_path,
-			change = change,
-			diff_cmd = string.format("jj diff %s", file_path),
-		})
+		if change and file_info and file_info.new_path then
+			local file_path = file_info.new_path
+			local item = {
+				text = line:sub(3),
+				file = file_path,
+				status = change .. " ",
+				diff_cmd = string.format("jj diff %s", vim.fn.shellescape(file_path)),
+			}
+
+			if change == "R" and file_info.old_path and file_info.old_path ~= file_info.new_path then
+				item.rename = file_info.old_path
+			end
+
+			table.insert(files, item)
+		end
 	end
 
 	return files

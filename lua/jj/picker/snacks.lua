@@ -28,6 +28,7 @@ function M.status(opts, files)
 		source = "jj",
 		items = files,
 		title = "JJ Status",
+		format = "git_status",
 		actions = {
 			open_and_diff = function(picker, item)
 				picker:close()
