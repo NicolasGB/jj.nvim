@@ -38,10 +38,7 @@ local utils = require("jj.utils")
 ---@field rev string the revision to diff against
 
 ---@type jj.diff.config
-M.config = {
-	backend = "native",
-	backends = {},
-}
+M.config = {}
 
 ---@type table<string, jj.diff.BackendImpl>
 local backends = {}

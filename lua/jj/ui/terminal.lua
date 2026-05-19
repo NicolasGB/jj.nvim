@@ -16,16 +16,7 @@ local utils = require("jj.utils")
 local buffer = require("jj.core.buffer")
 
 --- @type jj.ui.terminal.opts
-local opts = {
-	cursor_render_delay = 10,
-
-	window = {
-		type = "hsplit",
-		split_size = 0.5,
-		floating_width = 0.99,
-		floating_height = 0.95,
-	},
-}
+local opts = {}
 
 --- @class jj.ui.terminal.state
 local state = {
@@ -501,12 +492,9 @@ function M.run(cmd, keymaps)
 	end
 
 	-- Create new terminal buffer
-	local split_type = opts.window.type == "hsplit" and "horizontal"
-		or opts.window.type == "vsplit" and "vertical"
-		or opts.window.type == "tab" and "tab"
 	local full_size = opts.window.type == "hsplit" and vim.o.lines or vim.o.columns
 	state.buf = buffer.create({
-		split = split_type,
+		split = buffer.resolve_split(opts.window.type),
 		size = math.floor(full_size * opts.window.split_size),
 		on_exit = function(buf)
 			if state.buf == buf then

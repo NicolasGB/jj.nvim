@@ -435,6 +435,14 @@ revision via `jj diffedit`. Immutable revisions show an error on write.
     -- When true, automatically enter insert mode only if the description is empty.
     -- If a description already exists, stay in normal mode.
     auto_insert = false,
+
+    -- Configure the describe/commit editor buffer window
+    window = {
+      type = "hsplit",           -- Type of window (hsplit/vsplit/floating/tab)
+      split_size = 0.5,          -- Size % of split (height for hsplit, width for vsplit)
+      floating_width = 0.99,     -- Width % for floating window (0.1 to 1.0)
+      floating_height = 0.95,    -- Height % for floating window (0.1 to 1.0)
+    },
   },
 
   -- Customize syntax highlighting colors for the describe buffer
@@ -643,6 +651,29 @@ require("jj").setup({
   editor = {
     auto_insert = true,
   }
+})
+```
+
+#### `editor.window`
+
+Control where the describe/commit editor buffer opens:
+
+- `type`: `"hsplit" | "vsplit" | "floating" | "tab"`
+- `split_size`: split ratio for `hsplit`/`vsplit` (default `0.5`)
+- `floating_width`: width ratio for floating windows (default `0.99`)
+- `floating_height`: height ratio for floating windows (default `0.95`)
+
+Example:
+
+```lua
+require("jj").setup({
+  editor = {
+    window = {
+      type = "floating",
+      floating_width = 0.9,
+      floating_height = 0.8,
+    },
+  },
 })
 ```
 

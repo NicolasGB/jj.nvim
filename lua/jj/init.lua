@@ -27,6 +27,12 @@ M.config = {
 	},
 	editor = {
 		auto_insert = false,
+		window = {
+			type = "hsplit",
+			split_size = 0.5,
+			floating_width = 0.99,
+			floating_height = 0.95,
+		},
 	},
 	highlights = {
 		editor = {
@@ -38,8 +44,12 @@ M.config = {
 		},
 	},
 	terminal = {
+		cursor_render_delay = 10,
 		window = {
 			type = "hsplit",
+			split_size = 0.5,
+			floating_width = 0.99,
+			floating_height = 0.95,
 		},
 	},
 	diff = {
@@ -55,12 +65,9 @@ function M.setup(opts)
 
 	-- Setup for sub-modules
 	picker.setup(M.config.picker)
-	editor.setup({
-		highlights = M.config.highlights.editor,
-		auto_insert = M.config.editor.auto_insert,
-	})
-	cmd.setup(M.config.cmd or {})
-	terminal.setup(M.config.terminal or {})
+	editor.setup(M.config.editor)
+	cmd.setup(M.config.cmd)
+	terminal.setup(M.config.terminal)
 	diff.setup(M.config.diff)
 
 	-- Register the commands form the different modules
