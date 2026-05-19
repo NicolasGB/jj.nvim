@@ -467,4 +467,21 @@ function M.set_cursor(buf, pos, opts)
 	end
 end
 
+--- Given an input string resolves the split direction
+--- @param type? "hsplit"|"vsplit"|"floating"|"tab" Type of window the terminal is displayed in
+--- @return string split_type One of "horizontal", "vertical", "floating", "tab"
+function M.resolve_split(type)
+	if type == "hsplit" then
+		return "horizontal"
+	elseif type == "vsplit" then
+		return "vertical"
+	elseif type == "floating" then
+		return "floating"
+	elseif type == "tab" then
+		return "tab"
+	else
+		return "horizontal" -- default to horizontal if not specified or unrecognized
+	end
+end
+
 return M

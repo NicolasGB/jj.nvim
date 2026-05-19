@@ -3,67 +3,70 @@ local M = {}
 
 local buffer = require("jj.core.buffer")
 
+--- @class jj.ui.editor.opts
+--- @field auto_insert? boolean Smart insert: enter insert mode when description is empty, stay in normal mode when one exists
+--- @field highlights? jj.ui.editor.highlights
+--- @field window? jj.ui.editor.window
+
 --- @class jj.ui.editor.highlights
 ---@field added? table Highlight settings for added lines
 ---@field modified? table Highlight settings for modified lines
 ---@field deleted? table Highlight settings for deleted lines
 ---@field renamed? table Highlight settings for renamed lines
 
---- @class jj.ui.editor.opts
----@field auto_insert? boolean Smart insert: enter insert mode when description is empty, stay in normal mode when one exists
+--- @class jj.ui.editor.window
+--- @field type? "hsplit"|"vsplit"|"floating"|"tab" Type of window the terminal is displayed in
+--- @field split_size? number Size % of the split window, either height (hsplit) or width (vsplit) (between 0.1 and 1.0)
+--- @field floating_width? number Width % of the floating window (between 0.1 and 1.0)
+--- @field floating_height? number Height % of the floating window (between 0.1 and 1.0)
 
-M.highlights = {
-	-- Only init this one by default since it's not handled natively by neovim
-	renamed = { fg = "#d29922", ctermfg = "Yellow" },
+--- @type jj.ui.editor.opts
+M.opts = {
+	highlights = {
+		-- Only init this one by default since it's not handled natively by neovim
+		renamed = { fg = "#d29922", ctermfg = "Yellow" },
+	},
+	auto_insert = true,
 }
-M.highlights_initialized = false
-M.auto_insert = true
+
+--- Private module state to track highlights initialization
+local highlights_initialized = false
 
 -- Initialize highlight groups once
 local function init_highlights()
-	if M.highlights_initialized then
+	if highlights_initialized then
 		return
 	end
 
 	-- Override the highlight groups if user provided custom settings
-	if M.highlights.added then
-		vim.api.nvim_set_hl(0, "Added", M.highlights.added)
+	if M.opts.highlights.added then
+		vim.api.nvim_set_hl(0, "Added", M.opts.highlights.added)
 	end
 
-	if M.highlights.modified then
-		vim.api.nvim_set_hl(0, "Changed", M.highlights.modified)
+	if M.opts.highlights.modified then
+		vim.api.nvim_set_hl(0, "Changed", M.opts.highlights.modified)
 	end
 
-	if M.highlights.deleted then
-		vim.api.nvim_set_hl(0, "Removed", M.highlights.deleted)
+	if M.opts.highlights.deleted then
+		vim.api.nvim_set_hl(0, "Removed", M.opts.highlights.deleted)
 	end
 
 	-- this one will always be executed since the default nvim highlight group does not exist for renames
-	if M.highlights.renamed then
-		vim.api.nvim_set_hl(0, "jjRenamed", M.highlights.renamed)
+	if M.opts.highlights.renamed then
+		vim.api.nvim_set_hl(0, "jjRenamed", M.opts.highlights.renamed)
 	end
 
-	M.highlights_initialized = true
+	highlights_initialized = true
 end
 
 --- Setup function to configure highlights and other options
----@param opts? { highlights: jj.ui.editor.highlights, auto_insert?: boolean } Configuration options
-function M.setup(opts)
-	opts = opts or {}
-
-	-- Merge user highlights with defaults
-	if opts.highlights then
-		M.highlights = vim.tbl_deep_extend("force", M.highlights, opts.highlights)
-	end
-
-	-- Store auto_insert option
-	if opts.auto_insert ~= nil then
-		M.auto_insert = opts.auto_insert
-	end
+---@param user_opts? jj.ui.editor.opts Configuration options
+function M.setup(user_opts)
+	M.opts = vim.tbl_deep_extend("force", M.opts, user_opts or {})
 
 	-- Reset highlights flag to force re-initialization with new highlights
-	if M.highlights_initialized then
-		M.highlights_initialized = false
+	if highlights_initialized then
+		highlights_initialized = false
 		init_highlights()
 	end
 end
@@ -115,27 +118,18 @@ function M.open_editor(initial_text, on_write, on_unload, keymaps)
 	end
 
 	-- Create buffer
-	local buf = buffer.create({
-		name = "jujutsu:///DESCRIBE_EDITMSG",
-		split = "horizontal",
-		size = math.floor(vim.o.lines / 2),
-		filetype = "jjdescription",
-		buftype = "acwrite",
-		modifiable = true,
-		keymaps = keymaps,
-	})
+	local buf = M.create_buffer()
+	-- Set keymaps before setting content to avoid triggering them during setup
+	buffer.set_keymaps(buf, keymaps or {})
 
 	-- Set buffer content
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, initial_text)
-
-	-- Set bufhidden after creation
-	vim.bo[buf].bufhidden = "wipe"
 
 	-- Apply highlights initially
 	apply_highlights(buf)
 
 	-- Smart insert mode: insert when description is empty, normal mode otherwise
-	if M.auto_insert then
+	if M.opts.auto_insert then
 		vim.schedule(function()
 			if not vim.api.nvim_buf_is_valid(buf) then
 				return
@@ -180,6 +174,47 @@ function M.open_editor(initial_text, on_write, on_unload, keymaps)
 				local last_written = vim.b[buf].jj_last_written_lines
 				on_unload(last_written)
 			end,
+		})
+	end
+end
+
+--- Create the buffer based on the module options.
+--- @return number buf Buffer number of the created buffer
+function M.create_buffer()
+	if M.opts.window.type == "floating" then
+		local buf, _ = buffer.create_float({
+			title = "JJ editor",
+			title_pos = "center",
+			filetype = "jjdescription",
+			buftype = "acwrite",
+			bufhidden = "wipe",
+			enter = true,
+			modifiable = true,
+			height = math.floor(vim.o.lines * M.opts.window.floating_height),
+			width = math.floor(vim.o.columns * M.opts.window.floating_width),
+			win_options = {
+				wrap = true,
+				number = false,
+				relativenumber = false,
+				cursorline = false,
+				signcolumn = "no",
+				winfixbuf = true,
+			},
+		})
+
+		return buf
+	else
+		-- Get the lines/columns based on the direction of the split
+		local full_size = M.opts.window.type == "hsplit" and vim.o.lines or vim.o.columns
+
+		return buffer.create({
+			name = "jj:///DESCRIBE_EDITMSG",
+			filetype = "jjdescription",
+			buftype = "acwrite",
+			bufhidden = "wipe",
+			modifiable = true,
+			split = buffer.resolve_split(M.opts.window.type),
+			size = math.floor(full_size * M.opts.window.split_size),
 		})
 	end
 end
