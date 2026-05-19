@@ -94,7 +94,7 @@ function M.status(opts)
 		return
 	end
 
-	local cmd_str = "jj status"
+	local cmd_str = "jj status --no-pager"
 
 	if opts and opts.notify then
 		local output, success = runner.execute_command(cmd_str, "Failed to get status")
