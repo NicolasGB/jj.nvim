@@ -19,11 +19,6 @@ local default_describe_opts = {
 --- @param revset? string The revision to describe
 --- @param sync? boolean Whether to execute command synchronously
 local function execute_describe(description, revset, sync)
-	if not description or description == "" then
-		utils.notify("Description cannot be empty", vim.log.levels.ERROR)
-		return
-	end
-
 	local cmd = "jj describe"
 	if revset then
 		cmd = cmd .. " -r " .. revset
@@ -95,8 +90,7 @@ function M.describe(description, revset, opts, on_close)
 		editor.open_editor(text, function(buf_lines)
 			local trimmed_description = utils.extract_description_from_describe(buf_lines)
 			if not trimmed_description then
-				-- If nothing is provide simply exit
-				return
+				trimmed_description = ""
 			end
 			execute_describe(trimmed_description, revset, true)
 			-- Once editing is done, reopen the log if we came from there
