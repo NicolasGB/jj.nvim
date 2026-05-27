@@ -58,8 +58,19 @@ local split_module = require("jj.cmd.split")
 --- @field tag_set? string|string[]
 --- @field history? string|string[]
 --- @field change_revset? string|string[]
+--- @field duplicate? string|string[]
+--- @field duplicate_mode? jj.cmd.duplicate.keymaps
 
 --- @class jj.cmd.rebase.keymaps
+--- @field onto? string|string[]
+--- @field after? string|string[]
+--- @field before? string|string[]
+--- @field onto_immutable? string|string[]
+--- @field after_immutable? string|string[]
+--- @field before_immutable? string|string[]
+--- @field exit_mode? string|string[]
+
+--- @class jj.cmd.duplicate.keymaps
 --- @field onto? string|string[]
 --- @field after? string|string[]
 --- @field before? string|string[]
@@ -181,6 +192,16 @@ M.config = {
 			squash_mode = {
 				into = "<CR>",
 				into_immutable = "<S-CR>",
+				exit_mode = { "<Esc>", "<C-c>" },
+			},
+			duplicate = "<C-y>",
+			duplicate_mode = {
+				onto = { "<CR>", "o" },
+				after = "a",
+				before = "b",
+				onto_immutable = { "<S-CR>", "<S-o>" },
+				after_immutable = "<S-a>",
+				before_immutable = "<S-b>",
 				exit_mode = { "<Esc>", "<C-c>" },
 			},
 			quick_squash = "<S-s>",

@@ -25,7 +25,7 @@ local HIGHLIGHT_RANGE = 2 -- Revision line + description line
 --- @field raw_flags? string
 
 ---@type jj.cmd.log_opts
-local default_log_opts = { summary = false, reversed = false, no_graph = false, limit = 20, raw_flags = nil }
+local default_log_opts = { summary = false, reversed = false, no_graph = false, limit = nil, raw_flags = nil }
 
 --- @param modes string|string[]
 --- @return string[]
@@ -884,6 +884,22 @@ function M.handle_log_squash()
 	utils.notify("Squash `started`.", vim.log.levels.INFO, 500)
 end
 
+--- Duplicate bookmark(s)
+function M.handle_log_duplicate()
+	local revsets_str = extract_revsets_from_terminal_buffer()
+	-- Validate revsets
+	if not revsets_str or revsets_str == "" then
+		return
+	end
+	vim.b.jj_duplicate_revsets = revsets_str
+
+	-- Set highlights
+	setup_selected_highlights()
+
+	M.transition_mode("duplicate")
+	utils.notify("Duplication `started`.", vim.log.levels.INFO, 500)
+end
+
 --- Quick squash the bookmark under the cursor into it's parent
 function M.handle_log_quick_squash()
 	local revset = get_revset()
@@ -1261,6 +1277,11 @@ function M.log_keymaps()
 			handler = M.handle_log_squash,
 			modes = { "n", "v" },
 		},
+		duplicate = {
+			desc = "Duplicate bookmark(s)",
+			handler = M.handle_log_duplicate,
+			modes = { "n", "v" },
+		},
 		quick_squash = {
 			desc = "Squash the bookmark under the cursor into it's parent (-r) keeping parent's message (-u), alwas ignores immutability",
 			handler = M.handle_log_quick_squash,
@@ -1354,6 +1375,7 @@ function M.rebase_keymaps()
 		exit_mode = {
 			desc = "Exit rebase to normal mode",
 			handler = M.handle_special_mode_exit,
+			args = { "Rebase" },
 			modes = { "n" },
 		},
 	}
@@ -1384,6 +1406,63 @@ function M.squash_keymaps()
 		exit_mode = {
 			desc = "Exit squash to normal mode",
 			handler = M.handle_special_mode_exit,
+			args = { "Squash" },
+			modes = { "n" },
+		},
+	}
+
+	return apply_nowait_to_unique_keymaps(cmd.resolve_keymaps_from_specs(keymaps, spec))
+end
+
+--- Duplicate mode keymaps
+--- @return jj.core.buffer.keymap[]
+
+function M.duplicate_keymaps()
+	local cmd = require("jj.cmd")
+	local keymaps = cmd.config.keymaps.log.duplicate_mode or {}
+
+	--- @type jj.cmd.keymap_specs
+	local spec = {
+		onto = {
+			desc = "Duplicate onto (-O) the revision under cursor",
+			handler = M.handle_duplicate_execute,
+			args = { "onto" },
+			modes = { "n" },
+		},
+		after = {
+			desc = "Duplicate revset(s) after (-A) the revision under cursor",
+			handler = M.handle_duplicate_execute,
+			args = { "after" },
+			modes = { "n" },
+		},
+		before = {
+			desc = "Duplicate revset(s) before (-B) the revision under cursor",
+			handler = M.handle_duplicate_execute,
+			args = { "before" },
+			modes = { "n" },
+		},
+		onto_immutable = {
+			desc = "Duplicate onto (-O) the revision under cursor (ignores immutability)",
+			handler = M.handle_duplicate_execute,
+			args = { "onto", true },
+			modes = { "n" },
+		},
+		after_immutable = {
+			desc = "Duplicate revset(s) after (-A) the revision under cursor (ignores immutability)",
+			handler = M.handle_duplicate_execute,
+			args = { "after", true },
+			modes = { "n" },
+		},
+		before_immutable = {
+			desc = "Duplicate revset(s) before (-B) the revision under cursor (ignores immutability)",
+			handler = M.handle_duplicate_execute,
+			args = { "before", true },
+			modes = { "n" },
+		},
+		exit_mode = {
+			desc = "Exit normal to normal mode",
+			handler = M.handle_special_mode_exit,
+			args = { "Duplication" },
 			modes = { "n" },
 		},
 	}
@@ -1401,12 +1480,14 @@ function M.get_keymaps_for_mode(mode)
 		return M.rebase_keymaps()
 	elseif mode == "squash" then
 		return M.squash_keymaps()
+	elseif mode == "duplicate" then
+		return M.duplicate_keymaps()
 	end
 	return {}
 end
 
 --- Transition between buffer modes by swapping keymaps
---- @param target_mode "normal"|"rebase"|"squash" Target mode name (e.g., "normal", "rebase")
+--- @param target_mode "normal"|"rebase"|"squash"|"duplicate" Target mode name (e.g., "normal", "rebase")
 function M.transition_mode(target_mode)
 	-- Get the mode keymaps
 	if target_mode == vim.b.jj_mode then
@@ -1439,9 +1520,12 @@ function M.transition_mode(target_mode)
 end
 
 --- Handle special mode exit
-function M.handle_special_mode_exit()
+--- @param mode "Rebase"|"Squash"|"Duplicate" The mode that is being exited, used for notification message
+function M.handle_special_mode_exit(mode)
 	-- Clear stored revsets
 	vim.b.jj_rebase_revsets = nil
+	vim.b.jj_squash_revsets = nil
+	vim.b.jj_duplicate_revsets = nil
 
 	M.transition_mode("normal")
 	-- Clear highlights
@@ -1449,7 +1533,7 @@ function M.handle_special_mode_exit()
 	vim.api.nvim_buf_clear_namespace(buf, log_selected_ns_id, 0, -1)
 	vim.api.nvim_buf_clear_namespace(buf, log_special_mode_target_ns_id, 0, -1)
 
-	utils.notify("Rebase `canceled`", vim.log.levels.INFO, 500)
+	utils.notify(string.format("%s `canceled`", mode), vim.log.levels.INFO, 500)
 end
 
 --- Handle rebase execution with mode
@@ -1494,7 +1578,7 @@ function M.handle_rebase_execute(mode, ignore_immut)
 		M.transition_mode("normal")
 		-- Refresh log
 		M.log({})
-	end, "Error during rebase onto")
+	end, "Error during rebase.")
 end
 
 --- Handle squash execution
@@ -1537,7 +1621,52 @@ function M.handle_squash_execute(mode, ignore_immut)
 		M.transition_mode("normal")
 		-- Refresh log
 		M.log({})
-	end, "Error during squash into")
+	end, "Error during squashing.")
+end
+
+-- Handle duplicate execution
+--- @param mode "onto" | "after" | "before" Rebase mode
+--- @param ignore_immut boolean? Wether or not to ignore immutability
+function M.handle_duplicate_execute(mode, ignore_immut)
+	-- Get all revsets in the format "xx xy xz"
+	local revsets = vim.b.jj_duplicate_revsets
+	local destination_revset = get_revset()
+	if not destination_revset or destination_revset == "" then
+		return
+	end
+
+	local mode_flat = "-o"
+	if mode == "after" then
+		mode_flat = "-A"
+	elseif mode == "before" then
+		mode_flat = "-B"
+	end
+
+	utils.notify(string.format("Duplicating...", revsets, mode, destination_revset), vim.log.levels.INFO, 500)
+	local cmd = string.format("jj duplicate %s %s %s", revsets, mode_flat, destination_revset)
+
+	-- If ignore_immut is true, add the flag
+	-- This is not currently exposed in keymaps but could be in the future
+	if ignore_immut then
+		cmd = cmd .. " --ignore-immutable"
+	end
+
+	runner.execute_command_async(cmd, function()
+		utils.notify(
+			string.format("Duplicated `%s` %s `%s` successfully", revsets, mode, destination_revset),
+			vim.log.levels.INFO
+		)
+		vim.b.jj_duplicate_revsets = nil
+
+		-- Clear all highlighting before transitioning
+		local buf = terminal.state.buf or 0
+		vim.api.nvim_buf_clear_namespace(buf, log_selected_ns_id, 0, -1)
+		vim.api.nvim_buf_clear_namespace(buf, log_special_mode_target_ns_id, 0, -1)
+
+		M.transition_mode("normal")
+		-- Refresh log
+		M.log({})
+	end, "Error during duplication.")
 end
 
 return M
