@@ -174,4 +174,86 @@ function M.file_history()
 	end
 end
 
+local function get_conflicts()
+	local cmd =
+		[[jj log -r 'conflicts()' --no-graph -T 'change_id.shortest() ++ "\t" ++ coalesce(author.name(), "(no author)") ++ "\t" ++ coalesce(description.first_line(), "(no description)") ++ "\n"']]
+	local output, ok = runner.execute_command(cmd)
+	if not ok then
+		return
+	end
+
+	if type(output) ~= "string" then
+		return utils.notify("Could not get conflicts output", vim.log.levels.ERROR)
+	end
+
+	local conflicts = {}
+	local lines = vim.split(output, "\n", { trimempty = true })
+
+	for _, line in ipairs(lines) do
+		local rev, author, description = line:match("^(.-)\t(.-)\t(.*)$")
+		if rev and rev ~= "" then
+			table.insert(conflicts, {
+				symbol = "!",
+				rev = rev,
+				author = author or "(no author)",
+				description = description or "(no description)",
+				diff_cmd = string.format("jj diff -r %s --stat --git", rev),
+			})
+		end
+	end
+
+	return conflicts
+end
+
+function M.conflict()
+	-- Ensure jj is installed
+	if not utils.ensure_jj() then
+		return
+	end
+
+	local conflicts = get_conflicts()
+	if not conflicts or #conflicts == 0 then
+		return utils.notify("`Picker`: No conflicts found", vim.log.levels.INFO)
+	end
+
+	vim.ui.select(conflicts, {
+		prompt = "Select conflicted revision",
+		format_item = function(item)
+			return string.format("%s  %s  %s", item.rev or "", item.author or "", item.description or "")
+		end,
+	}, function(item)
+		if not item or not item.rev then
+			return
+		end
+
+		--TODO: add a custom tool or default to edit if the user want's to
+		local _, ok = runner.execute_command(
+			string.format("jj edit %s --ignore-immutable", item.rev),
+			string.format("could not edit revision '%s'", item.rev)
+		)
+
+		if not ok then
+			return
+		end
+
+		utils.reload_changed_file_buffers()
+		utils.notify(string.format("Editing conflicted revision `%s`", item.rev), vim.log.levels.INFO)
+
+		-- Best-effort: open first conflicted file if one is listed.
+		local list_output = runner.execute_command(string.format("jj resolve -r %s --list", item.rev))
+		if type(list_output) ~= "string" or list_output == "" then
+			return
+		end
+
+		for _, line in ipairs(vim.split(list_output, "\n", { trimempty = true })) do
+			local path = vim.trim(line:gsub("^[-*]%s+", ""))
+			local stat = vim.loop.fs_stat(path)
+			if stat and stat.type == "file" then
+				vim.cmd("edit " .. vim.fn.fnameescape(path))
+				break
+			end
+		end
+	end)
+end
+
 return M
