@@ -120,6 +120,7 @@ local split_module = require("jj.cmd.split")
 
 --- @class jj.cmd.push_opts
 --- @field bookmark? string Specific bookmark to push (default: all)
+--- @field deleted? boolean Push deleted revisions
 
 --- @class jj.cmd.open_pr_opts
 --- @field list_bookmarks? boolean Whether to select from all bookmarks instead of current revision
@@ -750,6 +751,9 @@ function M.push(opts)
 	if opts.bookmark then
 		utils.notify(string.format("Pushing `%s` bookmark ...", opts.bookmark), vim.log.levels.INFO, 1000)
 		cmd = string.format("%s --bookmark %s", cmd, opts.bookmark)
+	elseif opts.deleted then
+		utils.notify("Pushing deleted bookmarks...", vim.log.levels.INFO, 1000)
+		cmd = cmd .. " --deleted"
 	else
 		utils.notify(string.format("Pushing `ALL` bookmarks...", opts.bookmark), vim.log.levels.INFO, 1000)
 	end
@@ -1286,11 +1290,20 @@ function M.j(args)
 			M.abandon()
 		end,
 		push = function()
-			if #remaining_args > 0 then
-				M.push({ bookmark = remaining_args[1] })
-			else
-				M.push()
+			local opts = {}
+			for _, arg in ipairs(remaining_args) do
+				if arg == "--deleted" then
+					opts.deleted = true
+				else
+					opts.bookmark = arg
+				end
 			end
+
+			if opts.deleted and opts.bookmark then
+				utils.notify("Cannot specify both --deleted and --bookmark", vim.log.levels.ERROR)
+				return
+			end
+			M.push(opts)
 		end,
 		fetch = function()
 			M.fetch()
