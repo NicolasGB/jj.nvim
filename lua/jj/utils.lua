@@ -296,14 +296,19 @@ function M.open_url(url)
 		return
 	end
 
-	if vim.ui and type(vim.ui.open) == "function" then
-		vim.ui.open(url)
+	local is_windows = vim.fn.has("win32") == 1 or vim.fn.has("win64") == 1
+	if is_windows then
+		-- Avoid `cmd /c start` parsing issues with `&` and other special chars in URLs.
+		local job_id = vim.fn.jobstart({ "rundll32.exe", "url.dll,FileProtocolHandler", url }, { detach = true })
+		if job_id <= 0 then
+			-- Fallback for environments where rundll32 is unavailable.
+			vim.fn.jobstart({ "cmd.exe", "/c", "start", "", url }, { detach = true })
+		end
 		return
 	end
 
-	if vim.fn.has("win32") == 1 then
-		-- `start` is a cmd.exe builtin
-		vim.fn.jobstart({ "cmd.exe", "/c", "start", "", url }, { detach = true })
+	if vim.ui and type(vim.ui.open) == "function" then
+		vim.ui.open(url)
 		return
 	end
 
