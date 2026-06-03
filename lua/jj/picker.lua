@@ -38,7 +38,7 @@ end
 --- Gets the files in the current jj repository
 --- @return jj.picker.file[]|nil A list of files with their changes or nil if not in a jj repo
 local function get_files()
-	local diff_ouptut, ok = runner.execute_command("jj diff --summary --quiet")
+	local diff_ouptut, ok = runner.execute_command("jj --no-pager diff --summary --quiet")
 	if not ok then
 		return
 	end
@@ -62,7 +62,7 @@ local function get_files()
 				text = line:sub(3),
 				file = file_path,
 				status = change .. " ",
-				diff_cmd = string.format("jj diff %s", vim.fn.shellescape(file_path)),
+				diff_cmd = string.format("jj --no-pager diff %s", vim.fn.shellescape(file_path)),
 			}
 
 			if change == "R" and file_info.old_path and file_info.old_path ~= file_info.new_path then
@@ -100,7 +100,7 @@ end
 ---@return jj.picker.log_line[]|nil A list of log lines or nil if not in a jj repo
 local function log_history(file_path)
 	local format =
-		"jj log %s -r 'all()' -T builtin_log_oneline --config 'template-aliases.\"format_timestamp(timestamp)\"=timestamp'"
+		"jj --no-pager log %s -r 'all()' -T builtin_log_oneline --config 'template-aliases.\"format_timestamp(timestamp)\"=timestamp'"
 	local output, ok = runner.execute_command(string.format(format, file_path))
 	if not ok then
 		return
@@ -146,7 +146,7 @@ local function log_history(file_path)
 						commit_id = commit_id,
 						description = description or "",
 						text = line,
-						diff_cmd = string.format("jj diff %s -r %s --stat --git", file_path, rev),
+						diff_cmd = string.format("jj --no-pager diff %s -r %s --stat --git", file_path, rev),
 					})
 				end
 			end
