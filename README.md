@@ -27,6 +27,7 @@
   - [Squash changes from the log buffer](#squash-changes-from-the-log-buffer)
   - [Split changes from the log buffer](#split-changes-from-the-log-buffer)
   - [Rebase changes from the log buffer](#rebase-changes-from-the-log-buffer)
+  - [Duplicate changes from the log buffer](#duplicate-changes-from-the-log-buffer)
   - [Open a PR/MR from the log buffer](#open-a-prmr-from-the-log-buffer)
   - [Browse current file on remote](#browse-current-file-on-remote)
   - [Open a changed file](#open-a-changed-file)
@@ -68,6 +69,7 @@
   - `squash` - Squash the current diff to its parent or interactive squash mode from the log buffer
   - `split` - Split a change interactively in a floating terminal
   - `rebase` - Rebase changes to a destination
+  - `duplicate` - Duplicate one or more changes to a destination revision
   - `bookmark create/delete/track/forget` - Create, delete, track, and forget (untrack) bookmarks
   - `tag set/delete/push` - Create, delete, and push tags (push requires colocated repos)
   - `undo` - Undo the last operation
@@ -275,6 +277,32 @@ From rebase mode, choose how to rebase:
 **Single revision:** In normal mode, place your cursor on a single revision and press `r` to rebase just that change.
 
 ![Rebase-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/rebase.gif)
+
+### Duplicate changes from the log buffer
+
+Enter an interactive duplicate mode directly from the log buffer to duplicate one or more changes:
+
+- `<C-y>` - Enter duplicate mode targeting the revision under cursor (in normal mode) or selected revisions (in visual mode)
+
+Once in duplicate mode, the interface highlights your selection and the current duplicate destination:
+
+- Selected changes are highlighted in your configured `selected_hl` color (default: dark magenta)
+- The cursor position (target destination) is highlighted in your configured `targeted_hl` color (default: green)
+- Move the cursor to preview different duplicate destinations with live highlighting
+
+From duplicate mode, choose how to duplicate:
+
+- `<CR>` or `o` - Duplicate onto (`-o`) the revision under cursor
+- `a` - Duplicate after (`-A`) the revision under cursor
+- `b` - Duplicate before (`-B`) the revision under cursor
+- `<S-CR>` or `<S-o>` - Duplicate onto (`-o`) ignoring immutability
+- `<S-a>` - Duplicate after (`-A`) ignoring immutability
+- `<S-b>` - Duplicate before (`-B`) ignoring immutability
+- `<Esc>` or `<C-c>` - Exit duplicate mode without making changes
+
+**Visual mode selection:** Select multiple revisions in visual mode before pressing `<C-y>` to duplicate them all at once. The plugin extracts each selected revision and duplicates them together.
+
+**Single revision:** In normal mode, place your cursor on a single revision and press `<C-y>` to duplicate just that change.
 
 ### Open a PR/MR from the log buffer
 
@@ -544,6 +572,16 @@ revision via `jj diffedit`. Immutable revisions show an error on write.
             after_immutable = "<S-a>",              -- Rebase after revision under cursor (ignore immutability)
             before_immutable = "<S-b>",             -- Rebase before revision under cursor (ignore immutability)
             exit_mode = { "<Esc>", "<C-c>" }, -- Exit rebase mode
+        },
+        duplicate = "<C-y>",                -- Enter duplicate mode targeting revision under cursor or selected revisions
+        duplicate_mode = {
+            onto = { "<CR>", "o" },           -- Select revision under cursor as duplicate onto destination
+            after = "a",                      -- Duplicate after revision under cursor
+            before = "b",                     -- Duplicate before revision under cursor
+            onto_immutable = { "<S-CR>", "<S-o>" }, -- Duplicate onto revision under cursor (ignore immutability)
+            after_immutable = "<S-a>",              -- Duplicate after revision under cursor (ignore immutability)
+            before_immutable = "<S-b>",             -- Duplicate before revision under cursor (ignore immutability)
+            exit_mode = { "<Esc>", "<C-c>" }, -- Exit duplicate mode
         },
         squash = "s",                       -- Enter squash mode targeting revision under cursor or selected revisions
         squash_mode = {
