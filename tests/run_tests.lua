@@ -498,6 +498,61 @@ run_test("parse_bookmark_names: handles whitespace only", function()
 	assert_table_equals({}, utils.parse_bookmark_names("   "))
 end)
 
+print("\n=== Running file encoding tests ===\n")
+
+local jj_file = require("jj.file")
+
+--- Hex-dump a string so assertion failures on binary data are readable.
+local function hex(s)
+	return (s:gsub(".", function(c)
+		return string.format("%02x ", string.byte(c))
+	end))
+end
+
+run_test("decode: utf-16le with BOM and dos endings", function()
+	-- "a\r\nü\r\n" in utf-16le with BOM
+	local raw = "\255\254a\0\r\0\n\0\252\0\r\0\n\0"
+	local lines, had_eol, enc = jj_file._decode(raw)
+	assert_table_equals({ "a", "\195\188" }, lines) -- "ü" in utf-8
+	assert_equals(true, had_eol)
+	assert_equals("utf-16le", enc.fenc)
+	assert_equals(true, enc.bomb)
+	assert_equals("dos", enc.ff)
+	for _, line in ipairs(lines) do
+		assert_is_nil(line:find("%z"), "line contains a NUL byte")
+		assert_is_nil(line:find("\1"), "line contains a SOH byte")
+	end
+end)
+
+run_test("decode: honors explicit enc for BOM-less utf-16le", function()
+	local lines = jj_file._decode("h\0i\0", { fenc = "utf-16le", bomb = false, ff = "unix" })
+	assert_table_equals({ "hi" }, lines)
+end)
+
+run_test("decode: roundtrip reproduces the bytes exactly", function()
+	local fixtures = {
+		["utf-16le bom"] = "\255\254h\0i\0\n\0\252\0",
+		["utf-16be bom"] = "\254\255\0h\0i\0\n\0\252",
+		["utf-16le bom + dos"] = "\255\254a\0\r\0\n\0b\0\r\0\n\0",
+		["utf-8 bom"] = "\239\187\191hello\nworld\n",
+		["plain dos"] = "a\r\nb\r\n",
+		["mac"] = "a\rb\r",
+		["no trailing newline"] = "a\nb",
+		["empty file"] = "",
+	}
+	for name, raw in pairs(fixtures) do
+		local lines, had_eol, enc = jj_file._decode(raw)
+		if lines == nil then
+			error(string.format("%s: decode failed: %s", name, tostring(had_eol)))
+		end
+		local encoded, err = jj_file._encode(lines, had_eol, enc)
+		if encoded == nil then
+			error(string.format("%s: encode failed: %s", name, tostring(err)))
+		end
+		assert_equals(hex(raw), hex(encoded), name)
+	end
+end)
+
 -- Print summary
 print(string.format("\n=== Test Summary ==="))
 print(string.format("Passed: %d", tests_passed))

@@ -8,12 +8,13 @@ local file = require("jj.file")
 --- Open a writable buffer for a specific revision of a file.
 --- @param rev string The revision
 --- @param path string The file path (absolute or repo-relative)
-local function open_revision(rev, path)
+--- @param enc? jj.file.enc Encoding settings for the file content
+local function open_revision(rev, path, enc)
 	local raw_ids, ok = runner.execute_command(
 		string.format([[jj log --no-graph -r %s -T 'change_id ++ "\n"' --quiet]], vim.fn.shellescape(rev)),
 		"jj: failed to resolve revision"
 	)
-	if not ok then return end
+	if not ok or not raw_ids then return end
 	local ids = vim.split(vim.trim(raw_ids), "\n", { trimempty = true })
 	if #ids ~= 1 then
 		utils.notify(string.format("Revision '%s' is ambiguous", rev), vim.log.levels.ERROR)
@@ -27,7 +28,7 @@ local function open_revision(rev, path)
 		return
 	end
 
-	local lines, had_eol, ok_read = file.get_file_content(change_id, rel_path)
+	local lines, had_eol, ok_read, used_enc = file.get_file_content(change_id, rel_path, enc)
 	if not ok_read then
 		utils.notify(string.format("Could not read `%s` from `%s`", rel_path, change_id), vim.log.levels.ERROR)
 		return
@@ -36,6 +37,7 @@ local function open_revision(rev, path)
 	local buf = vim.api.nvim_create_buf(false, true)
 
 	local buf_name = string.format("jj://%s/%s", change_id, rel_path)
+	file.set_buf_encoding(buf, used_enc)
 	vim.api.nvim_buf_set_name(buf, buf_name)
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 	vim.bo[buf].eol = had_eol
@@ -54,7 +56,7 @@ local function open_revision(rev, path)
 	vim.api.nvim_create_autocmd("BufWriteCmd", {
 		buffer = buf,
 		callback = function()
-			file.write_revision_file(buf, change_id, rel_path)
+			file.write_revision_file(buf, change_id, rel_path, vim.v.cmdbang == 1)
 		end,
 	})
 
@@ -85,6 +87,11 @@ diff.register_backend("native", {
 		local path = opts.path or jj_path or buf_name
 		local layout = opts.layout or "vertical"
 
+		-- Borrow the current buffer's encoding settings so the revision
+		-- side is decoded in the same way as the current file.
+		-- Assumes the encoding didn't change between revisions.
+		local enc = file.get_buf_encoding(prev_buf)
+
 		local split_fun = layout == "horizontal" and vim.cmd.split or vim.cmd.vsplit
 		local orig_win = vim.api.nvim_get_current_win()
 
@@ -95,7 +102,7 @@ diff.register_backend("native", {
 		-- Set up diff: current buffer on right, revision on left
 		vim.cmd.diffthis()
 		split_fun({ mods = { split = "aboveleft" } })
-		open_revision(rev, path)
+		open_revision(rev, path, enc)
 		vim.cmd.diffthis()
 
 		local rev_buf = vim.api.nvim_get_current_buf()
