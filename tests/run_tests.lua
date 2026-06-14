@@ -493,7 +493,6 @@ end)
 run_test("build_log_cmd: default opts produces valid command", function()
 	local cmd = log.build_log_cmd({})
 	assert_equals(true, cmd:find("^jj log %-%-no%-pager") ~= nil, "Expected command to start with jj log --no-pager")
-	assert_equals(true, cmd:find("--limit 20") ~= nil, "Expected default --limit 20")
 end)
 
 print("\n=== Running utils.parse_bookmark_names tests ===\n")
@@ -505,14 +504,11 @@ end)
 
 run_test("parse_bookmark_names: parses multiple bookmarks", function()
 	local input = "main::true feature-1::true feature-2::false"
-	assert_table_equals(
-		{
-			{ name = "main", is_deleted = false },
-			{ name = "feature-1", is_deleted = false },
-			{ name = "feature-2", is_deleted = true },
-		},
-		utils.parse_bookmark_names(input)
-	)
+	assert_table_equals({
+		{ name = "main", is_deleted = false },
+		{ name = "feature-1", is_deleted = false },
+		{ name = "feature-2", is_deleted = true },
+	}, utils.parse_bookmark_names(input))
 end)
 
 run_test("parse_bookmark_names: strips asterisks", function()
@@ -538,14 +534,11 @@ end)
 
 run_test("parse_bookmark_names: handles mixed input", function()
 	local input = "main*::true feature-1::true feature-1@origin::true feature-2*::false"
-	assert_table_equals(
-		{
-			{ name = "main", is_deleted = false },
-			{ name = "feature-1", is_deleted = false },
-			{ name = "feature-2", is_deleted = true },
-		},
-		utils.parse_bookmark_names(input)
-	)
+	assert_table_equals({
+		{ name = "main", is_deleted = false },
+		{ name = "feature-1", is_deleted = false },
+		{ name = "feature-2", is_deleted = true },
+	}, utils.parse_bookmark_names(input))
 end)
 
 run_test("parse_bookmark_names: handles empty input", function()

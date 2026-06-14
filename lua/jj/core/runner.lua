@@ -17,7 +17,8 @@ end
 --- @return boolean success Whether the command succeeded
 function M.execute_command(cmd, error_prefix, input, silent)
 	local stderr_file = vim.fn.tempname()
-	local output = vim.fn.system({ "sh", "-c", string.format("(%s) 2>%s", cmd, vim.fn.shellescape(stderr_file)) }, input)
+	local output =
+		vim.fn.system({ "sh", "-c", string.format("(%s) 2>%s", cmd, vim.fn.shellescape(stderr_file)) }, input)
 	local success = vim.v.shell_error == 0
 
 	if not success then

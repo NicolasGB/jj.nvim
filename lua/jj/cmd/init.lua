@@ -11,6 +11,7 @@ local log_module = require("jj.cmd.log")
 local describe_module = require("jj.cmd.describe")
 local status_module = require("jj.cmd.status")
 local split_module = require("jj.cmd.split")
+local resolve_module = require("jj.cmd.resolve")
 
 -- Config for cmd module
 --- @class jj.cmd.describe.editor.keymaps
@@ -248,6 +249,8 @@ M.describe = describe_module.describe
 M.status = status_module.status
 -- Rexport split function
 M.split = split_module.split
+-- Reexport resolve function
+M.resolve = resolve_module.resolve
 
 --- Merge multiple keymap arrays into one
 --- @param ... jj.core.buffer.keymap[][] Keymap arrays to merge
@@ -1304,27 +1307,39 @@ function M.j(args)
 			M.log({ raw_flags = remaining_args_str ~= "" and remaining_args_str or nil })
 		end,
 		split = function()
-			local rev = remaining_args and remaining_args[1] or "@"
-
 			local opts = {
-				rev = rev,
+				rev = "@",
 			}
 
-			local index = 2
-			for i = index, #remaining_args do
+			local i = 1
+			while i <= #remaining_args do
 				local arg = remaining_args[i]
+
 				if arg == "--parallel" then
 					opts.parallel = true
 				elseif arg == "--ignore-immutable" then
 					opts.ignore_immutable = true
 				elseif arg == "--message" and remaining_args[i + 1] then
 					opts.message = remaining_args[i + 1]
-					index = i + 1
+					i = i + 1
 				elseif arg == "--fileset" and remaining_args[i + 1] then
 					opts.filesets = opts.filesets or {}
 					table.insert(opts.filesets, remaining_args[i + 1])
-					index = i + 1
+					i = i + 1
+				elseif arg:sub(1, 2) == "--" then
+					-- Unknown option: ignore it here.
+					utils.notify(string.format("Unknown option: %s", arg), vim.log.levels.WARN)
+					return
+				else
+					if opts.rev == "@" then
+						opts.rev = arg
+					else
+						opts.filesets = opts.filesets or {}
+						table.insert(opts.filesets, arg)
+					end
 				end
+
+				i = i + 1
 			end
 
 			require("jj.cmd.split").split(opts)
@@ -1430,6 +1445,9 @@ function M.j(args)
 		fetch_pr = function()
 			M.fetch_pr()
 		end,
+		resolve = function()
+			require("jj.cmd.resolve").resolve()
+		end,
 	}
 
 	if handlers[subcommand] then
@@ -1481,6 +1499,7 @@ function M.register_command()
 				"commit",
 				"tag",
 				"fetch_pr",
+				"resolve",
 			}
 			local matches = {}
 			for _, cmd in ipairs(subcommands) do
