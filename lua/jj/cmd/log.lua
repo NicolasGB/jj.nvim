@@ -966,7 +966,7 @@ function M.handle_log_resolve()
 		end
 	end
 
-	local strategies = require("jj.cmd").config.log.resolve_strategies
+	local strategies = require("jj.cmd").config.resolve_strategies
 	if strategies and #strategies > 1 then
 		vim.ui.select(strategies, {
 			prompt = "Select a resolve strategy: ",

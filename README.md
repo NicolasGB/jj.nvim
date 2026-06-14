@@ -26,6 +26,7 @@
   - [Manage tags from the log buffer](#manage-tags-from-the-log-buffer)
   - [Squash changes from the log buffer](#squash-changes-from-the-log-buffer)
   - [Split changes from the log buffer](#split-changes-from-the-log-buffer)
+  - [Resolve conflicts from the log buffer](#resolve-conflicts-from-the-log-buffer)
   - [Rebase changes from the log buffer](#rebase-changes-from-the-log-buffer)
   - [Duplicate changes from the log buffer](#duplicate-changes-from-the-log-buffer)
   - [Open a PR/MR from the log buffer](#open-a-prmr-from-the-log-buffer)
@@ -39,6 +40,7 @@
 - [Configuration Examples](#configuration-examples)
   - [Editor Options](#editor-options)
   - [New Command Options](#new-command-options)
+  - [Resolve Command Options](#resolve-command-options)
   - [Push Command Options](#push-command-options)
   - [Bookmark Management Command Options](#bookmark-management-command-options)
   - [Open PR/MR Command Options](#open-prmr-command-options)
@@ -68,6 +70,7 @@
   - `edit` - Edit a change
   - `squash` - Squash the current diff to its parent or interactive squash mode from the log buffer
   - `split` - Split a change interactively in a floating terminal
+  - `resolve` - Resolve conflicts interactively in a floating terminal or via external strategy
   - `rebase` - Rebase changes to a destination
   - `duplicate` - Duplicate one or more changes to a destination revision
   - `bookmark create/delete/track/forget` - Create, delete, track, and forget (untrack) bookmarks
@@ -250,6 +253,23 @@ cmd.split({ filesets = { "src/" } })             -- Only include specific filese
 cmd.split({ ignore_immutable = true })           -- Split an immutable revision
 ```
 
+### Resolve conflicts from the log buffer
+
+Resolve conflicts for the revision under the cursor directly from the log buffer:
+
+- `gr` - Resolve conflicts for the selected revision
+
+How it integrates with the log buffer:
+
+- Uses `jj resolve --revision <revset>` for the revision under cursor
+- If `cmd.resolve_strategies` has more than one strategy, `vim.ui.select` prompts you to choose one
+- If a strategy is selected, its `args` and `external` options are passed to `cmd.resolve(...)`
+- On success, the log buffer is automatically reloaded so conflict state is refreshed
+- When using floating terminals, cancelled/failed resolve attempts restore the log view
+
+> [!NOTE]
+> See the [Example config](#example-config) below for a complete `resolve_strategies` setup.
+
 ### Rebase changes from the log buffer
 
 Enter an interactive rebase mode directly from the log buffer to rebase one or more changes:
@@ -401,6 +421,7 @@ The plugin provides a `:J` command that accepts jj subcommands:
 :Jbrowse             " Open current file on remote at cursor line
 :Jbrowse main        " Open current file on remote at the given revset
 :J split             " Split a change interactively
+:J resolve           " Resolve conflicts for @
 :J diff_history      " Prompt for a `left..right` range and open a history-aware diff
 :J diff_history main..@ " Open a history-aware diff between main and the working copy
 :J bookmark create/move/delete/track/forget
@@ -539,6 +560,20 @@ revision via `jj diffedit`. Immutable revisions show an error on write.
       close_on_edit = false,                                     -- Close log buffer after editing a change
     },
 
+    -- Optional resolve strategy picker shared across cmd integrations
+    resolve_strategies = {
+      {
+        name = "Meld",
+        args = { "--tool", "meld" },
+        external = true,
+      },
+      {
+        name = "Mergiraf",
+        args = { "--tool", "mergiraf" },
+        external = true,
+      },
+    },
+
     -- Configure bookmark command
     bookmark = {
         prefix = ""
@@ -594,6 +629,7 @@ revision via `jj diffedit`. Immutable revisions show an error on write.
         },
         quick_squash = "<S-s>",             -- Quick squash revision under cursor into its parent (ignore immutability)
         split = "<C-s>",                    -- Split the revision under cursor
+        resolve = "gr",                     -- Resolve conflicts for revision under cursor
         history = "<S-h>",                  -- Show a history-aware diff for the selected revision range
         change_revset = "<C-r>",            -- Change the revset(s) being viewed in the log buffer
         tag_set = "<S-t>",                  -- Create a tag on the revision under cursor
@@ -783,6 +819,31 @@ cmd.new({ show_log = true })                           -- Create new and show lo
 cmd.new({ show_log = true, with_input = true })        -- Prompt for parent
 cmd.new({ args = "--before @" })                       -- Pass custom args
 ```
+
+### Resolve Command Options
+
+The `resolve` function accepts an options table:
+
+```lua
+local cmd = require("jj.cmd")
+cmd.resolve({
+  rev = "@",                    -- Revision to resolve (default: "@")
+  filesets = { "src/" },        -- Optional filesets to limit what gets resolved
+  args = { "--tool", "meld" }, -- Extra args passed to `jj resolve`
+  external = true,              -- Run as an external command instead of in an nvim floating terminal
+})
+
+-- Examples:
+cmd.resolve()                                                -- Resolve @ in floating terminal
+cmd.resolve({ rev = "abc123" })                            -- Resolve a specific revision
+cmd.resolve({ rev = "abc123", filesets = { "lua/" } })    -- Resolve only selected filesets
+cmd.resolve({ external = true, args = { "--tool", "kdiff3" } }) -- Use an external merge tool
+```
+
+When called from the log buffer via `gr`, `jj.nvim` can optionally prompt for a strategy using `cmd.resolve_strategies`.
+
+> [!NOTE]
+> See [Example config](#example-config) for a full `cmd.resolve_strategies` example.
 
 ### Push Command Options
 
@@ -1098,6 +1159,18 @@ vim.keymap.set("n", "<leader>jA", annotate.line, { desc = "JJ annotate line" })
         bookmark = {
             prefix = "feat/"
         },
+        resolve_strategies = {
+          {
+            name = "Meld",
+            args = { "--tool", "meld" },
+            external = true,
+          },
+          {
+            name = "Mergiraf",
+            args = { "--tool", "mergiraf" },
+            external = true,
+          },
+        },
         keymaps = {
           log = {
             edit = "<CR>",
@@ -1105,6 +1178,7 @@ vim.keymap.set("n", "<leader>jA", annotate.line, { desc = "JJ annotate line" })
             diff = "<S-d>",
             abandon = "<S-a>",
             fetch = "<S-f>",
+            resolve = "gr",  -- Resolve conflicts for revision under cursor
           },
           status = {
             open_file = "<CR>",

@@ -26,7 +26,6 @@ local resolve_module = require("jj.cmd.resolve")
 
 --- @class jj.cmd.log
 --- @field close_on_edit? boolean Whether to close the log buffer when editing a change
---- @field resolve_strategies? jj.cmd.resolve.strategy[] List of strategies for resolving conflicts in the log buffer
 
 --- @class jj.cmd.log.highlights Highlights for the log buffer
 --- @field selected? table Highlights for the selected revisions in log buffer (when rebasing/squashing)
@@ -132,6 +131,7 @@ local resolve_module = require("jj.cmd.resolve")
 --- @class jj.cmd.opts
 --- @field describe? jj.cmd.describe
 --- @field log? jj.cmd.log
+--- @field resolve_strategies? jj.cmd.resolve.strategy[] List of conflict resolve strategies shared across cmd integrations
 --- @field bookmark? jj.cmd.bookmark
 --- @field keymaps? jj.cmd.keymaps Keymaps for the buffers containing the  of the commands
 ---
@@ -171,6 +171,7 @@ M.config = {
 	log = {
 		close_on_edit = false,
 	},
+	resolve_strategies = {},
 	bookmark = {
 		prefix = "",
 	},
