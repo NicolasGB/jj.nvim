@@ -132,6 +132,7 @@ local split_module = require("jj.cmd.split")
 --- @class jj.cmd.push_opts
 --- @field bookmark? string Specific bookmark to push (default: all)
 --- @field deleted? boolean Push deleted revisions
+--- @field remote? string Specific remote to push too
 
 --- @class jj.cmd.open_pr_opts
 --- @field list_bookmarks? boolean Whether to select from all bookmarks instead of current revision
@@ -756,6 +757,56 @@ function M.fetch()
 	end
 end
 
+--- Parse args for `:J push`.
+--- @param args string[]
+--- @return jj.cmd.push_opts|nil opts
+--- @return string|nil err
+function M.parse_push_args(args)
+	local opts = {} --[[@as jj.cmd.push_opts]]
+	local already_set = {
+		bookmark = false,
+		remote = false,
+	}
+
+	local i = 1
+	while i <= #args do
+		local arg = args[i]
+
+		if arg == "--deleted" then
+			opts.deleted = true
+		elseif arg == "--remote" then
+			local remote = args[i + 1]
+			if not remote or remote:sub(1, 2) == "--" then
+				return nil, "Missing remote name after --remote"
+			end
+			if already_set.remote then
+				return nil, "Remote already set. Cannot specify multiple remotes."
+			end
+
+			opts.remote = remote
+			already_set.remote = true
+			i = i + 1
+		elseif arg:sub(1, 2) == "--" then
+			return nil, string.format("Unknown option: %s", arg)
+		else
+			if already_set.bookmark then
+				return nil, "Only one bookmark can be provided"
+			end
+
+			opts.bookmark = arg
+			already_set.bookmark = true
+		end
+
+		i = i + 1
+	end
+
+	if opts.deleted and opts.bookmark then
+		return nil, "Cannot specify both --deleted and a bookmark"
+	end
+
+	return opts, nil
+end
+
 -- Jujutsu push
 --- @param opts? jj.cmd.push_opts Optional push options
 function M.push(opts)
@@ -768,16 +819,23 @@ function M.push(opts)
 	-- Save the lop one state to refresh
 	local log_open = terminal.is_log_buffer_open()
 
+	local notify_msg = "Pushing bookmarks `ALL` bookmarks"
+
 	local cmd = "jj git push"
 	if opts.bookmark then
-		utils.notify(string.format("Pushing `%s` bookmark ...", opts.bookmark), vim.log.levels.INFO, 1000)
+		notify_msg = string.format("Pushing bookmark `%s`", opts.bookmark)
 		cmd = string.format("%s --bookmark %s", cmd, opts.bookmark)
 	elseif opts.deleted then
-		utils.notify("Pushing deleted bookmarks...", vim.log.levels.INFO, 1000)
+		notify_msg = "Pushing deleted bookmarks"
 		cmd = cmd .. " --deleted"
-	else
-		utils.notify(string.format("Pushing `ALL` bookmarks...", opts.bookmark), vim.log.levels.INFO, 1000)
 	end
+
+	if opts.remote then
+		cmd = string.format("%s --remote %s", cmd, opts.remote)
+		notify_msg = string.format("%s to remote `%s`", notify_msg, opts.remote)
+	end
+
+	utils.notify(notify_msg .. "...", vim.log.levels.INFO, 1000)
 
 	runner.execute_command_async(cmd, function()
 		utils.notify("Successfully pushed to remote", vim.log.levels.INFO)
@@ -1311,19 +1369,12 @@ function M.j(args)
 			M.abandon()
 		end,
 		push = function()
-			local opts = {}
-			for _, arg in ipairs(remaining_args) do
-				if arg == "--deleted" then
-					opts.deleted = true
-				else
-					opts.bookmark = arg
-				end
-			end
-
-			if opts.deleted and opts.bookmark then
-				utils.notify("Cannot specify both --deleted and --bookmark", vim.log.levels.ERROR)
+			local opts, err = M.parse_push_args(remaining_args)
+			if err then
+				utils.notify(err, vim.log.levels.ERROR)
 				return
 			end
+
 			M.push(opts)
 		end,
 		fetch = function()
