@@ -950,6 +950,11 @@ function M.handle_log_resolve()
 		return
 	end
 
+	if not utils.is_change_conflicted(revset) then
+		utils.notify(string.format("Revision `%s` has no conflicts to resolve", revset), vim.log.levels.INFO)
+		return
+	end
+
 	local exit_func = function(exit_code)
 		if exit_code == 0 then
 			utils.notify(string.format("Successfully resolved `%s`", revset), vim.log.levels.INFO)

@@ -422,17 +422,24 @@ The plugin provides a `:J` command that accepts jj subcommands:
 :Jbrowse main        " Open current file on remote at the given revset
 :J split             " Split a change interactively
 :J resolve           " Resolve conflicts for @
-:J diff_history      " Prompt for a `left..right` range and open a history-aware diff
+:J resolve -r abc123 --tool mergiraf --external src/ " Resolve rev/filesets with an external tool
+:J resolve                                " Resolve conflicts for @
+:J resolve -r abc123                      " Resolve a specific revision
+:J resolve --revision abc123 src/         " Resolve only matching filesets
+:J resolve --tool mergiraf --external     " Resolve using an external tool
+:J resolve --tool meld --ext src/         " --ext alias + fileset filtering
+:J diff_history " Prompt for a `left..right` range and open a history-aware diff
 :J diff_history main..@ " Open a history-aware diff between main and the working copy
 :J bookmark create/move/delete/track/forget
-:J tag set           " Set a tag (prompts for revision and tag name)
-:J tag set abc123    " Set a tag on a specific revision
-:J tag delete        " Delete a tag via picker
-:J tag delete v1.0   " Delete a specific tag
+:J tag set " Set a tag (prompts for revision and tag name)
+:J tag set abc123 " Set a tag on a specific revision
+:J tag delete " Delete a tag via picker
+:J tag delete v1.0 " Delete a specific tag
 :J # This will use your defined default command
 :J <your-alias>
-:J commit            " Opens your configured editor describes @ and then creates a new change -A immediately
+:J commit " Opens your configured editor describes @ and then creates a new change -A immediately
 :J commit <any text here> " Automatically describes @ and creates a new change -A immediately
+
 ```
 
 ### Diff Commands
@@ -830,7 +837,7 @@ cmd.resolve({
   rev = "@",                    -- Revision to resolve (default: "@")
   filesets = { "src/" },        -- Optional filesets to limit what gets resolved
   args = { "--tool", "meld" }, -- Extra args passed to `jj resolve`
-  external = true,              -- Run as an external command instead of in an nvim floating terminal
+  external = true,               -- Run as an external command instead of in an nvim floating terminal
 })
 
 -- Examples:
@@ -844,6 +851,13 @@ When called from the log buffer via `gr`, `jj.nvim` can optionally prompt for a 
 
 > [!NOTE]
 > See [Example config](#example-config) for a full `cmd.resolve_strategies` example.
+
+CLI flags for `:J resolve`:
+
+- `-r <rev>` or `--revision <rev>`: target revision (default: `@`)
+- `--tool <name>`: pass merge tool to `jj resolve`
+- `--external` or `--ext`: run outside the floating terminal
+- trailing positional args are treated as filesets
 
 ### Push Command Options
 

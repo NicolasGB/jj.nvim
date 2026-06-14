@@ -1258,6 +1258,65 @@ function M.fetch_pr(opts)
 	end)
 end
 
+--- Parse arguments passed to `:J resolve`
+--- @param args string[]
+--- @return jj.cmd.resolve.opts|nil opts
+--- @return string|nil err
+function M.parse_resolve_args(args)
+	local opts = { rev = "@" } --[[@as jj.cmd.resolve.opts]]
+	local already_set = {
+		rev = false,
+		tool = false,
+	}
+
+	local i = 1
+	while i <= #args do
+		local arg = args[i]
+
+		if arg == "--external" or arg == "--ext" then
+			opts.external = true
+		elseif arg == "--tool" then
+			local tool = args[i + 1]
+			if not tool or tool:sub(1, 1) == "-" then
+				return nil, "Missing value for --tool"
+			end
+			if already_set.tool then
+				return nil, "Tool already set. Cannot specify multiple tools."
+			end
+
+			opts.args = opts.args or {}
+			table.insert(opts.args, "--tool")
+			table.insert(opts.args, tool)
+			already_set.tool = true
+			i = i + 1
+		elseif arg == "--revision" or arg == "-r" then
+			local rev = args[i + 1]
+			if not rev or rev:sub(1, 1) == "-" then
+				return nil, "Missing value for --revision/-r"
+			end
+			if already_set.rev then
+				return nil, "Revision already set. Cannot specify multiple revisions."
+			end
+
+			opts.rev = rev
+			already_set.rev = true
+			i = i + 1
+		elseif arg:sub(1, 2) == "--" then
+			-- Pass unknown long options through to jj resolve for forward compatibility.
+			opts.args = opts.args or {}
+			table.insert(opts.args, arg)
+		else
+			-- Positional args are treated as filesets.
+			opts.filesets = opts.filesets or {}
+			table.insert(opts.filesets, arg)
+		end
+
+		i = i + 1
+	end
+
+	return opts, nil
+end
+
 --- @param args string|string[] jj command arguments
 function M.j(args)
 	if not utils.ensure_jj() then
@@ -1461,7 +1520,12 @@ function M.j(args)
 			M.fetch_pr()
 		end,
 		resolve = function()
-			require("jj.cmd.resolve").resolve()
+			local opts, err = M.parse_resolve_args(remaining_args)
+			if err then
+				utils.notify(err, vim.log.levels.ERROR)
+				return
+			end
+			require("jj.cmd.resolve").resolve(opts)
 		end,
 	}
 
