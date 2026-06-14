@@ -26,6 +26,7 @@ local resolve_module = require("jj.cmd.resolve")
 
 --- @class jj.cmd.log
 --- @field close_on_edit? boolean Whether to close the log buffer when editing a change
+--- @field resolve_strategies? jj.cmd.resolve.strategy[] List of strategies for resolving conflicts in the log buffer
 
 --- @class jj.cmd.log.highlights Highlights for the log buffer
 --- @field selected? table Highlights for the selected revisions in log buffer (when rebasing/squashing)
@@ -114,6 +115,18 @@ local resolve_module = require("jj.cmd.resolve")
 ---@field filesets? string[] Filesets to include in the split
 ---@field ignore_immutable? boolean Ignore immutable revisions
 ---@field parallel? boolean Run operations in parallel
+---@field on_exit? fun(exit_code: number) Callback invoked when command exits
+
+--- @class jj.cmd.resolve.strategy
+--- @field name string Label shown in vim.ui.select
+--- @field args? string[] Extra args passed to jj resolve
+--- @field external? boolean Run externally instead of floating terminal
+
+---@class jj.cmd.resolve.opts
+---@field rev string|nil The revision to resolve, defaults to "@"
+---@field filesets string[]|nil The filesets to resolve, defaults to all filesets
+---@field external boolean|nil Whether to use external merge tool, if this boolean is set the command will not be ran in a floating terminal inside neovim (defaults: false)
+---@field args string[]|nil Additional arguments to pass to the resolve command
 ---@field on_exit? fun(exit_code: number) Callback invoked when command exits
 
 --- @class jj.cmd.opts
@@ -215,6 +228,7 @@ M.config = {
 				edit_file = "o",
 			},
 			split = "<C-s>",
+			resolve = "gr",
 			tag_set = "<S-t>",
 			history = "<S-h>",
 			change_revset = "<C-r>",
