@@ -40,6 +40,47 @@ function M.set_buf_encoding(buf, enc)
 	vim.bo[buf].fileformat = enc.ff
 end
 
+local UTF8_BOM = "\239\187\191"
+
+--- Reverse the byte order of every `width`-byte code unit (le <-> be).
+--- NOTE: We swap manually because neovim does not reliably distinguish unicode
+--- endianness. See https://github.com/neovim/neovim/issues/40262.
+--- @param s string Byte string whose length is a multiple of `width`
+--- @param width 2|4
+--- @return string
+local function swap_units(s, width)
+	if width == 2 then
+		return (s:gsub("(.)(.)", "%2%1"))
+	end
+	return (s:gsub("(.)(.)(.)(.)", "%4%3%2%1"))
+end
+
+--- Byte-order mark for a fixed-width Unicode encoding.
+--- @param width 2|4
+--- @param order "le"|"be"
+--- @return string
+local function bom(width, order)
+	local le = width == 2 and "\255\254" or "\255\254\0\0"
+	return order == "le" and le or swap_units(le, width)
+end
+
+--- Identify the multi-byte unicode family and its byte order.
+--- @param fenc string A 'fileencoding' value
+--- @return 2|4|nil width Byte width of a code unit
+--- @return "le"|"be"|nil order
+local function unicode_width(fenc)
+	local f = fenc:lower():gsub("%-", "")
+	if f == "utf16le" or f == "ucs2le" then return 2, "le" end
+	if f == "utf32le" or f == "ucs4le" then return 4, "le" end
+	if f == "utf16be" or f == "ucs2be" or f == "utf16" or f == "ucs2" or f == "unicode" then
+		return 2, "be"
+	end
+	if f == "utf32be" or f == "ucs4be" or f == "utf32" or f == "ucs4" then
+		return 4, "be"
+	end
+	return nil
+end
+
 --- Decode raw file bytes into UTF-8 lines according to `enc`.
 --- When `enc` is omitted, it is auto-detected from the raw bytes.
 --- @param raw string
@@ -53,23 +94,52 @@ local function decode(raw, enc)
 	if not enc then
 		auto_detected = true
 		enc = { fenc = "", bomb = false, ff = "unix" }
-		if raw:sub(1, 2) == "\255\254" then
+		-- Use the canonical neovim 'fileencoding' names.
+		if raw:sub(1, 4) == bom(4, "le") then
+			enc.fenc = "ucs-4le"
+			enc.bomb = true
+		elseif raw:sub(1, 4) == bom(4, "be") then
+			enc.fenc = "ucs-4"
+			enc.bomb = true
+		elseif raw:sub(1, 2) == bom(2, "le") then
 			enc.fenc = "utf-16le"
 			enc.bomb = true
-		elseif raw:sub(1, 2) == "\254\255" then
-			enc.fenc = "utf-16be"
+		elseif raw:sub(1, 2) == bom(2, "be") then
+			enc.fenc = "utf-16"
 			enc.bomb = true
-		elseif raw:sub(1, 3) == "\239\187\191" then
+		elseif raw:sub(1, #UTF8_BOM) == UTF8_BOM then
 			enc.bomb = true
 		end
 	end
 
-	if enc.fenc ~= "" and enc.fenc ~= "utf-8" then
+	local width, order = unicode_width(enc.fenc)
+	if width then
+		-- BOM is authoritative for endianness; strip it before converting.
+		local head = raw:sub(1, width)
+		if head == bom(width, "le") then
+			enc.bomb, order, raw = true, "le", raw:sub(width + 1)
+		elseif head == bom(width, "be") then
+			enc.bomb, order, raw = true, "be", raw:sub(width + 1)
+		end
+		if order == "be" then
+			raw = swap_units(raw, width)
+		end
+		local converted = vim.iconv(raw, width == 2 and "utf-16le" or "utf-32le", "utf-8")
+		if not converted then
+			return nil, string.format("Could not convert content from '%s' to utf-8", enc.fenc), enc
+		end
+		raw = converted
+	elseif enc.fenc ~= "" and enc.fenc ~= "utf-8" then
 		local converted = vim.iconv(raw, enc.fenc, "utf-8")
 		if not converted then
 			return nil, string.format("Could not convert content from '%s' to utf-8", enc.fenc), enc
 		end
 		raw = converted
+	elseif enc.bomb then
+		-- UTF-8 with BOM.
+		if raw:sub(1, #UTF8_BOM) == UTF8_BOM then
+			raw = raw:sub(#UTF8_BOM + 1)
+		end
 	end
 
 	if auto_detected then
@@ -78,10 +148,6 @@ local function decode(raw, enc)
 		elseif raw:find("\r", 1, true) then
 			enc.ff = "mac"
 		end
-	end
-
-	if enc.bomb then
-		raw = raw:gsub("^\239\187\191", "")
 	end
 	if enc.ff == "dos" then
 		raw = raw:gsub("\r\n", "\n")
@@ -95,14 +161,6 @@ local function decode(raw, enc)
 	end
 	return lines, had_eol, enc
 end
-
---- Byte order marks by 'fileencoding' value.
-local BOMS = {
-	["utf-8"] = "\239\187\191",
-	["utf-16le"] = "\255\254",
-	["utf-16"] = "\254\255",
-	["utf-16be"] = "\254\255",
-}
 
 --- Serialize UTF-8 lines back into raw file bytes.
 --- @param lines string[]
@@ -120,23 +178,31 @@ local function encode(lines, eol, enc)
 	elseif enc.ff == "mac" then
 		text = text:gsub("\n", "\r")
 	end
+	local width, order = unicode_width(enc.fenc)
+	if width then
+		-- Always serialise via the little-endian variant,
+    -- see https://github.com/neovim/neovim/issues/40262.
+		local converted = vim.iconv(text, "utf-8", width == 2 and "utf-16le" or "utf-32le")
+		if not converted then
+			return nil, string.format("Could not convert content from utf-8 to '%s'", enc.fenc)
+		end
+		if order == "be" then
+			converted = swap_units(converted, width)
+		end
+		if enc.bomb then
+			converted = bom(width, order --[[@as string]]) .. converted
+		end
+		return converted
+	end
+
 	if enc.fenc ~= "" and enc.fenc ~= "utf-8" then
 		local converted = vim.iconv(text, "utf-8", enc.fenc)
 		if not converted then
 			return nil, string.format("Could not convert content from utf-8 to '%s'", enc.fenc)
 		end
-    -- Strip the converter bom
-		local bom = BOMS[enc.fenc:lower()]
-		if bom and vim.startswith(converted, bom) then
-			converted = converted:sub(#bom + 1)
-		end
 		text = converted
-	end
-	if enc.bomb then
-		local bom = BOMS[(enc.fenc ~= "" and enc.fenc or "utf-8"):lower()]
-		if bom then
-			text = bom .. text
-		end
+	elseif enc.bomb then
+		text = UTF8_BOM .. text
 	end
 	return text
 end
