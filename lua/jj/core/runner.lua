@@ -1,6 +1,13 @@
 --- @class jj.core.runner
 local M = {}
 
+local function error_notify(msg, error_prefix, silent)
+	local error_message = error_prefix and string.format("%s: %s", error_prefix, msg) or msg
+	if not silent then
+		vim.notify(error_message, vim.log.levels.ERROR, { title = "JJ" })
+	end
+end
+
 --- Execute a system command and return output with error handling
 --- @param cmd string The command to execute
 --- @param error_prefix string|nil Optional error message prefix
@@ -18,15 +25,30 @@ function M.execute_command(cmd, error_prefix, input, silent)
 		vim.fn.delete(stderr_file)
 		local error_output = table.concat(stderr_lines, "\n")
 		local msg = error_output ~= "" and error_output or output
-		local error_message = error_prefix and string.format("%s: %s", error_prefix, msg) or msg
-		if not silent then
-			vim.notify(error_message, vim.log.levels.ERROR, { title = "JJ" })
-		end
+		error_notify(msg, error_prefix, silent)
 		return nil, false
 	end
 
 	vim.fn.delete(stderr_file)
 	return output, success
+end
+
+--- Execute a system command and return its raw stdout bytes.
+--- Skips replacement of NUL bytes with SOH (0x01),
+--- which corrupts UTF-16 and other binary-ish content.
+--- @param cmd string The command to execute
+--- @param error_prefix string|nil Optional error message prefix
+--- @param silent boolean|nil Optional to silent the notification
+--- @return string|nil output Raw stdout bytes, or nil if failed
+--- @return boolean success Whether the command succeeded
+function M.execute_command_raw(cmd, error_prefix, silent)
+	local result = vim.system({ "sh", "-c", cmd }):wait()
+	if result.code ~= 0 then
+		local msg = result.stderr ~= "" and result.stderr or result.stdout or ""
+		error_notify(msg, error_prefix, silent)
+		return nil, false
+	end
+	return result.stdout or "", true
 end
 
 --- Execute a system command synchronously and call success callback.
@@ -74,10 +96,7 @@ function M.execute_command_async(cmd, on_success, error_prefix, input, silent, o
 			else
 				local error_output = table.concat(stderr_lines, "\n")
 				local msg = error_output ~= "" and error_output or output
-				local error_message = error_prefix and string.format("%s: %s", error_prefix, msg) or msg
-				if not silent then
-					vim.notify(error_message, vim.log.levels.ERROR, { title = "JJ" })
-				end
+				error_notify(msg, error_prefix, silent)
 				if on_error then
 					on_error(msg)
 				end
@@ -90,6 +109,33 @@ function M.execute_command_async(cmd, on_success, error_prefix, input, silent, o
 		vim.fn.chansend(job_id, input)
 		vim.fn.chanclose(job_id, "stdin")
 	end
+end
+
+--- Execute a system command asynchronously and receive raw stdout bytes.
+--- Skips replacement of NUL bytes with SOH (0x01).
+--- @param cmd string The command to execute
+--- @param on_success function|nil Callback on success, receives raw stdout bytes
+--- @param error_prefix string|nil Optional error message prefix
+--- @param silent boolean|nil Optional to silent the notification
+--- @param on_error function|nil Callback on error, receives the error message
+function M.execute_command_raw_async(cmd, on_success, error_prefix, silent, on_error)
+	vim.system(
+		{ "sh", "-c", cmd },
+		{},
+		vim.schedule_wrap(function(res)
+			if res.code == 0 then
+				if on_success then
+					on_success(res.stdout or "")
+				end
+			else
+				local msg = res.stderr ~= "" and res.stderr or res.stdout or ""
+				error_notify(msg, error_prefix, silent)
+				if on_error then
+					on_error(msg)
+				end
+			end
+		end)
+	)
 end
 
 return M

@@ -15,29 +15,227 @@ local parser = require("jj.core.parser")
 --- @field path? string Path to the file (`%`, absolute, or repository-relative)
 --- @field split? "horizontal"|"vertical"|"tab"|"current" Open in split direction (default: "current")
 
+--- Encoding settings mirroring the corresponding buffer options.
+--- @class jj.file.enc
+--- @field fenc string 'fileencoding', "" means utf-8/internal
+--- @field bomb boolean 'bomb'
+--- @field ff "unix"|"dos"|"mac" 'fileformat'
+
+--- @param buf integer
+--- @return jj.file.enc
+function M.get_buf_encoding(buf)
+	return {
+		fenc = vim.bo[buf].fileencoding,
+		bomb = vim.bo[buf].bomb,
+		ff = vim.bo[buf].fileformat,
+	}
+end
+
+--- Apply encoding settings to a buffer's options
+--- @param buf integer
+--- @param enc jj.file.enc
+function M.set_buf_encoding(buf, enc)
+	vim.bo[buf].fileencoding = enc.fenc
+	vim.bo[buf].bomb = enc.bomb
+	vim.bo[buf].fileformat = enc.ff
+end
+
+local UTF8_BOM = "\239\187\191"
+
+--- Reverse the byte order of every `width`-byte code unit (le <-> be).
+--- NOTE: We swap manually because neovim does not reliably distinguish unicode
+--- endianness. See https://github.com/neovim/neovim/issues/40262.
+--- @param s string Byte string whose length is a multiple of `width`
+--- @param width 2|4
+--- @return string
+local function swap_units(s, width)
+	if width == 2 then
+		return (s:gsub("(.)(.)", "%2%1"))
+	end
+	return (s:gsub("(.)(.)(.)(.)", "%4%3%2%1"))
+end
+
+--- Byte-order mark for a fixed-width Unicode encoding.
+--- @param width 2|4
+--- @param order "le"|"be"
+--- @return string
+local function bom(width, order)
+	local le = width == 2 and "\255\254" or "\255\254\0\0"
+	return order == "le" and le or swap_units(le, width)
+end
+
+--- Identify the multi-byte unicode family and its byte order.
+--- @param fenc string A 'fileencoding' value
+--- @return 2|4|nil width Byte width of a code unit
+--- @return "le"|"be"|nil order
+local function unicode_width(fenc)
+	local f = fenc:lower():gsub("%-", "")
+	if f == "utf16le" or f == "ucs2le" then return 2, "le" end
+	if f == "utf32le" or f == "ucs4le" then return 4, "le" end
+	if f == "utf16be" or f == "ucs2be" or f == "utf16" or f == "ucs2" or f == "unicode" then
+		return 2, "be"
+	end
+	if f == "utf32be" or f == "ucs4be" or f == "utf32" or f == "ucs4" then
+		return 4, "be"
+	end
+	return nil
+end
+
+--- Decode raw file bytes into UTF-8 lines according to `enc`.
+--- When `enc` is omitted, it is auto-detected from the raw bytes.
+--- @param raw string
+--- @param enc? jj.file.enc
+--- @return string[]|nil lines nil on conversion failure
+--- @return boolean|string had_eol Whether the content had a trailing
+---				 newline; an error message when `lines` is nil
+--- @return jj.file.enc enc The encoding used (detected or passed in)
+local function decode(raw, enc)
+	local auto_detected = false
+	if not enc then
+		auto_detected = true
+		enc = { fenc = "", bomb = false, ff = "unix" }
+		-- Use the canonical neovim 'fileencoding' names.
+		if raw:sub(1, 4) == bom(4, "le") then
+			enc.fenc = "ucs-4le"
+			enc.bomb = true
+		elseif raw:sub(1, 4) == bom(4, "be") then
+			enc.fenc = "ucs-4"
+			enc.bomb = true
+		elseif raw:sub(1, 2) == bom(2, "le") then
+			enc.fenc = "utf-16le"
+			enc.bomb = true
+		elseif raw:sub(1, 2) == bom(2, "be") then
+			enc.fenc = "utf-16"
+			enc.bomb = true
+		elseif raw:sub(1, #UTF8_BOM) == UTF8_BOM then
+			enc.bomb = true
+		end
+	end
+
+	local width, order = unicode_width(enc.fenc)
+	if width then
+		-- BOM is authoritative for endianness; strip it before converting.
+		local head = raw:sub(1, width)
+		if head == bom(width, "le") then
+			enc.bomb, order, raw = true, "le", raw:sub(width + 1)
+		elseif head == bom(width, "be") then
+			enc.bomb, order, raw = true, "be", raw:sub(width + 1)
+		end
+		if order == "be" then
+			raw = swap_units(raw, width)
+		end
+		local converted = vim.iconv(raw, width == 2 and "utf-16le" or "utf-32le", "utf-8")
+		if not converted then
+			return nil, string.format("Could not convert content from '%s' to utf-8", enc.fenc), enc
+		end
+		raw = converted
+	elseif enc.fenc ~= "" and enc.fenc ~= "utf-8" then
+		local converted = vim.iconv(raw, enc.fenc, "utf-8")
+		if not converted then
+			return nil, string.format("Could not convert content from '%s' to utf-8", enc.fenc), enc
+		end
+		raw = converted
+	elseif enc.bomb then
+		-- UTF-8 with BOM.
+		if raw:sub(1, #UTF8_BOM) == UTF8_BOM then
+			raw = raw:sub(#UTF8_BOM + 1)
+		end
+	end
+
+	if auto_detected then
+		if raw:find("\r\n", 1, true) then
+			enc.ff = "dos"
+		elseif raw:find("\r", 1, true) then
+			enc.ff = "mac"
+		end
+	end
+	if enc.ff == "dos" then
+		raw = raw:gsub("\r\n", "\n")
+	elseif enc.ff == "mac" then
+		raw = raw:gsub("\r", "\n")
+	end
+	local had_eol = raw:sub(-1) == "\n"
+	local lines = vim.split(raw, "\n", { plain = true, trimempty = false })
+	if had_eol then
+		table.remove(lines, #lines)
+	end
+	return lines, had_eol, enc
+end
+
+--- Serialize UTF-8 lines back into raw file bytes.
+--- @param lines string[]
+--- @param eol boolean Whether to append a trailing newline
+--- @param enc jj.file.enc
+--- @return string|nil content nil on conversion failure
+--- @return string|nil err Error message when content is nil
+local function encode(lines, eol, enc)
+	local text = table.concat(lines, "\n")
+	if eol then
+		text = text .. "\n"
+	end
+	if enc.ff == "dos" then
+		text = text:gsub("\n", "\r\n")
+	elseif enc.ff == "mac" then
+		text = text:gsub("\n", "\r")
+	end
+	local width, order = unicode_width(enc.fenc)
+	if width then
+		-- Always serialise via the little-endian variant,
+    -- see https://github.com/neovim/neovim/issues/40262.
+		local converted = vim.iconv(text, "utf-8", width == 2 and "utf-16le" or "utf-32le")
+		if not converted then
+			return nil, string.format("Could not convert content from utf-8 to '%s'", enc.fenc)
+		end
+		if order == "be" then
+			converted = swap_units(converted, width)
+		end
+		if enc.bomb then
+			converted = bom(width, order --[[@as string]]) .. converted
+		end
+		return converted
+	end
+
+	if enc.fenc ~= "" and enc.fenc ~= "utf-8" then
+		local converted = vim.iconv(text, "utf-8", enc.fenc)
+		if not converted then
+			return nil, string.format("Could not convert content from utf-8 to '%s'", enc.fenc)
+		end
+		text = converted
+	elseif enc.bomb then
+		text = UTF8_BOM .. text
+	end
+	return text
+end
+
+-- Exposed for unit tests (tests/run_tests.lua); not part of the public API.
+M._decode = decode
+M._encode = encode
+
 --- Fetch file content from jj synchronously.
 --- Returns lines with blank lines preserved; trailing empty line removed.
 --- @param rev string The revision (change ID or other revset)
 --- @param path string Cwd-relative path
+--- @param enc? jj.file.enc Encoding to interpret the content with
+---				(default: auto-detected from content)
 --- @return string[] lines
 --- @return boolean had_eol Whether the content had a trailing newline
 --- @return boolean ok Whether the command succeeded
-local function get_file_content(rev, path)
-	local content, ok = runner.execute_command(
+--- @return jj.file.enc used_enc The encoding used to decode the content
+local function get_file_content(rev, path, enc)
+	local raw, ok = runner.execute_command_raw(
 		string.format("jj file show -r %s %s", vim.fn.shellescape(rev), vim.fn.shellescape(path)),
-		nil,
 		nil,
 		true
 	)
-	if not ok or not content then
-		return {}, false, false
+	if not ok or not raw then
+		return {}, false, false, enc or { fenc = "", bomb = false, ff = "unix" }
 	end
-	local lines = vim.split(content, "\n", { plain = true, trimempty = false })
-	local had_eol = #lines > 0 and lines[#lines] == ""
-	if had_eol then
-		table.remove(lines, #lines)
+	local lines, had_eol, used_enc = decode(raw, enc)
+	if not lines then
+		utils.notify(had_eol --[[@as string]], vim.log.levels.ERROR)
+		return {}, false, false, used_enc
 	end
-	return lines, had_eol, true
+	return lines, had_eol --[[@as boolean]], true, used_enc
 end
 M.get_file_content = get_file_content
 
@@ -53,17 +251,28 @@ function M.read_target(opts)
 	end
 
 	local buf = vim.api.nvim_get_current_buf()
+	-- Borrow the buffer's existing encoding if it already has one set;
+	-- otherwise auto-detect from the raw bytes.
+	local enc = nil
+	local buf_fenc = vim.bo[buf].fileencoding
+	if buf_fenc ~= "" then
+		enc = M.get_buf_encoding(buf)
+	end
+
 	local cmd = string.format("jj file show -r %s %s", vim.fn.shellescape(revision), vim.fn.shellescape(path))
-	runner.execute_command_async(cmd, function(out)
-		local lines = vim.split(out, "\n", { plain = true, trimempty = false })
-		if #lines > 0 and lines[#lines] == "" then
-			table.remove(lines, #lines)
+	runner.execute_command_raw_async(cmd, function(raw)
+		local lines, had_eol, used_enc = decode(raw, enc)
+		if not lines then
+			utils.notify(had_eol --[[@as string]], vim.log.levels.ERROR)
+			return
 		end
 		if vim.bo[buf].modifiable == false then
 			utils.notify("Current buffer is not modifiable", vim.log.levels.ERROR)
 			return
 		end
+		M.set_buf_encoding(buf, used_enc)
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+		vim.bo[buf].eol = had_eol --[[@as boolean]]
 		vim.bo[buf].modified = true
 	end, string.format("Could not read `%s` from `%s`", path, revision))
 end
@@ -81,13 +290,15 @@ local function write_revision_file(buf, change_id, rel_path, force)
 		end
 	end
 
-	local new_content = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
-	if vim.bo[buf].eol then
-		new_content = new_content .. "\n"
+	local new_content, enc_err =
+		encode(vim.api.nvim_buf_get_lines(buf, 0, -1, false), vim.bo[buf].eol, M.get_buf_encoding(buf))
+	if not new_content then
+		utils.notify(enc_err or "Could not encode buffer content", vim.log.levels.ERROR)
+		return
 	end
 
 	local tmp = vim.fn.tempname()
-	local cf = io.open(tmp, "w")
+	local cf = io.open(tmp, "wb")
 	if not cf then
 		utils.notify("Failed to create temp file", vim.log.levels.ERROR)
 		return
@@ -139,7 +350,7 @@ function M.open_target(opts)
 		nil,
 		true
 	)
-	if not ok then return end
+	if not ok or not raw_ids then return end
 	local ids = vim.split(vim.trim(raw_ids), "\n", { trimempty = true })
 	if #ids ~= 1 then
 		utils.notify(string.format("Revision '%s' is ambiguous", revision), vim.log.levels.ERROR)
@@ -147,7 +358,7 @@ function M.open_target(opts)
 	end
 	local change_id = ids[1]
 
-	local lines, had_eol, ok_read = get_file_content(change_id, path)
+	local lines, had_eol, ok_read, used_enc = get_file_content(change_id, path)
 	if not ok_read then
 		utils.notify(string.format("Could not read `%s` from `%s`", path, change_id), vim.log.levels.ERROR)
 		return
@@ -162,6 +373,7 @@ function M.open_target(opts)
 		bufhidden = "wipe",
 		filetype = ft,
 	})
+	M.set_buf_encoding(buf, used_enc)
 	vim.bo[buf].buflisted = true
 	vim.bo[buf].swapfile = false
 	local ul = vim.bo[buf].undolevels
@@ -223,13 +435,14 @@ function M.register_command()
 		callback = function()
 			local name = vim.api.nvim_buf_get_name(0)
 			local change_id, path = utils.parse_jj_uri(name)
-			if not change_id then return end
-			local lines, had_eol, ok_read = get_file_content(change_id, path)
+			if not change_id or not path then return end
+			local lines, had_eol, ok_read, used_enc = get_file_content(change_id, path)
 			if not ok_read then
 				utils.notify(string.format("Could not read `%s` from `%s`", path, change_id), vim.log.levels.ERROR)
 				return
 			end
 			local buf = vim.api.nvim_get_current_buf()
+			M.set_buf_encoding(buf, used_enc)
 			vim.bo[buf].modifiable = true
 			vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 			vim.bo[buf].eol = had_eol

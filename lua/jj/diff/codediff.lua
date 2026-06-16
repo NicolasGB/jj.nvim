@@ -168,7 +168,11 @@ diff.register_backend("codediff", {
 				return
 			end
 
-			local base_lines, base_had_eol, ok_read = file.get_file_content(revset, path)
+			-- Borrow the current buffer's encoding settings so the revision
+			-- side is decoded in the same way as the current file.
+			-- Assumes the encoding didn't change between revisions.
+			local enc = file.get_buf_encoding(0)
+			local base_lines, base_had_eol, ok_read = file.get_file_content(revset, path, enc)
 			if not ok_read then
 				utils.notify(string.format("Could not read `%s` from `%s` for CodeDiff", path, revset), vim.log.levels.ERROR)
 				return
