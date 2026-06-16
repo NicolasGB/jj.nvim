@@ -1302,9 +1302,7 @@ function M.parse_resolve_args(args)
 			already_set.rev = true
 			i = i + 1
 		elseif arg:sub(1, 2) == "--" then
-			-- Pass unknown long options through to jj resolve for forward compatibility.
-			opts.args = opts.args or {}
-			table.insert(opts.args, arg)
+			return nil, string.format("Unknown option: %s", arg)
 		else
 			-- Positional args are treated as filesets.
 			opts.filesets = opts.filesets or {}

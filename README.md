@@ -858,6 +858,7 @@ CLI flags for `:J resolve`:
 - `--tool <name>`: pass merge tool to `jj resolve`
 - `--external` or `--ext`: run outside the floating terminal
 - trailing positional args are treated as filesets
+- unknown long options are rejected to avoid ambiguity with filesets
 
 ### Push Command Options
 

@@ -524,14 +524,10 @@ run_test("parse_resolve_args: parses revision, tool, external and filesets", fun
 	}, opts)
 end)
 
-run_test("parse_resolve_args: unknown long flags are passed through", function()
+run_test("parse_resolve_args: errors on unknown long option", function()
 	local opts, err = cmd.parse_resolve_args({ "--summary", "src/" })
-	assert_is_nil(err)
-	assert_table_equals({
-		rev = "@",
-		args = { "--summary" },
-		filesets = { "src/" },
-	}, opts)
+	assert_is_nil(opts)
+	assert_equals("Unknown option: --summary", err)
 end)
 
 run_test("parse_resolve_args: errors on duplicate --tool", function()
@@ -556,6 +552,79 @@ run_test("parse_resolve_args: errors on missing -r/--revision value", function()
 	local opts, err = cmd.parse_resolve_args({ "-r" })
 	assert_is_nil(opts)
 	assert_equals("Missing value for --revision/-r", err)
+end)
+
+local resolve = require("jj.cmd.resolve")
+
+run_test("resolve: shellescapes args for external execution", function()
+	local runner = require("jj.core.runner")
+	local original_execute_command_async = runner.execute_command_async
+	local original_notify = utils.notify
+	local original_ensure_jj = utils.ensure_jj
+
+	local captured_cmd = nil
+	runner.execute_command_async = function(cmd)
+		captured_cmd = cmd
+	end
+	utils.notify = function() end
+	utils.ensure_jj = function()
+		return true
+	end
+
+	local ok, err = pcall(function()
+		resolve.resolve({
+			rev = "abc 123",
+			args = { "--tool", "my tool" },
+			filesets = { "dir with spaces/", "glob:*" },
+			external = true,
+		})
+		assert_equals(
+			"'jj' 'resolve' '--revision' 'abc 123' '--tool' 'my tool' 'dir with spaces/' 'glob:*'",
+			captured_cmd
+		)
+	end)
+
+	runner.execute_command_async = original_execute_command_async
+	utils.notify = original_notify
+	utils.ensure_jj = original_ensure_jj
+	if not ok then
+		error(err)
+	end
+end)
+
+run_test("resolve: shellescapes args for floating execution", function()
+	local terminal = require("jj.ui.terminal")
+	local original_run_floating = terminal.run_floating
+	local original_notify = utils.notify
+	local original_ensure_jj = utils.ensure_jj
+
+	local captured_cmd = nil
+	terminal.run_floating = function(cmd)
+		captured_cmd = cmd
+	end
+	utils.notify = function() end
+	utils.ensure_jj = function()
+		return true
+	end
+
+	local ok, err = pcall(function()
+		resolve.resolve({
+			rev = "abc 123",
+			args = { "--tool", "my tool" },
+			filesets = { "dir with spaces/", "glob:*" },
+		})
+		assert_equals(
+			"'jj' 'resolve' '--revision' 'abc 123' '--tool' 'my tool' 'dir with spaces/' 'glob:*'",
+			captured_cmd
+		)
+	end)
+
+	terminal.run_floating = original_run_floating
+	utils.notify = original_notify
+	utils.ensure_jj = original_ensure_jj
+	if not ok then
+		error(err)
+	end
 end)
 
 print("\n=== Running utils helper tests ===\n")

@@ -22,13 +22,19 @@ function M.resolve(opts)
 	-- Append the filestes
 	vim.list_extend(cmd_args, filesets)
 
+	local escaped_cmd_args = {}
+	for _, arg in ipairs(cmd_args) do
+		table.insert(escaped_cmd_args, vim.fn.shellescape(arg))
+	end
+	local cmd = table.concat(escaped_cmd_args, " ")
+
 	utils.notify(string.format("Resolving conflicts in change `%s`...", rev), vim.log.levels.INFO)
 
 	-- If external is set, run the command asynchronously and invoke the on_exit callback if provided
 	if opts.external then
 		-- Run the command asynchronously and notify the user of the result
 		runner.execute_command_async(
-			table.concat(cmd_args, " "),
+			cmd,
 			function(output)
 				if output and output ~= "" then
 					utils.notify(output, vim.log.levels.INFO)
@@ -48,7 +54,7 @@ function M.resolve(opts)
 		)
 	else
 		-- Otherwise, run in a floating terminal
-		terminal.run_floating(table.concat(cmd_args, " "), nil, {
+		terminal.run_floating(cmd, nil, {
 			title = " JJ Resolve ",
 			modifiable = true,
 			keep_modifiable = true,
