@@ -11,6 +11,7 @@ local log_module = require("jj.cmd.log")
 local describe_module = require("jj.cmd.describe")
 local status_module = require("jj.cmd.status")
 local split_module = require("jj.cmd.split")
+local resolve_module = require("jj.cmd.resolve")
 
 -- Config for cmd module
 --- @class jj.cmd.describe.editor.keymaps
@@ -115,9 +116,22 @@ local split_module = require("jj.cmd.split")
 ---@field parallel? boolean Run operations in parallel
 ---@field on_exit? fun(exit_code: number) Callback invoked when command exits
 
+--- @class jj.cmd.resolve.strategy
+--- @field name string Label shown in vim.ui.select
+--- @field args? string[] Extra args passed to jj resolve
+--- @field external? boolean Run externally instead of floating terminal
+
+---@class jj.cmd.resolve.opts
+---@field rev string|nil The revision to resolve, defaults to "@"
+---@field filesets string[]|nil The filesets to resolve, defaults to all filesets
+---@field external boolean|nil Whether to use external merge tool, if this boolean is set the command will not be ran in a floating terminal inside neovim (defaults: false)
+---@field args string[]|nil Additional arguments to pass to the resolve command
+---@field on_exit? fun(exit_code: number) Callback invoked when command exits
+
 --- @class jj.cmd.opts
 --- @field describe? jj.cmd.describe
 --- @field log? jj.cmd.log
+--- @field resolve_strategies? jj.cmd.resolve.strategy[] List of conflict resolve strategies shared across cmd integrations
 --- @field bookmark? jj.cmd.bookmark
 --- @field keymaps? jj.cmd.keymaps Keymaps for the buffers containing the  of the commands
 ---
@@ -157,6 +171,7 @@ M.config = {
 	log = {
 		close_on_edit = false,
 	},
+	resolve_strategies = {},
 	bookmark = {
 		prefix = "",
 	},
@@ -214,6 +229,7 @@ M.config = {
 				edit_file = "o",
 			},
 			split = "<C-s>",
+			resolve = "gr",
 			tag_set = "<S-t>",
 			history = "<S-h>",
 			change_revset = "<C-r>",
@@ -248,6 +264,8 @@ M.describe = describe_module.describe
 M.status = status_module.status
 -- Rexport split function
 M.split = split_module.split
+-- Reexport resolve function
+M.resolve = resolve_module.resolve
 
 --- Merge multiple keymap arrays into one
 --- @param ... jj.core.buffer.keymap[][] Keymap arrays to merge
@@ -1240,6 +1258,63 @@ function M.fetch_pr(opts)
 	end)
 end
 
+--- Parse arguments passed to `:J resolve`
+--- @param args string[]
+--- @return jj.cmd.resolve.opts|nil opts
+--- @return string|nil err
+function M.parse_resolve_args(args)
+	local opts = { rev = "@" } --[[@as jj.cmd.resolve.opts]]
+	local already_set = {
+		rev = false,
+		tool = false,
+	}
+
+	local i = 1
+	while i <= #args do
+		local arg = args[i]
+
+		if arg == "--external" or arg == "--ext" then
+			opts.external = true
+		elseif arg == "--tool" then
+			local tool = args[i + 1]
+			if not tool or tool:sub(1, 1) == "-" then
+				return nil, "Missing value for --tool"
+			end
+			if already_set.tool then
+				return nil, "Tool already set. Cannot specify multiple tools."
+			end
+
+			opts.args = opts.args or {}
+			table.insert(opts.args, "--tool")
+			table.insert(opts.args, tool)
+			already_set.tool = true
+			i = i + 1
+		elseif arg == "--revision" or arg == "-r" then
+			local rev = args[i + 1]
+			if not rev or rev:sub(1, 1) == "-" then
+				return nil, "Missing value for --revision/-r"
+			end
+			if already_set.rev then
+				return nil, "Revision already set. Cannot specify multiple revisions."
+			end
+
+			opts.rev = rev
+			already_set.rev = true
+			i = i + 1
+		elseif arg:sub(1, 2) == "--" then
+			return nil, string.format("Unknown option: %s", arg)
+		else
+			-- Positional args are treated as filesets.
+			opts.filesets = opts.filesets or {}
+			table.insert(opts.filesets, arg)
+		end
+
+		i = i + 1
+	end
+
+	return opts, nil
+end
+
 --- @param args string|string[] jj command arguments
 function M.j(args)
 	if not utils.ensure_jj() then
@@ -1304,27 +1379,39 @@ function M.j(args)
 			M.log({ raw_flags = remaining_args_str ~= "" and remaining_args_str or nil })
 		end,
 		split = function()
-			local rev = remaining_args and remaining_args[1] or "@"
-
 			local opts = {
-				rev = rev,
+				rev = "@",
 			}
 
-			local index = 2
-			for i = index, #remaining_args do
+			local i = 1
+			while i <= #remaining_args do
 				local arg = remaining_args[i]
+
 				if arg == "--parallel" then
 					opts.parallel = true
 				elseif arg == "--ignore-immutable" then
 					opts.ignore_immutable = true
 				elseif arg == "--message" and remaining_args[i + 1] then
 					opts.message = remaining_args[i + 1]
-					index = i + 1
+					i = i + 1
 				elseif arg == "--fileset" and remaining_args[i + 1] then
 					opts.filesets = opts.filesets or {}
 					table.insert(opts.filesets, remaining_args[i + 1])
-					index = i + 1
+					i = i + 1
+				elseif arg:sub(1, 2) == "--" then
+					-- Unknown option: ignore it here.
+					utils.notify(string.format("Unknown option: %s", arg), vim.log.levels.WARN)
+					return
+				else
+					if opts.rev == "@" then
+						opts.rev = arg
+					else
+						opts.filesets = opts.filesets or {}
+						table.insert(opts.filesets, arg)
+					end
 				end
+
+				i = i + 1
 			end
 
 			require("jj.cmd.split").split(opts)
@@ -1430,6 +1517,14 @@ function M.j(args)
 		fetch_pr = function()
 			M.fetch_pr()
 		end,
+		resolve = function()
+			local opts, err = M.parse_resolve_args(remaining_args)
+			if err then
+				utils.notify(err, vim.log.levels.ERROR)
+				return
+			end
+			require("jj.cmd.resolve").resolve(opts)
+		end,
 	}
 
 	if handlers[subcommand] then
@@ -1481,6 +1576,7 @@ function M.register_command()
 				"commit",
 				"tag",
 				"fetch_pr",
+				"resolve",
 			}
 			local matches = {}
 			for _, cmd in ipairs(subcommands) do

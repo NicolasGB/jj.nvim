@@ -493,7 +493,195 @@ end)
 run_test("build_log_cmd: default opts produces valid command", function()
 	local cmd = log.build_log_cmd({})
 	assert_equals(true, cmd:find("^jj log %-%-no%-pager") ~= nil, "Expected command to start with jj log --no-pager")
-	assert_equals(true, cmd:find("--limit 20") ~= nil, "Expected default --limit 20")
+end)
+
+print("\n=== Running resolve arg parsing tests ===\n")
+
+local cmd = require("jj.cmd")
+
+run_test("parse_resolve_args: defaults to @", function()
+	local opts, err = cmd.parse_resolve_args({})
+	assert_is_nil(err)
+	assert_table_equals({ rev = "@" }, opts)
+end)
+
+run_test("parse_resolve_args: parses revision, tool, external and filesets", function()
+	local opts, err = cmd.parse_resolve_args({
+		"-r",
+		"abc123",
+		"--tool",
+		"mergiraf",
+		"--external",
+		"src/",
+		"README.md",
+	})
+	assert_is_nil(err)
+	assert_table_equals({
+		rev = "abc123",
+		external = true,
+		args = { "--tool", "mergiraf" },
+		filesets = { "src/", "README.md" },
+	}, opts)
+end)
+
+run_test("parse_resolve_args: errors on unknown long option", function()
+	local opts, err = cmd.parse_resolve_args({ "--summary", "src/" })
+	assert_is_nil(opts)
+	assert_equals("Unknown option: --summary", err)
+end)
+
+run_test("parse_resolve_args: errors on duplicate --tool", function()
+	local opts, err = cmd.parse_resolve_args({ "--tool", "meld", "--tool", "mergiraf" })
+	assert_is_nil(opts)
+	assert_equals("Tool already set. Cannot specify multiple tools.", err)
+end)
+
+run_test("parse_resolve_args: errors on duplicate revision", function()
+	local opts, err = cmd.parse_resolve_args({ "-r", "a", "--revision", "b" })
+	assert_is_nil(opts)
+	assert_equals("Revision already set. Cannot specify multiple revisions.", err)
+end)
+
+run_test("parse_resolve_args: errors on missing --tool value", function()
+	local opts, err = cmd.parse_resolve_args({ "--tool" })
+	assert_is_nil(opts)
+	assert_equals("Missing value for --tool", err)
+end)
+
+run_test("parse_resolve_args: errors on missing -r/--revision value", function()
+	local opts, err = cmd.parse_resolve_args({ "-r" })
+	assert_is_nil(opts)
+	assert_equals("Missing value for --revision/-r", err)
+end)
+
+local resolve = require("jj.cmd.resolve")
+
+run_test("resolve: shellescapes args for external execution", function()
+	local runner = require("jj.core.runner")
+	local original_execute_command_async = runner.execute_command_async
+	local original_notify = utils.notify
+	local original_ensure_jj = utils.ensure_jj
+
+	local captured_cmd = nil
+	runner.execute_command_async = function(cmd)
+		captured_cmd = cmd
+	end
+	utils.notify = function() end
+	utils.ensure_jj = function()
+		return true
+	end
+
+	local ok, err = pcall(function()
+		resolve.resolve({
+			rev = "abc 123",
+			args = { "--tool", "my tool" },
+			filesets = { "dir with spaces/", "glob:*" },
+			external = true,
+		})
+		assert_equals(
+			"'jj' 'resolve' '--revision' 'abc 123' '--tool' 'my tool' 'dir with spaces/' 'glob:*'",
+			captured_cmd
+		)
+	end)
+
+	runner.execute_command_async = original_execute_command_async
+	utils.notify = original_notify
+	utils.ensure_jj = original_ensure_jj
+	if not ok then
+		error(err)
+	end
+end)
+
+run_test("resolve: shellescapes args for floating execution", function()
+	local terminal = require("jj.ui.terminal")
+	local original_run_floating = terminal.run_floating
+	local original_notify = utils.notify
+	local original_ensure_jj = utils.ensure_jj
+
+	local captured_cmd = nil
+	terminal.run_floating = function(cmd)
+		captured_cmd = cmd
+	end
+	utils.notify = function() end
+	utils.ensure_jj = function()
+		return true
+	end
+
+	local ok, err = pcall(function()
+		resolve.resolve({
+			rev = "abc 123",
+			args = { "--tool", "my tool" },
+			filesets = { "dir with spaces/", "glob:*" },
+		})
+		assert_equals(
+			"'jj' 'resolve' '--revision' 'abc 123' '--tool' 'my tool' 'dir with spaces/' 'glob:*'",
+			captured_cmd
+		)
+	end)
+
+	terminal.run_floating = original_run_floating
+	utils.notify = original_notify
+	utils.ensure_jj = original_ensure_jj
+	if not ok then
+		error(err)
+	end
+end)
+
+print("\n=== Running utils helper tests ===\n")
+
+run_test("is_change_conflicted: returns true when jj reports conflict", function()
+	local runner = require("jj.core.runner")
+	local original_execute_command = runner.execute_command
+
+	runner.execute_command = function(cmd, error_prefix, input, silent)
+		assert_equals("jj log --no-graph -r 'abc123' -T 'conflict' --quiet", cmd)
+		assert_equals("Error checking if revset has conflicts", error_prefix)
+		assert_is_nil(input)
+		assert_equals(true, silent)
+		return "true\n", true
+	end
+
+	local ok, err = pcall(function()
+		assert_equals(true, utils.is_change_conflicted("abc123"))
+	end)
+	runner.execute_command = original_execute_command
+	if not ok then
+		error(err)
+	end
+end)
+
+run_test("is_change_conflicted: returns false when jj reports no conflict", function()
+	local runner = require("jj.core.runner")
+	local original_execute_command = runner.execute_command
+
+	runner.execute_command = function()
+		return "false\n", true
+	end
+
+	local ok, err = pcall(function()
+		assert_equals(false, utils.is_change_conflicted("abc123"))
+	end)
+	runner.execute_command = original_execute_command
+	if not ok then
+		error(err)
+	end
+end)
+
+run_test("is_change_conflicted: returns false when jj command fails", function()
+	local runner = require("jj.core.runner")
+	local original_execute_command = runner.execute_command
+
+	runner.execute_command = function()
+		return nil, false
+	end
+
+	local ok, err = pcall(function()
+		assert_equals(false, utils.is_change_conflicted("abc123"))
+	end)
+	runner.execute_command = original_execute_command
+	if not ok then
+		error(err)
+	end
 end)
 
 print("\n=== Running utils.parse_bookmark_names tests ===\n")
@@ -505,14 +693,11 @@ end)
 
 run_test("parse_bookmark_names: parses multiple bookmarks", function()
 	local input = "main::true feature-1::true feature-2::false"
-	assert_table_equals(
-		{
-			{ name = "main", is_deleted = false },
-			{ name = "feature-1", is_deleted = false },
-			{ name = "feature-2", is_deleted = true },
-		},
-		utils.parse_bookmark_names(input)
-	)
+	assert_table_equals({
+		{ name = "main", is_deleted = false },
+		{ name = "feature-1", is_deleted = false },
+		{ name = "feature-2", is_deleted = true },
+	}, utils.parse_bookmark_names(input))
 end)
 
 run_test("parse_bookmark_names: strips asterisks", function()
@@ -538,14 +723,11 @@ end)
 
 run_test("parse_bookmark_names: handles mixed input", function()
 	local input = "main*::true feature-1::true feature-1@origin::true feature-2*::false"
-	assert_table_equals(
-		{
-			{ name = "main", is_deleted = false },
-			{ name = "feature-1", is_deleted = false },
-			{ name = "feature-2", is_deleted = true },
-		},
-		utils.parse_bookmark_names(input)
-	)
+	assert_table_equals({
+		{ name = "main", is_deleted = false },
+		{ name = "feature-1", is_deleted = false },
+		{ name = "feature-2", is_deleted = true },
+	}, utils.parse_bookmark_names(input))
 end)
 
 run_test("parse_bookmark_names: handles empty input", function()

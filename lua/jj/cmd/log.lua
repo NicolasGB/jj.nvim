@@ -943,6 +943,60 @@ function M.handle_log_split()
 	})
 end
 
+--- Handle log resolve conflict
+function M.handle_log_resolve()
+	local revset = get_revset()
+	if not revset or revset == "" then
+		return
+	end
+
+	if not utils.is_change_conflicted(revset) then
+		utils.notify(string.format("Revision `%s` has no conflicts to resolve", revset), vim.log.levels.INFO)
+		return
+	end
+
+	local exit_func = function(exit_code)
+		if exit_code == 0 then
+			utils.notify(string.format("Successfully resolved `%s`", revset), vim.log.levels.INFO)
+			vim.schedule(function()
+				M.log({})
+			end)
+		else
+			-- Since we previously replaced the floating with the resolve we actually want to re run the log cmd
+			if require("jj").config.terminal.window.type == "floating" then
+				vim.schedule(function()
+					M.log({})
+				end)
+			end
+		end
+	end
+
+	local strategies = require("jj.cmd").config.resolve_strategies
+	if strategies and #strategies > 1 then
+		vim.ui.select(strategies, {
+			prompt = "Select a resolve strategy: ",
+			format_item = function(item)
+				return item.name
+			end,
+		}, function(choice)
+			if choice then
+				require("jj.cmd").resolve({
+					rev = revset,
+					args = choice.args,
+					external = choice.external,
+					on_exit = exit_func,
+				})
+			end
+		end)
+	elseif strategies and #strategies == 1 then
+		local choice = strategies[1]
+		require("jj.cmd").resolve({ rev = revset, args = choice.args, external = choice.external, on_exit = exit_func })
+	else
+		-- Simply resolve with the default
+		require("jj.cmd").resolve({ rev = revset, on_exit = exit_func })
+	end
+end
+
 --- Handle diff action in summary tooltip
 --- Diffs the file at revset against its parent (revset-)
 --- Opens a floating diff, and returns focus to tooltip when closed
@@ -1321,6 +1375,11 @@ function M.log_keymaps()
 			desc = "Move cursor to the previous revision",
 			handler = M.handle_log_select_prev_revision,
 			modes = { "n", "v" },
+		},
+		resolve = {
+			desc = "Resolve conflicts for revision under cursor",
+			handler = M.handle_log_resolve,
+			modes = { "n" },
 		},
 	}
 
