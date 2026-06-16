@@ -399,6 +399,64 @@ run_test("parse_default_cmd: returns nil for nil", function()
 	assert_is_nil(parser.parse_default_cmd(nil))
 end)
 
+print("\n=== Running parse_push_args tests ===\n")
+
+local cmd = require("jj.cmd")
+
+run_test("parse_push_args: parses bookmark and remote", function()
+	local opts, err = cmd.parse_push_args({ "my-bookmark", "--remote", "origin" })
+	assert_is_nil(err)
+	assert_table_equals({ bookmark = "my-bookmark", remote = "origin" }, opts)
+end)
+
+run_test("parse_push_args: parses deleted flag", function()
+	local opts, err = cmd.parse_push_args({ "--deleted" })
+	assert_is_nil(err)
+	assert_table_equals({ deleted = true }, opts)
+end)
+
+run_test("parse_push_args: allows remote before bookmark", function()
+	local opts, err = cmd.parse_push_args({ "--remote", "origin", "my-bookmark" })
+	assert_is_nil(err)
+	assert_table_equals({ bookmark = "my-bookmark", remote = "origin" }, opts)
+end)
+
+run_test("parse_push_args: errors on missing remote value", function()
+	local opts, err = cmd.parse_push_args({ "--remote" })
+	assert_is_nil(opts)
+	assert_equals("Missing remote name after --remote", err)
+end)
+
+run_test("parse_push_args: errors when remote value is another option", function()
+	local opts, err = cmd.parse_push_args({ "--remote", "--deleted" })
+	assert_is_nil(opts)
+	assert_equals("Missing remote name after --remote", err)
+end)
+
+run_test("parse_push_args: errors on duplicate remotes", function()
+	local opts, err = cmd.parse_push_args({ "--remote", "origin", "--remote", "upstream" })
+	assert_is_nil(opts)
+	assert_equals("Remote already set. Cannot specify multiple remotes.", err)
+end)
+
+run_test("parse_push_args: errors on multiple bookmarks", function()
+	local opts, err = cmd.parse_push_args({ "bookmark-1", "bookmark-2" })
+	assert_is_nil(opts)
+	assert_equals("Only one bookmark can be provided", err)
+end)
+
+run_test("parse_push_args: errors on unknown option", function()
+	local opts, err = cmd.parse_push_args({ "--foo" })
+	assert_is_nil(opts)
+	assert_equals("Unknown option: --foo", err)
+end)
+
+run_test("parse_push_args: errors on deleted with bookmark", function()
+	local opts, err = cmd.parse_push_args({ "--deleted", "my-bookmark" })
+	assert_is_nil(opts)
+	assert_equals("Cannot specify both --deleted and a bookmark", err)
+end)
+
 print("\n=== Running build_log_cmd tests ===\n")
 
 local log = require("jj.cmd.log")

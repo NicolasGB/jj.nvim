@@ -392,6 +392,9 @@ The plugin provides a `:J` command that accepts jj subcommands:
 :J new
 :J push               " Push all changes
 :J push main         " Push only main bookmark
+:J push --remote origin " Push all changes to a specific remote
+:J push main --remote origin " Push only main bookmark to a specific remote
+:J push --deleted --remote origin " Push deleted bookmarks to a specific remote
 :J fetch             " Fetch from remote
 :J open_pr           " Open PR for current change's bookmark
 :J open_pr --list    " Select bookmark from all and open PR
@@ -788,13 +791,26 @@ The `push` function accepts an options table:
 ```lua
 local cmd = require("jj.cmd")
 cmd.push({
-  bookmark = "main"     -- Push specific bookmark (default: all changes)
+  bookmark = "main",    -- Push specific bookmark (default: all changes)
+  remote = "origin",    -- Optional target remote
+  -- deleted = true,     -- Push deleted bookmarks instead of a bookmark
 })
 
 -- Examples:
-cmd.push()                    -- Push all changes
-cmd.push({ bookmark = "main" }) -- Push only main bookmark
-cmd.push({ bookmark = "feature" }) -- Push only feature bookmark
+cmd.push()                               -- Push all changes
+cmd.push({ bookmark = "main" })         -- Push only main bookmark
+cmd.push({ bookmark = "feature" })      -- Push only feature bookmark
+cmd.push({ remote = "origin" })         -- Push all changes to a specific remote
+cmd.push({ bookmark = "main", remote = "origin" }) -- Push only main to a specific remote
+cmd.push({ deleted = true, remote = "origin" })     -- Push deleted bookmarks to a specific remote
+```
+
+The `:J push` command also supports these forms:
+
+```sh
+:J push --remote origin
+:J push main --remote origin
+:J push --deleted --remote origin
 ```
 
 ### Bookmark Management Command Options
