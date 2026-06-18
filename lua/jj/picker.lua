@@ -147,7 +147,16 @@ function M.status()
 	if M.config.snacks then
 		require("jj.picker.snacks").status(M.config, files)
 	else
-		return utils.notify("No `Picker` enabled", vim.log.levels.INFO)
+		vim.ui.select(files, {
+			prompt = "Select changed file",
+			format_item = function(item)
+				return string.format("%s %s", item.status or "", item.text or item.file or "")
+			end,
+		}, function(item)
+			if item and item.file then
+				vim.cmd("edit " .. vim.fn.fnameescape(item.file))
+			end
+		end)
 	end
 end
 
@@ -230,7 +239,26 @@ function M.file_history()
 	if M.config.snacks then
 		require("jj.picker.snacks").file_log_history(M.config, log_lines)
 	else
-		return utils.notify("No `Picker` enabled", vim.log.levels.INFO)
+		vim.ui.select(log_lines, {
+			prompt = "Select revision to edit",
+			format_item = function(item)
+				return item.text or string.format("%s %s %s", item.rev or "", item.author or "", item.description or "")
+			end,
+		}, function(item)
+			if not item or not item.rev then
+				return
+			end
+
+			local _, ok = runner.execute_command(
+				string.format("jj edit %s --ignore-immutable", item.rev),
+				string.format("could not edit revision '%s'", item.rev)
+			)
+
+			if ok then
+				utils.reload_changed_file_buffers()
+				utils.notify(string.format("Editing revision `%s`", item.rev), vim.log.levels.INFO)
+			end
+		end)
 	end
 end
 
