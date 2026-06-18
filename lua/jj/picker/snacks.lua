@@ -125,45 +125,17 @@ local function format_jj_log(item)
 	local a = Snacks.picker.util.align
 	local ret = {} ---@type snacks.picker.Highlight[]
 
-	-- Add symbol (if available) and revision
-	if item.symbol and item.symbol ~= "" then
-		ret[#ret + 1] = { a(item.symbol, 1, { truncate = true }), "SnacksPickerGitMsg" }
-	else
-		ret[#ret + 1] = { "?", "SnacksPickerGitMsg" }
-	end
-
+	local rev = item.rev or "unknown"
+	ret[#ret + 1] = { a(rev, 12, { truncate = true }), "SnacksPickerGitBreaking" }
 	ret[#ret + 1] = { " " }
 
-	local rev = item.rev or "unknown"
-	-- INFO: This highlight is kind of a nice hack to avoid doing my own highlighs for the moment
-	--- At some point i'll probably do mines
-	ret[#ret + 1] = { a(rev, 4, { truncate = true }), "SnacksPickerGitBreaking" }
-	if #rev >= 4 then
-		ret[#ret + 1] = { " " }
-	end
+	local author = item.author or "(no author)"
+	ret[#ret + 1] = { a(author, 16, { truncate = true }), "Identifier" }
+	ret[#ret + 1] = { " " }
 
-	if item.author then
-		ret[#ret + 1] = { a(item.author, 8, { truncate = true }), "Identifier" }
-		if #item.author >= 8 then
-			ret[#ret + 1] = { " " }
-		end
-	end
-
-	if item.time then
-		local year, month, day = item.time:match("(%d+)-(%d+)-(%d+)")
-		local formatted = string.format("%s-%s-%s", year, day, month)
-		ret[#ret + 1] = { a(formatted, 10), "SnacksPickerGitDate" }
-		if #formatted >= 10 then
-			ret[#ret + 1] = { " " }
-		end
-	end
-
-	if item.commit_id then
-		ret[#ret + 1] = { a(item.commit_id, 10, { truncate = true }), "SnacksPickerGitCommit" }
-		if #item.commit_id >= 4 then
-			ret[#ret + 1] = { " " }
-		end
-	end
+	local formatted_time = item.time and (item.time:match("^%d%d%d%d%-%d%d%-%d%d") or item.time) or ""
+	ret[#ret + 1] = { a(formatted_time, 10, { truncate = true }), "SnacksPickerGitDate" }
+	ret[#ret + 1] = { " " }
 
 	append_description_hl(ret, item.description)
 	return ret
