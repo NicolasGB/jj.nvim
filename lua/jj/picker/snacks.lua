@@ -4,6 +4,29 @@ local runner = require("jj.core.runner")
 --- @class jj.picker.snacks
 local M = {}
 
+local function get_snacks_opts(opts)
+	if opts.snacks == true then
+		return {}
+	end
+	return opts.snacks --[[@as table]]
+end
+
+local function preview_item_cmd(snacks, ctx, ft)
+	if ctx.item and ctx.item.preview_cmd then
+		snacks.picker.preview.cmd(ctx.item.preview_cmd, ctx, ft and { ft = ft } or {})
+	end
+end
+
+local function format_text_item(item)
+	if not item then
+		return {}
+	end
+
+	return {
+		{ item.text or "" },
+	}
+end
+
 --- Displays the status files in a snacks picker
 ---@param opts  jj.picker.config
 ---@param files jj.picker.file[]
@@ -13,16 +36,7 @@ function M.status(opts, files)
 	end
 
 	local snacks = require("snacks")
-
-	local snacks_opts
-	-- If its true we default to an empty table
-	if opts.snacks == true then
-		snacks_opts = {}
-	else
-		--- Otherwise we get the table from the config
-		---@type table
-		snacks_opts = opts.snacks
-	end
+	local snacks_opts = get_snacks_opts(opts)
 
 	local merged_opts = vim.tbl_deep_extend("force", snacks_opts, {
 		source = "jj",
@@ -48,9 +62,7 @@ function M.status(opts, files)
 			},
 		},
 		preview = function(ctx)
-			if ctx.item.file then
-				snacks.picker.preview.cmd(ctx.item.diff_cmd, ctx, {})
-			end
+			preview_item_cmd(snacks, ctx, "git")
 		end,
 	})
 
@@ -139,16 +151,7 @@ function M.file_log_history(opts, log_lines)
 	end
 
 	local snacks = require("snacks")
-
-	local snacks_opts
-	-- If its true we default to an empty table
-	if opts.snacks == true then
-		snacks_opts = {}
-	else
-		--- Otherwise we get the table from the config
-		---@type table
-		snacks_opts = opts.snacks
-	end
+	local snacks_opts = get_snacks_opts(opts)
 
 	local merged_opts = vim.tbl_deep_extend("force", snacks_opts, {
 		source = "jj",
@@ -173,9 +176,97 @@ function M.file_log_history(opts, log_lines)
 			end
 		end,
 		preview = function(ctx)
-			if ctx.item.rev and ctx.item.diff_cmd then
-				snacks.picker.preview.cmd(ctx.item.diff_cmd, ctx, {})
+			preview_item_cmd(snacks, ctx, "git")
+		end,
+	})
+
+	snacks.picker.pick(merged_opts)
+end
+
+--- Picker to chose conlicted revisions and resolve them
+---@param opts  jj.picker.config
+---@param conflicts jj.picker.conflict[]
+function M.conflict(opts, conflicts)
+	if not opts.snacks then
+		return utils.notify("Snacks picker is `disabled`", vim.log.levels.INFO)
+	end
+
+	local snacks = require("snacks")
+	local snacks_opts = get_snacks_opts(opts)
+
+	local function exit_func(rev)
+		return function(exit_code)
+			if exit_code == 0 then
+				utils.notify(string.format("Successfully resolved `%s`", rev), vim.log.levels.INFO)
 			end
+		end
+	end
+
+	local merged_opts = vim.tbl_deep_extend("force", snacks_opts, {
+		source = "jj",
+		items = conflicts,
+		title = "JJ Conflicts",
+		format = format_text_item,
+		actions = {
+			resolve_conflict = function(picker, item)
+				if not item or not item.rev then
+					return
+				end
+
+				local strategies = require("jj.cmd").config.resolve_strategies or nil
+
+				if strategies and #strategies > 1 then
+					vim.ui.select(strategies, {
+						prompt = "Select a strategy to resolve the conflict",
+						format_item = function(choice)
+							return choice.name
+						end,
+					}, function(choice)
+						if not choice then
+							return
+						end
+
+						picker:close()
+						require("jj.cmd").resolve({
+							rev = item.rev,
+							args = choice.args,
+							external = choice.external,
+							on_exit = exit_func(item.rev),
+						})
+					end)
+				elseif strategies and #strategies == 1 then
+					local choice = strategies[1]
+					picker:close()
+					require("jj.cmd").resolve({
+						rev = item.rev,
+						args = choice.args,
+						external = choice.external,
+						on_exit = exit_func(item.rev),
+					})
+				else
+					picker:close()
+					require("jj.cmd.resolve").resolve({ rev = item.rev, on_exit = exit_func(item.rev) })
+				end
+			end,
+		},
+		win = {
+			input = {
+				keys = {
+					["<C-r>"] = { "resolve_conflict", mode = { "i", "n" } },
+				},
+			},
+		},
+		confirm = function(picker, item)
+			picker:close()
+
+			if not item or not item.rev then
+				return
+			end
+
+			require("jj.cmd.resolve").resolve({ rev = item.rev, on_exit = exit_func(item.rev) })
+		end,
+		preview = function(ctx)
+			preview_item_cmd(snacks, ctx, "git")
 		end,
 	})
 

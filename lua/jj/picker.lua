@@ -8,19 +8,32 @@ local parser = require("jj.core.parser")
 --- @field snacks table|boolean The snacks config
 
 --- @class jj.picker.file
+--- @field text string The text to display in the picker
 --- @field file string The current path of the file
 --- @field status string JJ-style status code (e.g. "M ", "R ") for picker formatting
 --- @field rename? string Previous path when this item is a rename
---- @field diff_cmd string The command to get the diff of the file
+--- @field preview_cmd string[] The command used to preview the item
+--- @field confirm_action string The default picker action for the item
 
 --- @class jj.picker.log_line
+--- @field text string The text to display in the picker
 --- @field symbol string The symbol of the log entry
 --- @field rev string The revision of the log entry
 --- @field author string The author of the log entry
 --- @field time string The time of the log entry
 --- @field commit_id string The commit id of the log entry
 --- @field description string The description of the log entry
---- @field diff_cmd string The command to get the diff of the file
+--- @field preview_cmd string[] The command used to preview the item
+--- @field confirm_action string The default picker action for the item
+
+--- @class jj.picker.conflict
+--- @field text string The text to display in the picker
+--- @field symbol string The symbol of the conflict entry
+--- @field rev string The revision of the conflict entry
+--- @field author string The author of the conflict entry
+--- @field description string The description of the conflict entry
+--- @field preview_cmd string[] The command used to preview the item
+--- @field confirm_action string The default picker action for the item
 
 local M = {
 	--- @type jj.picker.config
@@ -62,7 +75,8 @@ local function get_files()
 				text = line:sub(3),
 				file = file_path,
 				status = change .. " ",
-				diff_cmd = string.format("jj --no-pager diff %s", vim.fn.shellescape(file_path)),
+				preview_cmd = { "jj", "--no-pager", "diff", file_path },
+				confirm_action = "open_and_diff",
 			}
 
 			if change == "R" and file_info.old_path and file_info.old_path ~= file_info.new_path then
@@ -146,7 +160,8 @@ local function log_history(file_path)
 						commit_id = commit_id,
 						description = description or "",
 						text = line,
-						diff_cmd = string.format("jj --no-pager diff %s -r %s --stat --git", file_path, rev),
+						preview_cmd = { "jj", "--no-pager", "diff", file_path, "-r", rev, "--stat", "--git" },
+						confirm_action = "edit_revision",
 					})
 				end
 			end
@@ -166,6 +181,9 @@ function M.file_history()
 	local file = vim.fn.expand("%:p")
 
 	local log_lines = log_history(file)
+	if not log_lines or #log_lines == 0 then
+		return utils.notify("`Picker`: No file history found", vim.log.levels.INFO)
+	end
 
 	if M.config.snacks then
 		require("jj.picker.snacks").file_log_history(M.config, log_lines)
@@ -174,6 +192,8 @@ function M.file_history()
 	end
 end
 
+--- Gets the list of conflicted revisions
+--- @return jj.picker.conflict[]|nil A list of conflicted revisions or nil if not in a jj repo
 local function get_conflicts()
 	local cmd =
 		[[jj log -r 'conflicts()' --no-graph -T 'change_id.shortest() ++ "\t" ++ coalesce(author.name(), "(no author)") ++ "\t" ++ coalesce(description.first_line(), "(no description)") ++ "\n"']]
@@ -192,12 +212,16 @@ local function get_conflicts()
 	for _, line in ipairs(lines) do
 		local rev, author, description = line:match("^(.-)\t(.-)\t(.*)$")
 		if rev and rev ~= "" then
+			local item_author = author or "(no author)"
+			local item_description = description or "(no description)"
 			table.insert(conflicts, {
 				symbol = "!",
 				rev = rev,
-				author = author or "(no author)",
-				description = description or "(no description)",
-				diff_cmd = string.format("jj diff -r %s --stat --git", rev),
+				author = item_author,
+				description = item_description,
+				text = string.format("%s %s %s", rev, item_author, item_description),
+				preview_cmd = { "jj", "--no-pager", "show", "-r", rev, "--stat", "--git" },
+				confirm_action = "resolve_conflict",
 			})
 		end
 	end
@@ -205,6 +229,7 @@ local function get_conflicts()
 	return conflicts
 end
 
+--- Displays in the configurated picker the list of conflicted revisions
 function M.conflict()
 	-- Ensure jj is installed
 	if not utils.ensure_jj() then
@@ -216,44 +241,49 @@ function M.conflict()
 		return utils.notify("`Picker`: No conflicts found", vim.log.levels.INFO)
 	end
 
-	vim.ui.select(conflicts, {
-		prompt = "Select conflicted revision",
-		format_item = function(item)
-			return string.format("%s  %s  %s", item.rev or "", item.author or "", item.description or "")
-		end,
-	}, function(item)
-		if not item or not item.rev then
-			return
-		end
-
-		--TODO: add a custom tool or default to edit if the user want's to
-		local _, ok = runner.execute_command(
-			string.format("jj edit %s --ignore-immutable", item.rev),
-			string.format("could not edit revision '%s'", item.rev)
-		)
-
-		if not ok then
-			return
-		end
-
-		utils.reload_changed_file_buffers()
-		utils.notify(string.format("Editing conflicted revision `%s`", item.rev), vim.log.levels.INFO)
-
-		-- Best-effort: open first conflicted file if one is listed.
-		local list_output = runner.execute_command(string.format("jj resolve -r %s --list", item.rev))
-		if type(list_output) ~= "string" or list_output == "" then
-			return
-		end
-
-		for _, line in ipairs(vim.split(list_output, "\n", { trimempty = true })) do
-			local path = vim.trim(line:gsub("^[-*]%s+", ""))
-			local stat = vim.loop.fs_stat(path)
-			if stat and stat.type == "file" then
-				vim.cmd("edit " .. vim.fn.fnameescape(path))
-				break
+	if M.config.snacks then
+		require("jj.picker.snacks").conflict(M.config, conflicts)
+	else
+		-- Otherwise, use the default vim.ui.select to choose a conflicted revision
+		vim.ui.select(conflicts, {
+			prompt = "Select conflicted revision",
+			format_item = function(item)
+				return string.format("%s  %s  %s", item.rev or "", item.author or "", item.description or "")
+			end,
+		}, function(item)
+			if not item or not item.rev then
+				return
 			end
-		end
-	end)
+
+			--TODO: add a custom tool or default to edit if the user want's to
+			local _, ok = runner.execute_command(
+				string.format("jj edit %s --ignore-immutable", item.rev),
+				string.format("could not edit revision '%s'", item.rev)
+			)
+
+			if not ok then
+				return
+			end
+
+			utils.reload_changed_file_buffers()
+			utils.notify(string.format("Editing conflicted revision `%s`", item.rev), vim.log.levels.INFO)
+
+			-- Best-effort: open first conflicted file if one is listed.
+			local list_output = runner.execute_command(string.format("jj resolve -r %s --list", item.rev))
+			if type(list_output) ~= "string" or list_output == "" then
+				return
+			end
+
+			for _, line in ipairs(vim.split(list_output, "\n", { trimempty = true })) do
+				local path = vim.trim(line:gsub("^[-*]%s+", ""))
+				local stat = vim.loop.fs_stat(path)
+				if stat and stat.type == "file" then
+					vim.cmd("edit " .. vim.fn.fnameescape(path))
+					break
+				end
+			end
+		end)
+	end
 end
 
 return M
