@@ -12,7 +12,7 @@ local parser = require("jj.core.parser")
 --- @field file string The current path of the file
 --- @field status string JJ-style status code (e.g. "M ", "R ") for picker formatting
 --- @field rename? string Previous path when this item is a rename
---- @field preview_cmd string[] The command used to preview the item
+--- @field diff_cmd string The command to get the diff of the file
 --- @field confirm_action string The default picker action for the item
 
 --- @class jj.picker.log_line
@@ -41,6 +41,48 @@ local M = {
 		snacks = {},
 	},
 }
+
+--- Resolve a conflicted revision using configured strategies.
+--- @param item jj.picker.conflict|nil
+--- @param on_exit? fun(exit_code: number)
+local function resolve_conflict(item, on_exit)
+	if not item or not item.rev then
+		return
+	end
+
+	local strategies = require("jj.cmd").config.resolve_strategies or nil
+	if strategies and #strategies > 1 then
+		vim.ui.select(strategies, {
+			prompt = "Select a strategy to resolve the conflict",
+			format_item = function(choice)
+				return choice.name
+			end,
+		}, function(choice)
+			if not choice then
+				return
+			end
+
+			require("jj.cmd").resolve({
+				rev = item.rev,
+				args = choice.args,
+				external = choice.external,
+				on_exit = on_exit,
+			})
+		end)
+	elseif strategies and #strategies == 1 then
+		local choice = strategies[1]
+		require("jj.cmd").resolve({
+			rev = item.rev,
+			args = choice.args,
+			external = choice.external,
+			on_exit = on_exit,
+		})
+	else
+		require("jj.cmd.resolve").resolve({ rev = item.rev, on_exit = on_exit })
+	end
+end
+
+M.resolve_conflict = resolve_conflict
 
 --- Initializes the picker
 --- @param opts jj.picker.config
@@ -75,7 +117,7 @@ local function get_files()
 				text = line:sub(3),
 				file = file_path,
 				status = change .. " ",
-				preview_cmd = { "jj", "--no-pager", "diff", file_path },
+				diff_cmd = string.format("jj --no-pager diff %s", vim.fn.shellescape(file_path)),
 				confirm_action = "open_and_diff",
 			}
 
@@ -251,37 +293,11 @@ function M.conflict()
 				return string.format("%s  %s  %s", item.rev or "", item.author or "", item.description or "")
 			end,
 		}, function(item)
-			if not item or not item.rev then
-				return
-			end
-
-			--TODO: add a custom tool or default to edit if the user want's to
-			local _, ok = runner.execute_command(
-				string.format("jj edit %s --ignore-immutable", item.rev),
-				string.format("could not edit revision '%s'", item.rev)
-			)
-
-			if not ok then
-				return
-			end
-
-			utils.reload_changed_file_buffers()
-			utils.notify(string.format("Editing conflicted revision `%s`", item.rev), vim.log.levels.INFO)
-
-			-- Best-effort: open first conflicted file if one is listed.
-			local list_output = runner.execute_command(string.format("jj resolve -r %s --list", item.rev))
-			if type(list_output) ~= "string" or list_output == "" then
-				return
-			end
-
-			for _, line in ipairs(vim.split(list_output, "\n", { trimempty = true })) do
-				local path = vim.trim(line:gsub("^[-*]%s+", ""))
-				local stat = vim.loop.fs_stat(path)
-				if stat and stat.type == "file" then
-					vim.cmd("edit " .. vim.fn.fnameescape(path))
-					break
+			resolve_conflict(item, function(exit_code)
+				if exit_code == 0 and item and item.rev then
+					utils.notify(string.format("Successfully resolved `%s`", item.rev), vim.log.levels.INFO)
 				end
-			end
+			end)
 		end)
 	end
 end

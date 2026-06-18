@@ -919,4 +919,67 @@ function M.list_github_prs(opts)
 	return open_prs
 end
 
+-- Open first conflicted file, runs edit on the conflicted revision and opens the first conflicted file in a buffer.
+--- @param revset string The revset to check for conflicts
+function M.open_first_conflicted_file(revset)
+	if not revset or revset == "" then
+		M.notify("No revset provided to open conflicted file", vim.log.levels.ERROR)
+		return
+	elseif not M.is_change_conflicted(revset) then
+		return
+	end
+
+	local repo_root = M.get_jj_root()
+	local quoted_revset = vim.fn.shellescape(revset)
+
+	-- Resolve the first conflicted path before editing so we can still open it
+	-- reliably when the current working directory is outside the repo root.
+	local list_output, list_ok = runner.execute_command(
+		string.format("jj resolve -r %s --list", quoted_revset),
+		string.format("could not list conflicted files for '%s'", revset),
+		nil,
+		true
+	)
+
+	local first_conflicted_path
+	if list_ok and type(list_output) == "string" and list_output ~= "" then
+		for _, line in ipairs(vim.split(list_output, "\n", { trimempty = true })) do
+			local rel_path = vim.trim(line:gsub("^[-*]%s+", ""))
+			if rel_path ~= "" then
+				first_conflicted_path = rel_path
+				break
+			end
+		end
+	end
+
+	local _, ok = runner.execute_command(
+		string.format("jj edit %s --ignore-immutable", quoted_revset),
+		string.format("could not edit revision '%s'", revset)
+	)
+
+	if not ok then
+		return
+	end
+
+	M.reload_changed_file_buffers()
+	M.notify(string.format("Editing conflicted revision `%s`", revset), vim.log.levels.INFO)
+
+	if first_conflicted_path then
+		local first_conflicted_file = repo_root and vim.fs.joinpath(repo_root, first_conflicted_path)
+			or first_conflicted_path
+		local escaped = vim.fn.fnameescape(first_conflicted_file)
+		local existing_buf = vim.fn.bufnr(first_conflicted_file)
+
+		if existing_buf ~= -1 and vim.api.nvim_buf_is_loaded(existing_buf) then
+			local modified = vim.bo[existing_buf].modified
+			if not modified then
+				vim.cmd("bdelete! " .. existing_buf)
+			end
+		end
+
+		vim.cmd("edit! " .. escaped)
+		vim.cmd("checktime " .. escaped)
+	end
+end
+
 return M

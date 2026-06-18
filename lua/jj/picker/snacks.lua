@@ -11,20 +11,70 @@ local function get_snacks_opts(opts)
 	return opts.snacks --[[@as table]]
 end
 
-local function preview_item_cmd(snacks, ctx, ft)
-	if ctx.item and ctx.item.preview_cmd then
-		snacks.picker.preview.cmd(ctx.item.preview_cmd, ctx, ft and { ft = ft } or {})
+--- Append git-style highlighted description segments to a Snacks highlight array.
+---
+--- If the description matches a conventional-commit-like shape such as
+--- `feat(scope)!: body`, this splits and highlights the type/scope/breaking
+--- marker separately, then appends the remaining body with `default_hl`.
+--- Otherwise the whole description is appended as a single segment.
+---
+--- @param ret snacks.picker.Highlight[]
+--- @param desc string|nil
+--- @param default_hl? string Highlight group used for the description body/fallback text
+local function append_description_hl(ret, desc, default_hl)
+	desc = desc or ""
+
+	local type, scope, breaking, body = desc:match("^(%S+)%s*(%(.-%))(!?):%s*(.*)$")
+	if not type then
+		type, breaking, body = desc:match("^(%S+)(!?):%s*(.*)$")
 	end
+
+	local msg_hl = default_hl or "SnacksPickerGitMsg"
+	if type and body then
+		local dimmed = vim.tbl_contains({ "chore", "bot", "build", "ci", "style", "test" }, type)
+		msg_hl = dimmed and "SnacksPickerDimmed" or (default_hl or "SnacksPickerGitMsg")
+		ret[#ret + 1] = {
+			type,
+			breaking ~= "" and "SnacksPickerGitBreaking" or dimmed and "SnacksPickerBold" or "SnacksPickerGitType",
+		}
+		if scope and scope ~= "" then
+			ret[#ret + 1] = { scope, "SnacksPickerGitScope" }
+		end
+		if breaking ~= "" then
+			ret[#ret + 1] = { "!", "SnacksPickerGitBreaking" }
+		end
+		ret[#ret + 1] = { ":", "SnacksPickerDelim" }
+		ret[#ret + 1] = { " " }
+		desc = body
+	end
+
+	ret[#ret + 1] = { desc, msg_hl }
 end
 
-local function format_text_item(item)
+--- Format a conflict picker entry with git-like colored segments.
+---
+--- Layout:
+--- - change/revision id
+--- - author
+--- - first-line description
+---
+--- @param item jj.picker.conflict|nil
+--- @return snacks.picker.Highlight[]
+local function format_conflict_item(item)
 	if not item then
 		return {}
 	end
 
-	return {
-		{ item.text or "" },
-	}
+	local a = Snacks.picker.util.align
+	local ret = {} ---@type snacks.picker.Highlight[]
+
+	ret[#ret + 1] = { a(item.rev or "unknown", 12, { truncate = true }), "Constant" }
+	ret[#ret + 1] = { " " }
+	ret[#ret + 1] = { a(item.author or "(no author)", 16, { truncate = true }), "Identifier" }
+	ret[#ret + 1] = { " " }
+	append_description_hl(ret, item.description, "Comment")
+
+	return ret
 end
 
 --- Displays the status files in a snacks picker
@@ -62,14 +112,16 @@ function M.status(opts, files)
 			},
 		},
 		preview = function(ctx)
-			preview_item_cmd(snacks, ctx, "git")
+			if ctx.item and ctx.item.diff_cmd then
+				snacks.picker.preview.cmd(ctx.item.diff_cmd, ctx, {})
+			end
 		end,
 	})
 
 	snacks.picker.pick(merged_opts)
 end
 
-local function format_jj_log(item, picker)
+local function format_jj_log(item)
 	local a = Snacks.picker.util.align
 	local ret = {} ---@type snacks.picker.Highlight[]
 
@@ -91,7 +143,7 @@ local function format_jj_log(item, picker)
 	end
 
 	if item.author then
-		ret[#ret + 1] = { a(item.author, 8, { truncate = true }), "SnacksPcikerGitMsg" }
+		ret[#ret + 1] = { a(item.author, 8, { truncate = true }), "Identifier" }
 		if #item.author >= 8 then
 			ret[#ret + 1] = { " " }
 		end
@@ -113,33 +165,7 @@ local function format_jj_log(item, picker)
 		end
 	end
 
-	-- This comes from snacks git description formattedr
-	local desc = item.description or ""
-	local type, scope, breaking, body = desc:match("^(%S+)%s*(%(.-%))(!?):%s*(.*)$")
-
-	if not type then
-		type, breaking, body = desc:match("^(%S+)(!?):%s*(.*)$")
-	end
-	local msg_hl = "SnacksPickerGitMsg"
-	if type and body then
-		local dimmed = vim.tbl_contains({ "chore", "bot", "build", "ci", "style", "test" }, type)
-		msg_hl = dimmed and "SnacksPickerDimmed" or "SnacksPickerGitMsg"
-		ret[#ret + 1] = {
-			type,
-			breaking ~= "" and "SnacksPickerGitBreaking" or dimmed and "SnacksPickerBold" or "SnacksPickerGitType",
-		}
-		if scope and scope ~= "" then
-			ret[#ret + 1] = { scope, "SnacksPickerGitScope" }
-		end
-		if breaking ~= "" then
-			ret[#ret + 1] = { "!", "SnacksPickerGitBreaking" }
-		end
-		ret[#ret + 1] = { ":", "SnacksPickerDelim" }
-		ret[#ret + 1] = { " " }
-		desc = body
-	end
-
-	ret[#ret + 1] = { desc, msg_hl }
+	append_description_hl(ret, item.description)
 	return ret
 end
 
@@ -176,7 +202,9 @@ function M.file_log_history(opts, log_lines)
 			end
 		end,
 		preview = function(ctx)
-			preview_item_cmd(snacks, ctx, "git")
+			if ctx.item and ctx.item.preview_cmd then
+				snacks.picker.preview.cmd(ctx.item.preview_cmd, ctx, { ft = "git" })
+			end
 		end,
 	})
 
@@ -194,6 +222,8 @@ function M.conflict(opts, conflicts)
 	local snacks = require("snacks")
 	local snacks_opts = get_snacks_opts(opts)
 
+	local picker = require("jj.picker")
+
 	local function exit_func(rev)
 		return function(exit_code)
 			if exit_code == 0 then
@@ -206,67 +236,15 @@ function M.conflict(opts, conflicts)
 		source = "jj",
 		items = conflicts,
 		title = "JJ Conflicts",
-		format = format_text_item,
-		actions = {
-			resolve_conflict = function(picker, item)
-				if not item or not item.rev then
-					return
-				end
-
-				local strategies = require("jj.cmd").config.resolve_strategies or nil
-
-				if strategies and #strategies > 1 then
-					vim.ui.select(strategies, {
-						prompt = "Select a strategy to resolve the conflict",
-						format_item = function(choice)
-							return choice.name
-						end,
-					}, function(choice)
-						if not choice then
-							return
-						end
-
-						picker:close()
-						require("jj.cmd").resolve({
-							rev = item.rev,
-							args = choice.args,
-							external = choice.external,
-							on_exit = exit_func(item.rev),
-						})
-					end)
-				elseif strategies and #strategies == 1 then
-					local choice = strategies[1]
-					picker:close()
-					require("jj.cmd").resolve({
-						rev = item.rev,
-						args = choice.args,
-						external = choice.external,
-						on_exit = exit_func(item.rev),
-					})
-				else
-					picker:close()
-					require("jj.cmd.resolve").resolve({ rev = item.rev, on_exit = exit_func(item.rev) })
-				end
-			end,
-		},
-		win = {
-			input = {
-				keys = {
-					["<C-r>"] = { "resolve_conflict", mode = { "i", "n" } },
-				},
-			},
-		},
-		confirm = function(picker, item)
-			picker:close()
-
-			if not item or not item.rev then
-				return
-			end
-
-			require("jj.cmd.resolve").resolve({ rev = item.rev, on_exit = exit_func(item.rev) })
+		format = format_conflict_item,
+		confirm = function(snacks_picker, item)
+			snacks_picker:close()
+			picker.resolve_conflict(item, exit_func(item and item.rev or ""))
 		end,
 		preview = function(ctx)
-			preview_item_cmd(snacks, ctx, "git")
+			if ctx.item and ctx.item.preview_cmd then
+				snacks.picker.preview.cmd(ctx.item.preview_cmd, ctx, { ft = "git" })
+			end
 		end,
 	})
 
