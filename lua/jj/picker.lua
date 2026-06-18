@@ -8,19 +8,32 @@ local parser = require("jj.core.parser")
 --- @field snacks table|boolean The snacks config
 
 --- @class jj.picker.file
+--- @field text string The text to display in the picker
 --- @field file string The current path of the file
 --- @field status string JJ-style status code (e.g. "M ", "R ") for picker formatting
 --- @field rename? string Previous path when this item is a rename
 --- @field diff_cmd string The command to get the diff of the file
+--- @field confirm_action string The default picker action for the item
 
 --- @class jj.picker.log_line
+--- @field text string The text to display in the picker
 --- @field symbol string The symbol of the log entry
 --- @field rev string The revision of the log entry
 --- @field author string The author of the log entry
 --- @field time string The time of the log entry
 --- @field commit_id string The commit id of the log entry
 --- @field description string The description of the log entry
---- @field diff_cmd string The command to get the diff of the file
+--- @field preview_cmd string[] The command used to preview the item
+--- @field confirm_action string The default picker action for the item
+
+--- @class jj.picker.conflict
+--- @field text string The text to display in the picker
+--- @field symbol string The symbol of the conflict entry
+--- @field rev string The revision of the conflict entry
+--- @field author string The author of the conflict entry
+--- @field description string The description of the conflict entry
+--- @field preview_cmd string[] The command used to preview the item
+--- @field confirm_action string The default picker action for the item
 
 local M = {
 	--- @type jj.picker.config
@@ -28,6 +41,48 @@ local M = {
 		snacks = {},
 	},
 }
+
+--- Resolve a conflicted revision using configured strategies.
+--- @param item jj.picker.conflict|nil
+--- @param on_exit? fun(exit_code: number)
+local function resolve_conflict(item, on_exit)
+	if not item or not item.rev then
+		return
+	end
+
+	local strategies = require("jj.cmd").config.resolve_strategies or nil
+	if strategies and #strategies > 1 then
+		vim.ui.select(strategies, {
+			prompt = "Select a strategy to resolve the conflict",
+			format_item = function(choice)
+				return choice.name
+			end,
+		}, function(choice)
+			if not choice then
+				return
+			end
+
+			require("jj.cmd").resolve({
+				rev = item.rev,
+				args = choice.args,
+				external = choice.external,
+				on_exit = on_exit,
+			})
+		end)
+	elseif strategies and #strategies == 1 then
+		local choice = strategies[1]
+		require("jj.cmd").resolve({
+			rev = item.rev,
+			args = choice.args,
+			external = choice.external,
+			on_exit = on_exit,
+		})
+	else
+		require("jj.cmd.resolve").resolve({ rev = item.rev, on_exit = on_exit })
+	end
+end
+
+M.resolve_conflict = resolve_conflict
 
 --- Initializes the picker
 --- @param opts jj.picker.config
@@ -63,6 +118,7 @@ local function get_files()
 				file = file_path,
 				status = change .. " ",
 				diff_cmd = string.format("jj --no-pager diff %s", vim.fn.shellescape(file_path)),
+				confirm_action = "open_and_diff",
 			}
 
 			if change == "R" and file_info.old_path and file_info.old_path ~= file_info.new_path then
@@ -146,7 +202,8 @@ local function log_history(file_path)
 						commit_id = commit_id,
 						description = description or "",
 						text = line,
-						diff_cmd = string.format("jj --no-pager diff %s -r %s --stat --git", file_path, rev),
+						preview_cmd = { "jj", "--no-pager", "diff", file_path, "-r", rev, "--stat", "--git" },
+						confirm_action = "edit_revision",
 					})
 				end
 			end
@@ -166,11 +223,82 @@ function M.file_history()
 	local file = vim.fn.expand("%:p")
 
 	local log_lines = log_history(file)
+	if not log_lines or #log_lines == 0 then
+		return utils.notify("`Picker`: No file history found", vim.log.levels.INFO)
+	end
 
 	if M.config.snacks then
 		require("jj.picker.snacks").file_log_history(M.config, log_lines)
 	else
 		return utils.notify("No `Picker` enabled", vim.log.levels.INFO)
+	end
+end
+
+--- Gets the list of conflicted revisions
+--- @return jj.picker.conflict[]|nil A list of conflicted revisions or nil if not in a jj repo
+local function get_conflicts()
+	local cmd =
+		[[jj log -r 'conflicts()' --no-graph -T 'change_id.shortest() ++ "\t" ++ coalesce(author.name(), "(no author)") ++ "\t" ++ coalesce(description.first_line(), "(no description)") ++ "\n"']]
+	local output, ok = runner.execute_command(cmd)
+	if not ok then
+		return
+	end
+
+	if type(output) ~= "string" then
+		return utils.notify("Could not get conflicts output", vim.log.levels.ERROR)
+	end
+
+	local conflicts = {}
+	local lines = vim.split(output, "\n", { trimempty = true })
+
+	for _, line in ipairs(lines) do
+		local rev, author, description = line:match("^(.-)\t(.-)\t(.*)$")
+		if rev and rev ~= "" then
+			local item_author = author or "(no author)"
+			local item_description = description or "(no description)"
+			table.insert(conflicts, {
+				symbol = "!",
+				rev = rev,
+				author = item_author,
+				description = item_description,
+				text = string.format("%s %s %s", rev, item_author, item_description),
+				preview_cmd = { "jj", "--no-pager", "show", "-r", rev, "--stat", "--git" },
+				confirm_action = "resolve_conflict",
+			})
+		end
+	end
+
+	return conflicts
+end
+
+--- Displays in the configurated picker the list of conflicted revisions
+function M.conflict()
+	-- Ensure jj is installed
+	if not utils.ensure_jj() then
+		return
+	end
+
+	local conflicts = get_conflicts()
+	if not conflicts or #conflicts == 0 then
+		return utils.notify("`Picker`: No conflicts found", vim.log.levels.INFO)
+	end
+
+	if M.config.snacks then
+		require("jj.picker.snacks").conflict(M.config, conflicts)
+	else
+		-- Otherwise, use the default vim.ui.select to choose a conflicted revision
+		vim.ui.select(conflicts, {
+			prompt = "Select conflicted revision",
+			format_item = function(item)
+				return string.format("%s  %s  %s", item.rev or "", item.author or "", item.description or "")
+			end,
+		}, function(item)
+			resolve_conflict(item, function(exit_code)
+				if exit_code == 0 and item and item.rev then
+					utils.notify(string.format("Successfully resolved `%s`", item.rev), vim.log.levels.INFO)
+				end
+			end)
+		end)
 	end
 end
 

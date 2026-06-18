@@ -12,7 +12,7 @@
 
 - [Current Features](#current-features)
 - [Enhanced Integrations](#enhanced-integrations)
-  - [View change summary from the log buffer](#view-change-summary-from-the-log-buffer)
+  - [View change summary from the log buffer](view-change-summary-from-the-log-buffer)
   - [Diff any change](#diff-any-change)
   - [Diff revision history](#diff-revision-history)
   - [Change the log revset from the log buffer](#change-the-log-revset-from-the-log-buffer)
@@ -86,8 +86,9 @@
   - `:Jdiff [revision]` - Vertical split diff against a jj revision
   - `:Jhdiff [revision]` - Horizontal split diff
 - Picker for [Snacks.nvim](https://github.com/folke/snacks.nvim)
-  - `jj status` Displays the current changes diffs
-  - `jj file_history` Displays a buffer's history changes and allows to edit its change (including immutable changes)
+  - `picker.status()` displays the current changed files with live diff preview
+  - `picker.file_history()` displays the current buffer's revision history and lets you edit the selected change
+  - `picker.conflict()` lists conflicted revisions, previews their changes, and launches conflict resolution (with Snacks, or `vim.ui.select()` as a fallback)
 
 ## Enhanced integrations
 
@@ -382,6 +383,35 @@ When using the [Snacks.nvim](https://github.com/folke/snacks.nvim) picker integr
 
 - `<Enter>` - Open the selected file
 - `<C-d>` - Open the selected file and run `Jdiff`
+
+### Conflict picker (Snacks.nvim)
+
+`picker.conflict()` opens a picker for `jj log -r 'conflicts()'`, so you can resolve conflicted revisions without first navigating to them in the log buffer.
+
+When Snacks is enabled, it uses the Snacks picker UI. Otherwise, it falls back to a plain `vim.ui.select()` picker with the same conflicted revision list.
+
+Available actions in the Snacks picker:
+
+- `<Enter>` - Resolve the selected conflicted revision
+- `<C-e>` - Run `jj edit` on the selected conflicted revision and refresh changed buffers
+
+What it shows:
+
+- The conflicted revision/change id
+- The author
+- The first line of the description
+- A live `jj show --stat --git` preview for the selected conflict
+
+What happens on confirm:
+
+- `<Enter>` resolves the selected conflicted revision
+- If `cmd.resolve_strategies` contains multiple entries, `jj.nvim` prompts you to choose one
+- The selected strategy's `args` and `external` options are forwarded to `cmd.resolve(...)`
+- If no strategies are configured, it falls back to the default interactive `jj resolve`
+
+The fallback `vim.ui.select()` version supports selecting a conflicted revision to resolve, but does not provide the extra Snacks-only `<C-e>` edit action.
+
+This makes it easy to keep a dedicated “show me all conflicts” picker bound to a keymap, especially when using the Snacks picker UI.
 
 ## Installation
 
@@ -1247,6 +1277,7 @@ vim.keymap.set("n", "<leader>jA", annotate.line, { desc = "JJ annotate line" })
     local picker = require("jj.picker")
     vim.keymap.set("n", "<leader>gj", function() picker.status() end, { desc = "JJ Picker status" })
     vim.keymap.set("n", "<leader>jgh", function() picker.file_history() end, { desc = "JJ Picker history" })
+    vim.keymap.set("n", "<leader>jgc", function() picker.conflict() end, { desc = "JJ Picker conflicts" })
 
     -- Some functions like `log` can take parameters
     vim.keymap.set("n", "<leader>jL", function()
