@@ -26,7 +26,7 @@ function M.resolve(opts)
 	for _, arg in ipairs(cmd_args) do
 		table.insert(escaped_cmd_args, vim.fn.shellescape(arg))
 	end
-	local cmd = table.concat(escaped_cmd_args, " ")
+	local shell_cmd = table.concat(escaped_cmd_args, " ")
 
 	utils.notify(string.format("Resolving conflicts in change `%s`...", rev), vim.log.levels.INFO)
 
@@ -34,7 +34,7 @@ function M.resolve(opts)
 	if opts.external then
 		-- Run the command asynchronously and notify the user of the result
 		runner.execute_command_async(
-			cmd,
+			shell_cmd,
 			function(output)
 				if output and output ~= "" then
 					utils.notify(output, vim.log.levels.INFO)
@@ -54,7 +54,7 @@ function M.resolve(opts)
 		)
 	else
 		-- Otherwise, run in a floating terminal
-		terminal.run_floating(cmd, nil, {
+		terminal.run_floating(cmd_args, nil, {
 			title = " JJ Resolve ",
 			modifiable = true,
 			keep_modifiable = true,

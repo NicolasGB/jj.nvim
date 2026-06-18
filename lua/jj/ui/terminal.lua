@@ -249,7 +249,7 @@ function M.is_log_buffer_open()
 end
 
 --- Run the command in a floating window
---- @param cmd string The command to run in the floating window
+--- @param cmd string|string[] The command to run in the floating window
 --- @param keymaps jj.core.buffer.keymap[]|nil Additional keymaps to set for this floating buffer
 --- @param float_opts? {title?: string, modifiable?: boolean, keep_modifiable?: boolean, on_exit?: fun(exit_code: integer), interactive?: boolean}
 function M.run_floating(cmd, keymaps, float_opts)
@@ -323,13 +323,24 @@ function M.run_floating(cmd, keymaps, float_opts)
 	local jid
 	local chan
 	if float_opts.interactive then
+		vim.api.nvim_set_current_win(win)
+		vim.api.nvim_win_set_buf(win, state.floating_buf)
 		jid = vim.fn.jobstart(cmd, {
 			term = true,
+			cwd = vim.fn.getcwd(),
+			env = {
+				TERM = "xterm-256color",
+				PAGER = "cat",
+				DELTA_PAGER = "cat",
+				COLORTERM = "truecolor",
+			},
 			on_exit = function(_, exit_code)
 				vim.schedule(function()
 					if float_opts.on_exit then
 						float_opts.on_exit(exit_code)
 					end
+					local parts = type(cmd) == "string" and vim.split(cmd, "%s+") or cmd
+					state.floating_buf_cmd = parts[2] or nil
 					if state.floating_buf and vim.api.nvim_buf_is_valid(state.floating_buf) then
 						M.close_floating_buffer()
 					end
@@ -396,10 +407,11 @@ function M.run_floating(cmd, keymaps, float_opts)
 	end
 
 	if not jid or jid <= 0 then
+		local cmd_text = type(cmd) == "string" and cmd or table.concat(cmd, " ")
 		if chan then
-			vim.api.nvim_chan_send(chan, "Failed to start command: " .. cmd .. "\r\n")
+			vim.api.nvim_chan_send(chan, "Failed to start command: " .. cmd_text .. "\r\n")
 		else
-			vim.notify("Failed to start command: " .. cmd, vim.log.levels.ERROR)
+			vim.notify("Failed to start command: " .. cmd_text, vim.log.levels.ERROR)
 		end
 		state.floating_chan = nil
 	else
