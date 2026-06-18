@@ -86,8 +86,8 @@
   - `:Jdiff [revision]` - Vertical split diff against a jj revision
   - `:Jhdiff [revision]` - Horizontal split diff
 - Picker for [Snacks.nvim](https://github.com/folke/snacks.nvim)
-  - `picker.status()` displays the current changed files with live diff preview
-  - `picker.file_history()` displays the current buffer's revision history and lets you edit the selected change
+  - `picker.status()` displays the current changed files with live diff preview (or falls back to `vim.ui.select()`)
+  - `picker.file_history()` displays the current buffer's revision history and lets you edit the selected change (or falls back to `vim.ui.select()`)
   - `picker.conflict()` lists conflicted revisions, previews their changes, and launches conflict resolution (with Snacks, or `vim.ui.select()` as a fallback)
 
 ## Enhanced integrations
@@ -383,6 +383,16 @@ When using the [Snacks.nvim](https://github.com/folke/snacks.nvim) picker integr
 
 - `<Enter>` - Open the selected file
 - `<C-d>` - Open the selected file and run `Jdiff`
+
+If Snacks is not enabled, `picker.status()` falls back to `vim.ui.select()`, where selecting an entry simply opens the chosen file.
+
+### File history picker (Snacks.nvim)
+
+`picker.file_history()` shows the current buffer's revision history.
+
+When Snacks is enabled, you get a fuzzy picker with a diff preview for each revision. Selecting an entry edits that revision with `jj edit <rev> --ignore-immutable` and refreshes changed buffers.
+
+If Snacks is not enabled, `picker.file_history()` falls back to `vim.ui.select()` with the same revision list. Selecting an entry performs the same edit action and buffer refresh, but without the Snacks preview UI.
 
 ### Conflict picker (Snacks.nvim)
 
