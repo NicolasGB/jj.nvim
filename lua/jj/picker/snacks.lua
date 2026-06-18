@@ -237,6 +237,32 @@ function M.conflict(opts, conflicts)
 		items = conflicts,
 		title = "JJ Conflicts",
 		format = format_conflict_item,
+		actions = {
+			edit_revision = function(snacks_picker, item)
+				snacks_picker:close()
+
+				if not item or not item.rev then
+					return
+				end
+
+				local _, ok = runner.execute_command(
+					string.format("jj edit %s", item.rev),
+					string.format("could not edit revision '%s'", item.rev)
+				)
+
+				if ok then
+					utils.reload_changed_file_buffers()
+					utils.notify(string.format("Editing conflicted revision `%s`", item.rev), vim.log.levels.INFO)
+				end
+			end,
+		},
+		win = {
+			input = {
+				keys = {
+					["<C-e>"] = { "edit_revision", mode = { "i", "n" } },
+				},
+			},
+		},
 		confirm = function(snacks_picker, item)
 			snacks_picker:close()
 			picker.resolve_conflict(item, exit_func(item and item.rev or ""))
