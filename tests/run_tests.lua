@@ -364,6 +364,73 @@ run_test("parses divergent change at end of line", function()
 	assert_equals("bcd890/1", parser.get_revset(line))
 end)
 
+print("\n=== Running parse_conflicted_files tests ===\n")
+
+run_test("parse_conflicted_files: single file", function()
+	assert_table_equals(
+		{ { rel_path = "src/foo.rs", abs_path = "/repo/src/foo.rs" } },
+		parser.parse_conflicted_files("src/foo.rs\0/repo/src/foo.rs\0")
+	)
+end)
+
+run_test("parse_conflicted_files: multiple files", function()
+	assert_table_equals({
+		{ rel_path = "a.txt", abs_path = "/repo/a.txt" },
+		{ rel_path = "b.txt", abs_path = "/repo/b.txt" },
+	}, parser.parse_conflicted_files("a.txt\0/repo/a.txt\0b.txt\0/repo/b.txt\0"))
+end)
+
+run_test("parse_conflicted_files: paths with tabs and newlines", function()
+	assert_table_equals(
+		{ { rel_path = "weird\tname\n.txt", abs_path = "/repo/weird\tname\n.txt" } },
+		parser.parse_conflicted_files("weird\tname\n.txt\0/repo/weird\tname\n.txt\0")
+	)
+end)
+
+run_test("parse_conflicted_files: empty output yields empty list", function()
+	assert_table_equals({}, parser.parse_conflicted_files(""))
+end)
+
+run_test("parse_conflicted_files: nil output yields empty list", function()
+	assert_table_equals({}, parser.parse_conflicted_files(nil))
+end)
+
+print("\n=== Running scan_conflict_sections tests ===\n")
+
+run_test("scan_conflict_sections: one entry per opening marker", function()
+	local lines = {
+		"line 1",
+		"<<<<<<< Conflict 1 of 2",
+		"%%%%%%%",
+		">>>>>>>",
+		"between",
+		"<<<<<<< Conflict 2 of 2",
+		">>>>>>>",
+	}
+	assert_table_equals({
+		{
+			file = "/abs/a.txt",
+			rel_path = "a.txt",
+			pos = { 2, 0 },
+			text = "a.txt:2",
+		},
+		{
+			file = "/abs/a.txt",
+			rel_path = "a.txt",
+			pos = { 6, 0 },
+			text = "a.txt:6",
+		},
+	}, parser.scan_conflict_sections("a.txt", "/abs/a.txt", lines))
+end)
+
+run_test("scan_conflict_sections: no markers yields empty list", function()
+	assert_table_equals({}, parser.scan_conflict_sections("a.txt", "/abs/a.txt", { "no", "markers", "here" }))
+end)
+
+run_test("scan_conflict_sections: empty file yields empty list", function()
+	assert_table_equals({}, parser.scan_conflict_sections("a.txt", "/abs/a.txt", {}))
+end)
+
 print("\n=== Running parse_default_cmd tests ===\n")
 
 run_test("parse_default_cmd: parses config list array output", function()

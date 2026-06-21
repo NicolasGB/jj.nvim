@@ -242,6 +242,51 @@ function M.parse_diff_range(range_str)
 	return nil
 end
 
+--- Parse the conflicted-file records emitted by the `conflicted_files()`
+--- template. Each file is rendered as two NUL-terminated fields: its display
+--- path (relative to the working directory) followed by its absolute path. NUL
+--- is used as the separator because it is the only byte that cannot occur in a
+--- path, so paths containing tabs or newlines are handled correctly.
+--- @param output string|nil Raw template output
+--- @return {rel_path: string, abs_path: string}[]
+function M.parse_conflicted_files(output)
+	local entries = {}
+	if not output then
+		return entries
+	end
+
+	local fields = vim.split(output, "\0", { trimempty = true })
+	for i = 1, #fields - 1, 2 do
+		entries[#entries + 1] = { rel_path = fields[i], abs_path = fields[i + 1] }
+	end
+
+	return entries
+end
+
+--- Build conflict-section entries by scanning a conflicted file's lines for
+--- opening conflict markers (lines starting with `<<<<<<<`), one entry per
+--- marker.
+--- @param rel_path string Path of the file as reported by jj
+--- @param abs_path string Absolute path of the file
+--- @param file_lines string[] The lines of the file
+--- @return jj.picker.conflict_section[]
+function M.scan_conflict_sections(rel_path, abs_path, file_lines)
+	local sections = {}
+
+	for lnum, file_line in ipairs(file_lines) do
+		if file_line:match("^<<<<<<<") then
+			table.insert(sections, {
+				file = abs_path,
+				rel_path = rel_path,
+				pos = { lnum, 0 },
+				text = string.format("%s:%d", rel_path, lnum),
+			})
+		end
+	end
+
+	return sections
+end
+
 --- Parse a `<rev>:<path>` argument as used by file commands.
 --- With no colon, the whole input is treated as a revision with no file.
 --- A trailing colon (`<rev>:`) is accepted and treated as no file path.
