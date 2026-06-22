@@ -172,8 +172,10 @@ diff.register_backend("codediff", {
 			-- side is decoded in the same way as the current file.
 			-- Assumes the encoding didn't change between revisions.
 			local enc = file.get_buf_encoding(0)
-			local base_lines, base_had_eol, ok_read = file.get_file_content(revset, path, enc)
-			if not ok_read then
+			-- A file added since `revset` has no content there; show it as empty
+			-- so it diffs as fully added rather than aborting the diff.
+			local base_lines, base_had_eol, ok_read, _, absent = file.get_file_content(revset, path, enc)
+			if not ok_read and not absent then
 				utils.notify(string.format("Could not read `%s` from `%s` for CodeDiff", path, revset), vim.log.levels.ERROR)
 				return
 			end

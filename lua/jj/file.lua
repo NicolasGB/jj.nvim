@@ -219,23 +219,26 @@ M._encode = encode
 ---				(default: auto-detected from content)
 --- @return string[] lines
 --- @return boolean had_eol Whether the content had a trailing newline
---- @return boolean ok Whether the command succeeded
+--- @return boolean ok Whether the read succeeded
 --- @return jj.file.enc used_enc The encoding used to decode the content
+--- @return boolean absent True when the path does not exist in `rev` (e.g. a
+---				file added since `rev`).
 local function get_file_content(rev, path, enc)
-	local raw, ok = runner.execute_command_raw(
+	local raw, ok, stderr = runner.execute_command_raw(
 		string.format("jj file show -r %s %s", vim.fn.shellescape(rev), vim.fn.shellescape(path)),
 		nil,
 		true
 	)
 	if not ok or not raw then
-		return {}, false, false, enc or { fenc = "", bomb = false, ff = "unix" }
+		local absent = stderr ~= nil and stderr:find("No such path", 1, true) ~= nil
+		return {}, false, false, enc or { fenc = "", bomb = false, ff = "unix" }, absent
 	end
 	local lines, had_eol, used_enc = decode(raw, enc)
 	if not lines then
 		utils.notify(had_eol --[[@as string]], vim.log.levels.ERROR)
-		return {}, false, false, used_enc
+		return {}, false, false, used_enc, false
 	end
-	return lines, had_eol --[[@as boolean]], true, used_enc
+	return lines, had_eol --[[@as boolean]], true, used_enc, false
 end
 M.get_file_content = get_file_content
 
@@ -436,8 +439,9 @@ function M.register_command()
 			local name = vim.api.nvim_buf_get_name(0)
 			local change_id, path = utils.parse_jj_uri(name)
 			if not change_id or not path then return end
-			local lines, had_eol, ok_read, used_enc = get_file_content(change_id, path)
-			if not ok_read then
+			-- Keep reloads of an added-file diff buffer empty rather than erroring.
+			local lines, had_eol, ok_read, used_enc, absent = get_file_content(change_id, path)
+			if not ok_read and not absent then
 				utils.notify(string.format("Could not read `%s` from `%s`", path, change_id), vim.log.levels.ERROR)
 				return
 			end

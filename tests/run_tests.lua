@@ -793,6 +793,63 @@ run_test("decode: roundtrip reproduces the bytes exactly", function()
 	end
 end)
 
+print("\n=== Running get_file_content tests ===\n")
+
+run_test("get_file_content: reads existing file content", function()
+	local runner = require("jj.core.runner")
+	local original = runner.execute_command_raw
+	runner.execute_command_raw = function()
+		return "a\nb\n", true, ""
+	end
+	local ok_test, err = pcall(function()
+		local lines, had_eol, ok, _, absent = jj_file.get_file_content("abc123", "src/file.py")
+		assert_table_equals({ "a", "b" }, lines)
+		assert_equals(true, had_eol)
+		assert_equals(true, ok)
+		assert_equals(false, absent)
+	end)
+	runner.execute_command_raw = original
+	if not ok_test then
+		error(err)
+	end
+end)
+
+run_test("get_file_content: absent path in revision reports absent (not a read error)", function()
+	local runner = require("jj.core.runner")
+	local original = runner.execute_command_raw
+	runner.execute_command_raw = function()
+		return nil, false, "Error: No such path: src/new_file.py\n"
+	end
+	local ok_test, err = pcall(function()
+		local lines, had_eol, ok, _, absent = jj_file.get_file_content("abc123", "src/new_file.py")
+		assert_table_equals({}, lines)
+		assert_equals(false, had_eol)
+		assert_equals(false, ok)
+		assert_equals(true, absent)
+	end)
+	runner.execute_command_raw = original
+	if not ok_test then
+		error(err)
+	end
+end)
+
+run_test("get_file_content: genuine read error returns failure without absent", function()
+	local runner = require("jj.core.runner")
+	local original = runner.execute_command_raw
+	runner.execute_command_raw = function()
+		return nil, false, "Error: Revision `nope` doesn't exist\n"
+	end
+	local ok_test, err = pcall(function()
+		local _, _, ok, _, absent = jj_file.get_file_content("nope", "src/file.py")
+		assert_equals(false, ok)
+		assert_equals(false, absent)
+	end)
+	runner.execute_command_raw = original
+	if not ok_test then
+		error(err)
+	end
+end)
+
 -- Print summary
 print(string.format("\n=== Test Summary ==="))
 print(string.format("Passed: %d", tests_passed))

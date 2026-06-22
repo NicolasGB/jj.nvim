@@ -42,14 +42,15 @@ end
 --- @param silent boolean|nil Optional to silent the notification
 --- @return string|nil output Raw stdout bytes, or nil if failed
 --- @return boolean success Whether the command succeeded
+--- @return string stderr The command's stderr (empty on success)
 function M.execute_command_raw(cmd, error_prefix, silent)
 	local result = vim.system({ "sh", "-c", cmd }):wait()
 	if result.code ~= 0 then
 		local msg = result.stderr ~= "" and result.stderr or result.stdout or ""
 		error_notify(msg, error_prefix, silent)
-		return nil, false
+		return nil, false, msg
 	end
-	return result.stdout or "", true
+	return result.stdout or "", true, ""
 end
 
 --- Execute a system command synchronously and call success callback.
