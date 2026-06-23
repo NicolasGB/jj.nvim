@@ -249,4 +249,48 @@ function M.conflict(opts, conflicts)
 	snacks.picker.pick(merged_opts)
 end
 
+--- Format a conflict-section picker entry as `<relative file path>:<line>`,
+--- the line being where the conflict's opening marker is.
+---
+--- @param item jj.picker.conflict_section|nil
+--- @return snacks.picker.Highlight[]
+local function format_conflict_section_item(item)
+	if not item then
+		return {}
+	end
+
+	local ret = {} ---@type snacks.picker.Highlight[]
+
+	ret[#ret + 1] = { item.rel_path or item.file or "", "SnacksPickerFile" }
+	ret[#ret + 1] = { ":" .. tostring(item.pos and item.pos[1] or 0), "SnacksPickerRow" }
+
+	return ret
+end
+
+--- Picker to navigate to each individual conflict section in the current revision.
+---
+--- The items are a standard file source (`file` + `pos`), so the default Snacks
+--- bindings apply: `<CR>` opens in the current window, `<C-s>` in a split,
+--- `<C-v>` in a vertical split and `<C-t>` in a new tab, with a live file
+--- preview positioned on the conflict marker.
+---@param opts jj.picker.config
+---@param sections jj.picker.conflict_section[]
+function M.conflict_sections(opts, sections)
+	if not opts.snacks then
+		return utils.notify("Snacks picker is `disabled`", vim.log.levels.INFO)
+	end
+
+	local snacks = require("snacks")
+	local snacks_opts = get_snacks_opts(opts)
+
+	local merged_opts = vim.tbl_deep_extend("force", snacks_opts, {
+		source = "jj",
+		items = sections,
+		title = "JJ Conflicts",
+		format = format_conflict_section_item,
+	})
+
+	snacks.picker.pick(merged_opts)
+end
+
 return M

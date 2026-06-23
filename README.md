@@ -89,6 +89,7 @@
   - `picker.status()` displays the current changed files with live diff preview (or falls back to `vim.ui.select()`)
   - `picker.file_history()` displays the current buffer's revision history and lets you edit the selected change (or falls back to `vim.ui.select()`)
   - `picker.conflict()` lists conflicted revisions, previews their changes, and launches conflict resolution (with Snacks, or `vim.ui.select()` as a fallback)
+  - `picker.conflict_sections()` lists each individual conflict section in the current revision and navigates to it in the current window, a split or a tab (with Snacks, or `vim.ui.select()` as a fallback)
 
 ## Enhanced integrations
 
@@ -422,6 +423,21 @@ What happens on confirm:
 The fallback `vim.ui.select()` version supports selecting a conflicted revision to resolve, but does not provide the extra Snacks-only `<C-e>` edit action.
 
 This makes it easy to keep a dedicated “show me all conflicts” picker bound to a keymap, especially when using the Snacks picker UI.
+
+### Conflict sections picker (Snacks.nvim)
+
+`picker.conflict_sections()` lists the individual conflict sections in the current revision (`@`) so you can jump straight to a conflict and resolve it in your own editor (e.g. Neovim) instead of launching an external merge tool.
+
+It uses the `conflicted_files()` template to find the conflicted files, then scans each file for conflict opening markers (lines starting with `<<<<<<<`) to produce one entry per conflict section, since the template does not report line numbers.
+
+When Snacks is enabled, it uses a standard file picker, so the usual bindings apply:
+
+- `<Enter>` - Open the conflict in the current window
+- `<C-s>` - Open the conflict in a horizontal split
+- `<C-v>` - Open the conflict in a vertical split
+- `<C-t>` - Open the conflict in a new tab
+
+If Snacks is not enabled, it falls back to a plain `vim.ui.select()` picker that opens the selected conflict in the current window.
 
 ## Installation
 
@@ -1288,6 +1304,7 @@ vim.keymap.set("n", "<leader>jA", annotate.line, { desc = "JJ annotate line" })
     vim.keymap.set("n", "<leader>gj", function() picker.status() end, { desc = "JJ Picker status" })
     vim.keymap.set("n", "<leader>jgh", function() picker.file_history() end, { desc = "JJ Picker history" })
     vim.keymap.set("n", "<leader>jgc", function() picker.conflict() end, { desc = "JJ Picker conflicts" })
+    vim.keymap.set("n", "<leader>jgs", function() picker.conflict_sections() end, { desc = "JJ Picker conflict sections" })
 
     -- Some functions like `log` can take parameters
     vim.keymap.set("n", "<leader>jL", function()

@@ -24,6 +24,12 @@ local parser = require("jj.core.parser")
 --- @field preview_cmd string[] The command used to preview the item
 --- @field confirm_action string The default picker action for the item
 
+--- @class jj.picker.conflict_section
+--- @field text string The text to display in the picker
+--- @field file string Absolute path of the conflicted file
+--- @field rel_path string Path of the conflicted file as reported by jj
+--- @field pos integer[] {lnum, col} of the conflict opening marker
+
 --- @class jj.picker.conflict
 --- @field text string The text to display in the picker
 --- @field symbol string The symbol of the conflict entry
@@ -307,6 +313,69 @@ function M.conflict()
 					utils.notify(string.format("Successfully resolved `%s`", item.rev), vim.log.levels.INFO)
 				end
 			end)
+		end)
+	end
+end
+
+--- Lists the individual conflict sections present in the current revision (`@`).
+---
+--- The `conflicted_files()` template reports the conflicted files but not the
+--- location of the conflicts inside them, so each file is scanned for opening
+--- conflict markers (lines starting with `<<<<<<<`) to build one entry per
+--- conflict section. Each file is emitted as a NUL-terminated display path
+--- followed by a NUL-terminated absolute path; NUL is used because it is the
+--- only byte that cannot occur in a path, so the raw output is read to preserve
+--- it.
+--- @return jj.picker.conflict_section[]|nil A list of conflict sections or nil if not in a jj repo
+local function get_conflict_sections()
+	local output, ok = runner.execute_command_raw(
+		[[jj log --no-graph --quiet -r @ -T 'self.conflicted_files().map(|e| e.path().display() ++ "\0" ++ e.path().absolute() ++ "\0")']]
+	)
+	if not ok then
+		return
+	end
+
+	if type(output) ~= "string" then
+		return utils.notify("Could not get conflict list output", vim.log.levels.ERROR)
+	end
+
+	local sections = {}
+
+	for _, entry in ipairs(parser.parse_conflicted_files(output)) do
+		local file_lines = vim.fn.filereadable(entry.abs_path) == 1 and vim.fn.readfile(entry.abs_path) or {}
+		vim.list_extend(sections, parser.scan_conflict_sections(entry.rel_path, entry.abs_path, file_lines))
+	end
+
+	return sections
+end
+
+--- Displays a picker with each individual conflict section in the current revision (`@`).
+function M.conflict_sections()
+	-- Ensure jj is installed
+	if not utils.ensure_jj() then
+		return
+	end
+
+	local sections = get_conflict_sections()
+	if not sections or #sections == 0 then
+		return utils.notify("`Picker`: No conflicts found in the current revision", vim.log.levels.INFO)
+	end
+
+	if M.config.snacks then
+		require("jj.picker.snacks").conflict_sections(M.config, sections)
+	else
+		-- Otherwise, use the default vim.ui.select to navigate to a conflict
+		vim.ui.select(sections, {
+			prompt = "Select conflict to navigate to",
+			format_item = function(item)
+				return item.text
+			end,
+		}, function(item)
+			if not item then
+				return
+			end
+			vim.cmd("edit " .. vim.fn.fnameescape(item.file))
+			pcall(vim.api.nvim_win_set_cursor, 0, item.pos)
 		end)
 	end
 end
