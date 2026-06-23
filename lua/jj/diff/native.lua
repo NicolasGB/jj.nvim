@@ -28,8 +28,10 @@ local function open_revision(rev, path, enc)
 		return
 	end
 
-	local lines, had_eol, ok_read, used_enc = file.get_file_content(change_id, rel_path, enc)
-	if not ok_read then
+	-- A file added since `rev` has no content there; show it as empty so it
+	-- diffs as fully added rather than aborting the diff.
+	local lines, had_eol, ok_read, used_enc, absent = file.get_file_content(change_id, rel_path, enc)
+	if not ok_read and not absent then
 		utils.notify(string.format("Could not read `%s` from `%s`", rel_path, change_id), vim.log.levels.ERROR)
 		return
 	end
