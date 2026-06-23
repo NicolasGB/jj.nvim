@@ -659,7 +659,7 @@ run_test("resolve: shellescapes args for external execution", function()
 	end
 end)
 
-run_test("resolve: shellescapes args for floating execution", function()
+run_test("resolve: passes argv for floating execution", function()
 	local terminal = require("jj.ui.terminal")
 	local original_run_floating = terminal.run_floating
 	local original_notify = utils.notify
@@ -680,10 +680,16 @@ run_test("resolve: shellescapes args for floating execution", function()
 			args = { "--tool", "my tool" },
 			filesets = { "dir with spaces/", "glob:*" },
 		})
-		assert_equals(
-			"'jj' 'resolve' '--revision' 'abc 123' '--tool' 'my tool' 'dir with spaces/' 'glob:*'",
-			captured_cmd
-		)
+		assert_table_equals({
+			"jj",
+			"resolve",
+			"--revision",
+			"abc 123",
+			"--tool",
+			"my tool",
+			"dir with spaces/",
+			"glob:*",
+		}, captured_cmd)
 	end)
 
 	terminal.run_floating = original_run_floating
