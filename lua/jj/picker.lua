@@ -328,7 +328,7 @@ end
 --- it.
 --- @return jj.picker.conflict_section[]|nil A list of conflict sections or nil if not in a jj repo
 local function get_conflict_sections()
-	local output, ok = runner.execute_command_raw(
+	local output, ok, _ = runner.execute_command_raw(
 		[[jj log --no-graph --quiet -r @ -T 'self.conflicted_files().map(|e| e.path().display() ++ "\0" ++ e.path().absolute() ++ "\0")']]
 	)
 	if not ok then
