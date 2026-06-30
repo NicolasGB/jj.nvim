@@ -36,7 +36,7 @@ function M.handle_status_restore()
 
 		local _, success = runner.execute_argv(restore_cmd, "Failed to restore")
 		if success then
-			utils.notify("Restored: " .. file_info.old_path, vim.log.levels.INFO)
+			utils.notify("Restored: `" .. file_info.old_path .. "`", vim.log.levels.INFO)
 			require("jj.cmd").status()
 		end
 	end

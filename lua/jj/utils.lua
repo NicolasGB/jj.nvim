@@ -982,13 +982,4 @@ function M.open_first_conflicted_file(revset)
 	end
 end
 
---- Build a jj fileset string literal for a path.
---- jj path arguments use fileset syntax, so special characters like `$`
---- must be wrapped in jj string quotes.
----@param path string
----@return string
-function M.quote_fileset(path)
-	return string.format('"%s"', path:gsub("\\", "\\\\"):gsub('"', '\\"'))
-end
-
 return M
