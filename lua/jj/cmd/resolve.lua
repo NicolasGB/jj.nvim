@@ -20,7 +20,9 @@ function M.resolve(opts)
 	-- Extra arguments
 	vim.list_extend(cmd_args, args)
 	-- Append the filestes
-	vim.list_extend(cmd_args, filesets)
+	for _, fileset in ipairs(filesets) do
+		table.insert(cmd_args, utils.escape_fileset(fileset))
+	end
 
 	local escaped_cmd_args = {}
 	for _, arg in ipairs(cmd_args) do

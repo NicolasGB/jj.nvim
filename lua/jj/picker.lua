@@ -121,7 +121,7 @@ local function get_files()
 				text = line:sub(3),
 				file = file_path,
 				status = change .. " ",
-				diff_cmd = string.format("jj --no-pager diff %s", vim.fn.shellescape(file_path)),
+				diff_cmd = string.format("jj --no-pager diff %s", utils.escape_fileset(file_path)),
 				confirm_action = "open_and_diff",
 			}
 
@@ -174,7 +174,7 @@ local function log_history(file_path)
 		"--no-graph",
 		[[ -T 'change_id.shortest() ++ "\t" ++ coalesce(author.name(), "(no author)") ++ "\t" ++ committer.timestamp() ++ "\t" ++ coalesce(description.first_line(), "(no description)") ++ "\n"' ]],
 	}, " ")
-	local output, ok = runner.execute_command(string.format(format, vim.fn.shellescape(file_path)))
+	local output, ok = runner.execute_command(string.format(format, utils.escape_fileset(file_path)))
 	if not ok then
 		return
 	end
@@ -201,7 +201,16 @@ local function log_history(file_path)
 				time = time_part,
 				description = description,
 				text = string.format("%s  %s  %s  %s", rev, author, short_time, description),
-				preview_cmd = { "jj", "--no-pager", "diff", file_path, "-r", rev, "--stat", "--git" },
+				preview_cmd = {
+					"jj",
+					"--no-pager",
+					"diff",
+					utils.escape_fileset(file_path),
+					"-r",
+					rev,
+					"--stat",
+					"--git",
+				},
 				confirm_action = "edit_revision",
 			})
 		end

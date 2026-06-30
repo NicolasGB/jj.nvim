@@ -25,7 +25,7 @@ local function build_split_command(opts)
 
 	if opts.filesets then
 		for _, fileset in ipairs(opts.filesets) do
-			table.insert(args, fileset)
+			table.insert(args, utils.escape_fileset(fileset))
 		end
 	end
 
@@ -39,8 +39,7 @@ function M.split(opts)
 		return
 	end
 
-	local cmd_mod = require("jj.cmd")
-	opts = vim.tbl_deep_extend("force", cmd_mod.config.split or {}, opts or {}) --[[@as jj.cmd.split.opts]]
+	opts = opts or {} --[[@as jj.cmd.split.opts]]
 
 	-- If it's empty do nothing
 	if utils.is_change_empty(opts.rev or "@") then
