@@ -10,6 +10,7 @@ package.path = package.path .. ";lua/?.lua;lua/?/init.lua"
 local parser = require("jj.core.parser")
 
 local utils = require("jj.utils")
+local jj_args = require("jj.core.args")
 
 local tests_passed = 0
 local tests_failed = 0
@@ -623,14 +624,14 @@ end)
 
 local resolve = require("jj.cmd.resolve")
 
-run_test("resolve: shellescapes args for external execution", function()
+run_test("resolve: passes jj-quoted argv for external execution", function()
 	local runner = require("jj.core.runner")
-	local original_execute_command_async = runner.execute_command_async
+	local original_execute_argv_async = runner.execute_argv_async
 	local original_notify = utils.notify
 	local original_ensure_jj = utils.ensure_jj
 
 	local captured_cmd = nil
-	runner.execute_command_async = function(cmd)
+	runner.execute_argv_async = function(cmd)
 		captured_cmd = cmd
 	end
 	utils.notify = function() end
@@ -645,13 +646,19 @@ run_test("resolve: shellescapes args for external execution", function()
 			filesets = { "dir with spaces/", "glob:*" },
 			external = true,
 		})
-		assert_equals(
-			"'jj' 'resolve' '--revision' 'abc 123' '--tool' 'my tool' 'dir with spaces/' 'glob:*'",
-			captured_cmd
-		)
+		assert_table_equals({
+			"jj",
+			"resolve",
+			"--revision",
+			"abc 123",
+			"--tool",
+			"my tool",
+			jj_args.fileset("dir with spaces/"),
+			jj_args.fileset("glob:*"),
+		}, captured_cmd)
 	end)
 
-	runner.execute_command_async = original_execute_command_async
+	runner.execute_argv_async = original_execute_argv_async
 	utils.notify = original_notify
 	utils.ensure_jj = original_ensure_jj
 	if not ok then
@@ -659,7 +666,7 @@ run_test("resolve: shellescapes args for external execution", function()
 	end
 end)
 
-run_test("resolve: passes argv for floating execution", function()
+run_test("resolve: passes jj-quoted filesets for floating execution", function()
 	local terminal = require("jj.ui.terminal")
 	local original_run_floating = terminal.run_floating
 	local original_notify = utils.notify
@@ -687,8 +694,8 @@ run_test("resolve: passes argv for floating execution", function()
 			"abc 123",
 			"--tool",
 			"my tool",
-			"dir with spaces/",
-			"glob:*",
+			jj_args.fileset("dir with spaces/"),
+			jj_args.fileset("glob:*"),
 		}, captured_cmd)
 	end)
 
@@ -870,8 +877,9 @@ print("\n=== Running get_file_content tests ===\n")
 
 run_test("get_file_content: reads existing file content", function()
 	local runner = require("jj.core.runner")
-	local original = runner.execute_command_raw
-	runner.execute_command_raw = function()
+	local original = runner.execute_argv_raw
+	runner.execute_argv_raw = function(cmd)
+		assert_table_equals({ "jj", "file", "show", "-r", "abc123", jj_args.fileset("src/file.py") }, cmd)
 		return "a\nb\n", true, ""
 	end
 	local ok_test, err = pcall(function()
@@ -881,7 +889,7 @@ run_test("get_file_content: reads existing file content", function()
 		assert_equals(true, ok)
 		assert_equals(false, absent)
 	end)
-	runner.execute_command_raw = original
+	runner.execute_argv_raw = original
 	if not ok_test then
 		error(err)
 	end
@@ -889,8 +897,9 @@ end)
 
 run_test("get_file_content: absent path in revision reports absent (not a read error)", function()
 	local runner = require("jj.core.runner")
-	local original = runner.execute_command_raw
-	runner.execute_command_raw = function()
+	local original = runner.execute_argv_raw
+	runner.execute_argv_raw = function(cmd)
+		assert_table_equals({ "jj", "file", "show", "-r", "abc123", jj_args.fileset("src/new_file.py") }, cmd)
 		return nil, false, "Error: No such path: src/new_file.py\n"
 	end
 	local ok_test, err = pcall(function()
@@ -900,7 +909,7 @@ run_test("get_file_content: absent path in revision reports absent (not a read e
 		assert_equals(false, ok)
 		assert_equals(true, absent)
 	end)
-	runner.execute_command_raw = original
+	runner.execute_argv_raw = original
 	if not ok_test then
 		error(err)
 	end
@@ -908,8 +917,9 @@ end)
 
 run_test("get_file_content: genuine read error returns failure without absent", function()
 	local runner = require("jj.core.runner")
-	local original = runner.execute_command_raw
-	runner.execute_command_raw = function()
+	local original = runner.execute_argv_raw
+	runner.execute_argv_raw = function(cmd)
+		assert_table_equals({ "jj", "file", "show", "-r", "nope", jj_args.fileset("src/file.py") }, cmd)
 		return nil, false, "Error: Revision `nope` doesn't exist\n"
 	end
 	local ok_test, err = pcall(function()
@@ -917,7 +927,7 @@ run_test("get_file_content: genuine read error returns failure without absent", 
 		assert_equals(false, ok)
 		assert_equals(false, absent)
 	end)
-	runner.execute_command_raw = original
+	runner.execute_argv_raw = original
 	if not ok_test then
 		error(err)
 	end

@@ -64,7 +64,7 @@ function M.is_jj_repo()
 	end
 
 	-- We require the runner here to avoid a circular dependency loop at startup
-	local _, success = runner.execute_command("jj status")
+	local _, success = runner.execute_argv({ "jj", "status" })
 	return success
 end
 
@@ -76,7 +76,7 @@ function M.get_jj_root()
 	end
 
 	-- We require the runner here to avoid a circular dependency loop at startup
-	local output, success = runner.execute_command("jj root")
+	local output, success = runner.execute_argv({ "jj", "root" })
 	if success and output then
 		return vim.trim(output)
 	end
@@ -91,7 +91,7 @@ function M.get_modified_files()
 	end
 
 	-- We require the runner here to avoid a circular dependency loop at startup
-	local result, success = runner.execute_command("jj diff --name-only", "Error getting diff")
+	local result, success = runner.execute_argv({ "jj", "diff", "--name-only" }, "Error getting diff")
 	if not success or not result then
 		return {}
 	end
@@ -344,13 +344,14 @@ end
 function M.get_all_bookmarks()
 	-- Use a custom template to output just the bookmark names, one per line
 	-- This is more reliable than parsing the default output format
-	local bookmarks_output, success = runner.execute_command(
-		[[jj bookmark list -T 'if(!self.remote(), name ++ if(!self.present(), " (deleted)", "") ++ "\n")']],
-		"Failed to get bookmarks",
-		nil,
-		true
-	)
-
+	local cmd = {
+		"jj",
+		"bookmark",
+		"list",
+		"-T",
+		'if(!self.remote(), name ++ if(!self.present(), " (deleted)", "") ++ "\n")',
+	}
+	local bookmarks_output, success = runner.execute_argv(cmd, "Failed to get bookmarks", nil, true)
 	if not success or not bookmarks_output then
 		return {}
 	end
@@ -375,12 +376,15 @@ end
 --- Get all bookmarks in the repository, including deleted ones
 --- @return {name: string, is_deleted: boolean}[] bookmarks List of bookmarks
 function M.get_all_bookmarks_with_status()
-	local bookmarks_output, success = runner.execute_command(
-		[[jj bookmark list -T 'if(!self.remote(), name ++ if(!self.present(), " (deleted)", "") ++ "\n")' --quiet]],
-		"Failed to get bookmarks",
-		nil,
-		true
-	)
+	local cmd = {
+		"jj",
+		"bookmark",
+		"list",
+		"-T",
+		'if(!self.remote(), name ++ if(!self.present(), " (deleted)", "") ++ "\n")',
+		"--quiet",
+	}
+	local bookmarks_output, success = runner.execute_argv(cmd, "Failed to get bookmarks", nil, true)
 
 	if not success or not bookmarks_output then
 		return {}
@@ -435,13 +439,18 @@ end
 --- @return {name: string, is_deleted: boolean}[]|nil ret List of bookmark objects, or nil on failure
 function M.get_bookmarks_for_rev(revset)
 	-- Retrieve name and deleted status
-	local cmd = string.format(
-		[[jj log -r %s -T 'bookmarks.map(|b| b.name() ++ "::" ++ b.present()).join(" ")' --no-graph]],
-		vim.fn.shellescape(revset)
-	)
+	local cmd = {
+		"jj",
+		"log",
+		"-r",
+		revset,
+		"-T",
+		'bookmarks.map(|b| b.name() ++ "::" ++ b.present()).join(" ")',
+		"--no-graph",
+	}
 
 	local output, success =
-		runner.execute_command(cmd, string.format("Error retrieving bookmark for `%s`", revset), nil, false)
+		runner.execute_argv(cmd, string.format("Error retrieving bookmark for `%s`", revset), nil, false)
 
 	if not success or not output then
 		return nil
@@ -455,13 +464,17 @@ end
 function M.get_all_tags()
 	-- Use a custom template to output just the bookmark names, one per line
 	-- This is more reliable than parsing the default output format
-	local bookmarks_output, success = runner.execute_command(
-		[[jj tag list --quiet --sort committer-date- -T 'if(!self.remote(), name ++ if(!self.present(), " (deleted)", "") ++ "\n")']],
-		"Failed to get bookmarks",
-		nil,
-		true
-	)
-
+	local cmd = {
+		"jj",
+		"tag",
+		"list",
+		"--quiet",
+		"--sort",
+		"committer-date-",
+		"-T",
+		'if(!self.remote(), name ++ if(!self.present(), " (deleted)", "") ++ "\n")',
+	}
+	local bookmarks_output, success = runner.execute_argv(cmd, "Failed to get bookmarks", nil, true)
 	if not success or not bookmarks_output then
 		return {}
 	end
@@ -486,8 +499,12 @@ end
 --- Whether or not the repository is colocated
 --- @return boolean
 function M.is_colocated()
-	local output, success =
-		runner.execute_command("jj git colocation status ", "Failed to determine if repository is colocated", nil, true)
+	local output, success = runner.execute_argv(
+		{ "jj", "git", "colocation", "status" },
+		"Failed to determine if repository is colocated",
+		nil,
+		true
+	)
 
 	if not success or not output then
 		return false
@@ -501,13 +518,16 @@ end
 function M.get_untracked_bookmarks()
 	-- Use a custom template to output just the bookmark names, one per line
 	-- This is more reliable than parsing the default output format
-	local bookmarks_output, success = runner.execute_command(
-		[[jj bookmark list -a -T 'if(self.remote() && !self.tracked(), name ++ if(!self.present(), " (deleted)", "") ++ "\n")']],
-		"Failed to get untracked bookmarks",
-		nil,
-		true
-	)
+	local cmd = {
+		"jj",
+		"bookmark",
+		"list",
+		"-a",
+		"-T",
+		'if(self.remote() && !self.tracked(), name ++ if(!self.present(), " (deleted)", "") ++ "\n")',
+	}
 
+	local bookmarks_output, success = runner.execute_argv(cmd, "Failed to get untracked bookmarks", nil, true)
 	if not success or not bookmarks_output then
 		return {}
 	end
@@ -533,7 +553,7 @@ end
 --- @return {name: string, url: string}[]|nil A list of remotes with name and URL
 function M.get_remotes()
 	local remote_list, remote_success =
-		runner.execute_command("jj git remote list", "Failed to get git remote", nil, true)
+		runner.execute_argv({ "jj", "git", "remote", "list" }, "Failed to get git remote", nil, true)
 
 	if not remote_success or not remote_list then
 		return
@@ -612,13 +632,18 @@ end
 --- @param revset string The revset to check
 --- @return boolean True if the change is immutable, false otherwise
 function M.is_change_immutable(revset)
-	local output, success = runner.execute_command(
-		string.format("jj log --no-graph -r  '%s' -T 'immutable' --quiet", revset),
-		"Error checking change immutability",
-		nil,
-		true
-	)
+	local cmd = {
+		"jj",
+		"log",
+		"--no-graph",
+		"-r",
+		revset,
+		"-T",
+		"immutable",
+		"--quiet",
+	}
 
+	local output, success = runner.execute_argv(cmd, "Error checking change immutability", nil, true)
 	if not success or not output then
 		return false
 	end
@@ -630,13 +655,18 @@ end
 --- @param revset string The revset to check
 --- @return boolean True if the revset is empty, false otherwise
 function M.is_change_empty(revset)
-	local output, success = runner.execute_command(
-		string.format("jj log --no-graph -r '%s' -T 'empty' --quiet", revset),
-		"Error checking if revset is empty",
-		nil,
-		true
-	)
+	local cmd = {
+		"jj",
+		"log",
+		"--no-graph",
+		"-r",
+		revset,
+		"-T",
+		"empty",
+		"--quiet",
+	}
 
+	local output, success = runner.execute_argv(cmd, "Error checking if revset is empty", nil, true)
 	if not success or not output then
 		return false
 	end
@@ -648,12 +678,18 @@ end
 --- @param revset string The revset to check
 --- @return boolean True if the revset has conflicts, false otherwise
 function M.is_change_conflicted(revset)
-	local output, success = runner.execute_command(
-		string.format("jj log --no-graph -r %s -T 'conflict' --quiet", vim.fn.shellescape(revset)),
-		"Error checking if revset has conflicts",
-		nil,
-		true
-	)
+	local cmd = {
+		"jj",
+		"log",
+		"--no-graph",
+		"-r",
+		revset,
+		"-T",
+		"conflict",
+		"--quiet",
+	}
+
+	local output, success = runner.execute_argv(cmd, "Error checking if revset has conflicts", nil, true)
 
 	if not success or not output then
 		return false
@@ -670,23 +706,38 @@ function M.get_describe_text(revset)
 		revset = "@"
 	end
 
-	local parser = require("jj.core.parser")
-	local old_description_raw, success = runner.execute_command(
-		"jj log -r " .. revset .. " --quiet --no-graph -T 'coalesce(description, \"\\n\")'",
-		"Failed to get old description"
-	)
+	local old_desc_cmd = {
+		"jj",
+		"log",
+		"-r",
+		revset,
+		"--quiet",
+		"--no-graph",
+		"-T",
+		'coalesce(description, "\\n")',
+	}
+	local old_description_raw, success = runner.execute_argv(old_desc_cmd, "Failed to get old description")
 	if not old_description_raw or not success then
 		return nil
 	end
 
-	local status_result, success2 = runner.execute_command(
-		"jj log -r " .. revset .. " --quiet --no-graph -T 'self.diff().summary()'",
-		"Error getting status"
-	)
+	local cmd_files = {
+		"jj",
+		"log",
+		"-r",
+		revset,
+		"--quiet",
+		"--no-graph",
+		"-T",
+		"self.diff().summary()",
+	}
+
+	local status_result, success2 = runner.execute_argv(cmd_files, "Error getting status")
 	if not success2 then
 		return nil
 	end
 
+	local parser = require("jj.core.parser")
 	local status_files = parser.get_status_files(status_result)
 	local old_description = vim.trim(old_description_raw)
 	local description_lines = vim.split(old_description, "\n")
@@ -711,13 +762,17 @@ end
 --- @param revset string The revset to extract the commit id from
 --- @return string|nil
 function M.get_commit_id(revset)
-	local output, success = runner.execute_command(
-		string.format([[jj log --no-graph -r '%s' -T 'commit_id ++ "\n"' --quiet]], revset),
-		"Error extracting commit id",
-		nil,
-		true
-	)
-
+	local cmd = {
+		"jj",
+		"log",
+		"--no-graph",
+		"-r",
+		revset,
+		"-T",
+		'commit_id ++ "\\n"',
+		"--quiet",
+	}
+	local output, success = runner.execute_argv(cmd, "Error extracting commit id", nil, true)
 	if not success or not output then
 		return nil
 	end
@@ -742,13 +797,17 @@ end
 --- Get the commit id of the current revision
 --- @return string|nil
 function M.get_current_commit_id()
-	local output, success = runner.execute_command(
-		"jj log --no-graph -r '@' -T 'commit_id' --quiet",
-		"Error extracting current revision's commit id",
-		nil,
-		true
-	)
-
+	local cmd = {
+		"jj",
+		"log",
+		"--no-graph",
+		"-r",
+		"@",
+		"-T",
+		'commit_id ++ "\\n"',
+		"--quiet",
+	}
+	local output, success = runner.execute_argv(cmd, "Error extracting current revision's commit id", nil, true)
 	if not success or not output then
 		return nil
 	end
@@ -787,13 +846,18 @@ function M.get_pushed_commit_id(start_revset, remote_name, max_walkback)
 	for _ = 0, max_walkback do
 		-- Use a single-quoted StringLiteral for the revset, so we can keep the
 		-- remote name quoted inside the revset expression.
-		local cmd = string.format(
-			"jj log -r %s --no-graph --quiet -T %s",
-			vim.fn.shellescape(current),
-			vim.fn.shellescape(templ)
-		)
+		local cmd = {
+			"jj",
+			"log",
+			"-r",
+			current,
+			"--no-graph",
+			"--quiet",
+			"-T",
+			templ,
+		}
 
-		local out, ok = runner.execute_command(cmd, "Error determining remote-reachable commit", nil, true)
+		local out, ok = runner.execute_argv(cmd, "Error determining remote-reachable commit", nil, true)
 		if ok and out and not out:match("^%s*$") then
 			return vim.trim(out)
 		end
@@ -818,9 +882,18 @@ function M.get_unique_remote_bookmark_name(revset, remote_name)
 
 	-- Render remote bookmarks as tab-separated pairs: <remote>\t<name>\n
 	local tmpl = [[self.remote_bookmarks().map(|b| b.remote() ++ "\t" ++ b.name() ++ "\n").join("")]]
-	local cmd =
-		string.format("jj log -r %s --no-graph --quiet -T %s", vim.fn.shellescape(revset), vim.fn.shellescape(tmpl))
-	local out, ok = runner.execute_command(cmd, "Error getting remote bookmarks", nil, true)
+	local cmd = {
+		"jj",
+		"log",
+		"-r",
+		revset,
+		"--no-graph",
+		"--quiet",
+		"-T",
+		tmpl,
+	}
+
+	local out, ok = runner.execute_argv(cmd, "Error getting remote bookmarks", nil, true)
 	if not ok or not out or out:match("^%s*$") then
 		return nil
 	end
@@ -889,12 +962,20 @@ function M.list_github_prs(opts)
 	end
 
 	-- Start with a hardcoded limit of 100
-	local cmd =
-		[[gh pr list -L %s --json number,title,author --jq '.[] | "#\(.number);;;\(.title);;;(@\(.author.login))"']]
-	cmd = string.format(cmd, limit)
+	local cmd = {
+		"gh",
+		"pr",
+		"list",
+		"-L",
+		tostring(limit),
+		"--json",
+		"number,title,author",
+		"--jq",
+		[[.[] | "#\(.number);;;\(.title);;;(@\(.author.login))"]],
+	}
 
 	-- Run the command to get the pr's
-	local output, success = runner.execute_command_sync(cmd, nil, "Failed to get prs")
+	local output, success = runner.execute_argv(cmd, "Failed to get prs")
 	if not success or not output then
 		return
 	end
@@ -930,16 +1011,18 @@ function M.open_first_conflicted_file(revset)
 	end
 
 	local repo_root = M.get_jj_root()
-	local quoted_revset = vim.fn.shellescape(revset)
+	local cmd = {
+		"jj",
+		"resolve",
+		"-r",
+		revset,
+		"--list",
+	}
 
 	-- Resolve the first conflicted path before editing so we can still open it
 	-- reliably when the current working directory is outside the repo root.
-	local list_output, list_ok = runner.execute_command(
-		string.format("jj resolve -r %s --list", quoted_revset),
-		string.format("could not list conflicted files for '%s'", revset),
-		nil,
-		true
-	)
+	local list_output, list_ok =
+		runner.execute_argv(cmd, string.format("could not list conflicted files for '%s'", revset), nil, true)
 
 	local first_conflicted_path
 	if list_ok and type(list_output) == "string" and list_output ~= "" then
@@ -952,8 +1035,8 @@ function M.open_first_conflicted_file(revset)
 		end
 	end
 
-	local _, ok = runner.execute_command(
-		string.format("jj edit %s --ignore-immutable", quoted_revset),
+	local _, ok = runner.execute_argv(
+		{ "jj", "edit", revset, "--ignore-immutable" },
 		string.format("could not edit revision '%s'", revset)
 	)
 
@@ -980,16 +1063,6 @@ function M.open_first_conflicted_file(revset)
 		vim.cmd("edit! " .. escaped)
 		vim.cmd("checktime " .. escaped)
 	end
-end
-
---- Build a shell-safe jj fileset argument for a literal path.
---- jj path arguments use fileset syntax, so special characters like `$`
---- must be wrapped in jj string quotes before shell-escaping.
----@param path string
----@return string
-function M.escape_fileset(path)
-	local fileset_literal = string.format('"%s"', path:gsub("\\", "\\\\"):gsub('"', '\\"'))
-	return vim.fn.shellescape(fileset_literal)
 end
 
 return M
