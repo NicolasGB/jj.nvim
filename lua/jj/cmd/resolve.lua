@@ -19,9 +19,10 @@ function M.resolve(opts)
 	local cmd_args = { "jj", "resolve", "--revision", rev }
 	-- Extra arguments
 	vim.list_extend(cmd_args, args)
-	-- Append the filestes
+	-- Append filesets as jj string literals. These work both when passed
+	-- directly as argv and when shell-escaped for external execution.
 	for _, fileset in ipairs(filesets) do
-		table.insert(cmd_args, utils.escape_fileset(fileset))
+		table.insert(cmd_args, utils.quote_fileset(fileset))
 	end
 
 	local escaped_cmd_args = {}

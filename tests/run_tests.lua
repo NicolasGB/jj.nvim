@@ -645,10 +645,17 @@ run_test("resolve: shellescapes args for external execution", function()
 			filesets = { "dir with spaces/", "glob:*" },
 			external = true,
 		})
-		assert_equals(
-			"'jj' 'resolve' '--revision' 'abc 123' '--tool' 'my tool' 'dir with spaces/' 'glob:*'",
-			captured_cmd
-		)
+		local expected = table.concat({
+			vim.fn.shellescape("jj"),
+			vim.fn.shellescape("resolve"),
+			vim.fn.shellescape("--revision"),
+			vim.fn.shellescape("abc 123"),
+			vim.fn.shellescape("--tool"),
+			vim.fn.shellescape("my tool"),
+			vim.fn.shellescape(utils.quote_fileset("dir with spaces/")),
+			vim.fn.shellescape(utils.quote_fileset("glob:*")),
+		}, " ")
+		assert_equals(expected, captured_cmd)
 	end)
 
 	runner.execute_command_async = original_execute_command_async
@@ -659,7 +666,7 @@ run_test("resolve: shellescapes args for external execution", function()
 	end
 end)
 
-run_test("resolve: passes argv for floating execution", function()
+run_test("resolve: passes jj-quoted filesets for floating execution", function()
 	local terminal = require("jj.ui.terminal")
 	local original_run_floating = terminal.run_floating
 	local original_notify = utils.notify
@@ -687,8 +694,8 @@ run_test("resolve: passes argv for floating execution", function()
 			"abc 123",
 			"--tool",
 			"my tool",
-			"dir with spaces/",
-			"glob:*",
+			utils.quote_fileset("dir with spaces/"),
+			utils.quote_fileset("glob:*"),
 		}, captured_cmd)
 	end)
 

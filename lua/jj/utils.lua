@@ -982,14 +982,20 @@ function M.open_first_conflicted_file(revset)
 	end
 end
 
---- Build a shell-safe jj fileset argument for a literal path.
+--- Build a jj fileset string literal for a path.
 --- jj path arguments use fileset syntax, so special characters like `$`
---- must be wrapped in jj string quotes before shell-escaping.
+--- must be wrapped in jj string quotes.
+---@param path string
+---@return string
+function M.quote_fileset(path)
+	return string.format('"%s"', path:gsub("\\", "\\\\"):gsub('"', '\\"'))
+end
+
+--- Build a shell-safe jj fileset argument for a literal path.
 ---@param path string
 ---@return string
 function M.escape_fileset(path)
-	local fileset_literal = string.format('"%s"', path:gsub("\\", "\\\\"):gsub('"', '\\"'))
-	return vim.fn.shellescape(fileset_literal)
+	return vim.fn.shellescape(M.quote_fileset(path))
 end
 
 return M
