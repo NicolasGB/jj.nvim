@@ -16,8 +16,8 @@ function M.handle_status_restore()
 
 	if file_info.is_rename then
 		-- For renamed files, remove the new file and restore the old one from parent revision
-		local rm_cmd = "rm " .. vim.fn.shellescape(file_info.new_path)
-		local restore_cmd = "jj restore --from @- " .. vim.fn.shellescape(file_info.old_path)
+		local rm_cmd = string.format("rm %s", vim.fn.shellescape(file_info.new_path))
+		local restore_cmd = string.format("jj restore --from @- %s", utils.escape_fileset(file_info.old_path))
 
 		local _, rm_success = runner.execute_command(rm_cmd, "Failed to remove renamed file")
 		if rm_success then
@@ -32,7 +32,8 @@ function M.handle_status_restore()
 		end
 	else
 		-- For non-renamed files, use regular restore
-		local restore_cmd = "jj restore " .. vim.fn.shellescape(file_info.old_path)
+		utils.notify(utils.escape_fileset(file_info.old_path))
+		local restore_cmd = string.format("jj restore %s", utils.escape_fileset(file_info.old_path))
 
 		local _, success = runner.execute_command(restore_cmd, "Failed to restore")
 		if success then
