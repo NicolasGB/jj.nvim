@@ -991,11 +991,4 @@ function M.quote_fileset(path)
 	return string.format('"%s"', path:gsub("\\", "\\\\"):gsub('"', '\\"'))
 end
 
---- Build a shell-safe jj fileset argument for a literal path.
----@param path string
----@return string
-function M.escape_fileset(path)
-	return vim.fn.shellescape(M.quote_fileset(path))
-end
-
 return M
