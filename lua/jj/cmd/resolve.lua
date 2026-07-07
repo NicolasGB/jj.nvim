@@ -17,13 +17,13 @@ function M.resolve(opts)
 		return
 	end
 
-	local cmd_args = { "jj", "resolve", "--revision", rev }
+	local cmd = { "jj", "resolve", "--revision", rev }
 	-- Extra arguments
-	vim.list_extend(cmd_args, args)
+	vim.list_extend(cmd, args)
 
 	-- Append filesets as jj string literal
 	for _, fileset in ipairs(filesets) do
-		table.insert(cmd_args, jj_args.fileset(fileset))
+		table.insert(cmd, jj_args.fileset(fileset))
 	end
 
 	utils.notify(string.format("Resolving conflicts in change `%s`...", rev), vim.log.levels.INFO)
@@ -31,8 +31,8 @@ function M.resolve(opts)
 	-- If external is set, run the command asynchronously and invoke the on_exit callback if provided
 	if opts.external then
 		-- Run the command asynchronously and notify the user of the result
-		runner.execute_argv_async(
-			cmd_args,
+		runner.execute_async(
+			cmd,
 			function(output)
 				if output and output ~= "" then
 					utils.notify(output, vim.log.levels.INFO)
@@ -52,7 +52,7 @@ function M.resolve(opts)
 		)
 	else
 		-- Otherwise, run in a floating terminal
-		terminal.run_floating(cmd_args, nil, {
+		terminal.run_floating(cmd, nil, {
 			title = " JJ Resolve ",
 			modifiable = true,
 			keep_modifiable = true,

@@ -25,7 +25,7 @@ function M.handle_status_restore()
 			jj_args.fileset(file_info.new_path),
 		}
 
-		local _, restore_success = runner.execute_argv(restore_cmd, "Failed to restore original file")
+		local _, restore_success = runner.execute(restore_cmd, "Failed to restore original file")
 		if restore_success then
 			utils.notify("Reverted rename: " .. file_info.new_path .. " -> " .. file_info.old_path, vim.log.levels.INFO)
 			require("jj.cmd").status()
@@ -34,7 +34,7 @@ function M.handle_status_restore()
 		-- For non-renamed files, use regular restore
 		local restore_cmd = { "jj", "restore", jj_args.fileset(file_info.old_path) }
 
-		local _, success = runner.execute_argv(restore_cmd, "Failed to restore")
+		local _, success = runner.execute(restore_cmd, "Failed to restore")
 		if success then
 			utils.notify("Restored: `" .. file_info.old_path .. "`", vim.log.levels.INFO)
 			require("jj.cmd").status()
@@ -97,7 +97,7 @@ function M.status(opts)
 	local cmd = { "jj", "status", "--no-pager" }
 
 	if opts and opts.notify then
-		local output, success = runner.execute_argv(cmd, "Failed to get status")
+		local output, success = runner.execute(cmd, "Failed to get status")
 		if success then
 			utils.notify(output and output or "", vim.log.levels.INFO)
 		end

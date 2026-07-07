@@ -530,37 +530,33 @@ print("\n=== Running build_log_cmd tests ===\n")
 local log = require("jj.cmd.log")
 
 run_test("build_log_cmd: raw_flags with --no-pager does not duplicate it", function()
-	local cmd = log.build_log_cmd({ raw_flags = "--no-pager --limit 18" })
-	-- Should contain exactly one --no-pager
-	local _, count = cmd:gsub("%-%-no%-pager", "")
-	assert_equals(1, count, "Expected exactly one --no-pager")
-	assert_equals("jj log --no-pager --limit 18", cmd)
+	local cmd = log.build_log_cmd({ raw_flags = { "--no-pager", "--limit", "18" } })
+	assert_table_equals({ "jj", "log", "--no-pager", "--limit", "18" }, cmd)
 end)
 
 run_test("build_log_cmd: raw_flags without --no-pager works normally", function()
-	local cmd = log.build_log_cmd({ raw_flags = "--limit 18" })
-	assert_equals("jj log --no-pager --limit 18", cmd)
+	local cmd = log.build_log_cmd({ raw_flags = { "--limit", "18" } })
+	assert_table_equals({ "jj", "log", "--no-pager", "--limit", "18" }, cmd)
 end)
 
 run_test("build_log_cmd: raw_flags that is only --no-pager", function()
-	local cmd = log.build_log_cmd({ raw_flags = "--no-pager" })
-	assert_equals("jj log --no-pager", cmd)
+	local cmd = log.build_log_cmd({ raw_flags = { "--no-pager" } })
+	assert_table_equals({ "jj", "log", "--no-pager" }, cmd)
 end)
 
 run_test("build_log_cmd: structured opts with limit", function()
 	local cmd = log.build_log_cmd({ limit = 10 })
-	assert_equals(true, cmd:find("--limit 10") ~= nil, "Expected --limit 10 in command")
-	assert_equals(true, cmd:find("--no%-pager") ~= nil, "Expected --no-pager in command")
+	assert_table_equals({ "jj", "log", "--no-pager", "--limit", "10" }, cmd)
 end)
 
 run_test("build_log_cmd: structured opts with revisions", function()
 	local cmd = log.build_log_cmd({ revisions = "main" })
-	assert_equals(true, cmd:find("--revisions main") ~= nil, "Expected --revisions main in command")
+	assert_table_equals({ "jj", "log", "--no-pager", "--revisions", "main" }, cmd)
 end)
 
 run_test("build_log_cmd: default opts produces valid command", function()
 	local cmd = log.build_log_cmd({})
-	assert_equals(true, cmd:find("^jj log %-%-no%-pager") ~= nil, "Expected command to start with jj log --no-pager")
+	assert_table_equals({ "jj", "log", "--no-pager" }, cmd)
 end)
 
 print("\n=== Running resolve arg parsing tests ===\n")
@@ -626,12 +622,12 @@ local resolve = require("jj.cmd.resolve")
 
 run_test("resolve: passes jj-quoted argv for external execution", function()
 	local runner = require("jj.core.runner")
-	local original_execute_argv_async = runner.execute_argv_async
+	local original_execute_argv_async = runner.execute_async
 	local original_notify = utils.notify
 	local original_ensure_jj = utils.ensure_jj
 
 	local captured_cmd = nil
-	runner.execute_argv_async = function(cmd)
+	runner.execute_async = function(cmd)
 		captured_cmd = cmd
 	end
 	utils.notify = function() end
@@ -658,7 +654,7 @@ run_test("resolve: passes jj-quoted argv for external execution", function()
 		}, captured_cmd)
 	end)
 
-	runner.execute_argv_async = original_execute_argv_async
+	runner.execute_async = original_execute_argv_async
 	utils.notify = original_notify
 	utils.ensure_jj = original_ensure_jj
 	if not ok then
@@ -711,10 +707,10 @@ print("\n=== Running utils helper tests ===\n")
 
 run_test("is_change_conflicted: returns true when jj reports conflict", function()
 	local runner = require("jj.core.runner")
-	local original_execute_command = runner.execute_command
+	local original_execute_argv = runner.execute
 
-	runner.execute_command = function(cmd, error_prefix, input, silent)
-		assert_equals("jj log --no-graph -r 'abc123' -T 'conflict' --quiet", cmd)
+	runner.execute = function(argv, error_prefix, input, silent)
+		assert_table_equals({ "jj", "log", "--no-graph", "-r", "abc123", "-T", "conflict", "--quiet" }, argv)
 		assert_equals("Error checking if revset has conflicts", error_prefix)
 		assert_is_nil(input)
 		assert_equals(true, silent)
@@ -724,7 +720,7 @@ run_test("is_change_conflicted: returns true when jj reports conflict", function
 	local ok, err = pcall(function()
 		assert_equals(true, utils.is_change_conflicted("abc123"))
 	end)
-	runner.execute_command = original_execute_command
+	runner.execute = original_execute_argv
 	if not ok then
 		error(err)
 	end
@@ -732,16 +728,16 @@ end)
 
 run_test("is_change_conflicted: returns false when jj reports no conflict", function()
 	local runner = require("jj.core.runner")
-	local original_execute_command = runner.execute_command
+	local original_execute_argv = runner.execute
 
-	runner.execute_command = function()
+	runner.execute = function()
 		return "false\n", true
 	end
 
 	local ok, err = pcall(function()
 		assert_equals(false, utils.is_change_conflicted("abc123"))
 	end)
-	runner.execute_command = original_execute_command
+	runner.execute = original_execute_argv
 	if not ok then
 		error(err)
 	end
@@ -749,16 +745,16 @@ end)
 
 run_test("is_change_conflicted: returns false when jj command fails", function()
 	local runner = require("jj.core.runner")
-	local original_execute_command = runner.execute_command
+	local original_execute_argv = runner.execute
 
-	runner.execute_command = function()
+	runner.execute = function()
 		return nil, false
 	end
 
 	local ok, err = pcall(function()
 		assert_equals(false, utils.is_change_conflicted("abc123"))
 	end)
-	runner.execute_command = original_execute_command
+	runner.execute = original_execute_argv
 	if not ok then
 		error(err)
 	end
@@ -877,8 +873,8 @@ print("\n=== Running get_file_content tests ===\n")
 
 run_test("get_file_content: reads existing file content", function()
 	local runner = require("jj.core.runner")
-	local original = runner.execute_argv_raw
-	runner.execute_argv_raw = function(cmd)
+	local original = runner.execute_raw
+	runner.execute_raw = function(cmd)
 		assert_table_equals({ "jj", "file", "show", "-r", "abc123", jj_args.fileset("src/file.py") }, cmd)
 		return "a\nb\n", true, ""
 	end
@@ -889,7 +885,7 @@ run_test("get_file_content: reads existing file content", function()
 		assert_equals(true, ok)
 		assert_equals(false, absent)
 	end)
-	runner.execute_argv_raw = original
+	runner.execute_raw = original
 	if not ok_test then
 		error(err)
 	end
@@ -897,8 +893,8 @@ end)
 
 run_test("get_file_content: absent path in revision reports absent (not a read error)", function()
 	local runner = require("jj.core.runner")
-	local original = runner.execute_argv_raw
-	runner.execute_argv_raw = function(cmd)
+	local original = runner.execute_raw
+	runner.execute_raw = function(cmd)
 		assert_table_equals({ "jj", "file", "show", "-r", "abc123", jj_args.fileset("src/new_file.py") }, cmd)
 		return nil, false, "Error: No such path: src/new_file.py\n"
 	end
@@ -909,7 +905,7 @@ run_test("get_file_content: absent path in revision reports absent (not a read e
 		assert_equals(false, ok)
 		assert_equals(true, absent)
 	end)
-	runner.execute_argv_raw = original
+	runner.execute_raw = original
 	if not ok_test then
 		error(err)
 	end
@@ -917,8 +913,8 @@ end)
 
 run_test("get_file_content: genuine read error returns failure without absent", function()
 	local runner = require("jj.core.runner")
-	local original = runner.execute_argv_raw
-	runner.execute_argv_raw = function(cmd)
+	local original = runner.execute_raw
+	runner.execute_raw = function(cmd)
 		assert_table_equals({ "jj", "file", "show", "-r", "nope", jj_args.fileset("src/file.py") }, cmd)
 		return nil, false, "Error: Revision `nope` doesn't exist\n"
 	end
@@ -927,7 +923,7 @@ run_test("get_file_content: genuine read error returns failure without absent", 
 		assert_equals(false, ok)
 		assert_equals(false, absent)
 	end)
-	runner.execute_argv_raw = original
+	runner.execute_raw = original
 	if not ok_test then
 		error(err)
 	end

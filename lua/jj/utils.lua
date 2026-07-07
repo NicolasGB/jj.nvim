@@ -64,7 +64,7 @@ function M.is_jj_repo()
 	end
 
 	-- We require the runner here to avoid a circular dependency loop at startup
-	local _, success = runner.execute_argv({ "jj", "status" })
+	local _, success = runner.execute({ "jj", "status" })
 	return success
 end
 
@@ -76,7 +76,7 @@ function M.get_jj_root()
 	end
 
 	-- We require the runner here to avoid a circular dependency loop at startup
-	local output, success = runner.execute_argv({ "jj", "root" })
+	local output, success = runner.execute({ "jj", "root" })
 	if success and output then
 		return vim.trim(output)
 	end
@@ -91,7 +91,7 @@ function M.get_modified_files()
 	end
 
 	-- We require the runner here to avoid a circular dependency loop at startup
-	local result, success = runner.execute_argv({ "jj", "diff", "--name-only" }, "Error getting diff")
+	local result, success = runner.execute({ "jj", "diff", "--name-only" }, "Error getting diff")
 	if not success or not result then
 		return {}
 	end
@@ -351,7 +351,7 @@ function M.get_all_bookmarks()
 		"-T",
 		'if(!self.remote(), name ++ if(!self.present(), " (deleted)", "") ++ "\n")',
 	}
-	local bookmarks_output, success = runner.execute_argv(cmd, "Failed to get bookmarks", nil, true)
+	local bookmarks_output, success = runner.execute(cmd, "Failed to get bookmarks", nil, true)
 	if not success or not bookmarks_output then
 		return {}
 	end
@@ -384,7 +384,7 @@ function M.get_all_bookmarks_with_status()
 		'if(!self.remote(), name ++ if(!self.present(), " (deleted)", "") ++ "\n")',
 		"--quiet",
 	}
-	local bookmarks_output, success = runner.execute_argv(cmd, "Failed to get bookmarks", nil, true)
+	local bookmarks_output, success = runner.execute(cmd, "Failed to get bookmarks", nil, true)
 
 	if not success or not bookmarks_output then
 		return {}
@@ -449,8 +449,7 @@ function M.get_bookmarks_for_rev(revset)
 		"--no-graph",
 	}
 
-	local output, success =
-		runner.execute_argv(cmd, string.format("Error retrieving bookmark for `%s`", revset), nil, false)
+	local output, success = runner.execute(cmd, string.format("Error retrieving bookmark for `%s`", revset), nil, false)
 
 	if not success or not output then
 		return nil
@@ -474,7 +473,7 @@ function M.get_all_tags()
 		"-T",
 		'if(!self.remote(), name ++ if(!self.present(), " (deleted)", "") ++ "\n")',
 	}
-	local bookmarks_output, success = runner.execute_argv(cmd, "Failed to get bookmarks", nil, true)
+	local bookmarks_output, success = runner.execute(cmd, "Failed to get bookmarks", nil, true)
 	if not success or not bookmarks_output then
 		return {}
 	end
@@ -499,7 +498,7 @@ end
 --- Whether or not the repository is colocated
 --- @return boolean
 function M.is_colocated()
-	local output, success = runner.execute_argv(
+	local output, success = runner.execute(
 		{ "jj", "git", "colocation", "status" },
 		"Failed to determine if repository is colocated",
 		nil,
@@ -527,7 +526,7 @@ function M.get_untracked_bookmarks()
 		'if(self.remote() && !self.tracked(), name ++ if(!self.present(), " (deleted)", "") ++ "\n")',
 	}
 
-	local bookmarks_output, success = runner.execute_argv(cmd, "Failed to get untracked bookmarks", nil, true)
+	local bookmarks_output, success = runner.execute(cmd, "Failed to get untracked bookmarks", nil, true)
 	if not success or not bookmarks_output then
 		return {}
 	end
@@ -553,7 +552,7 @@ end
 --- @return {name: string, url: string}[]|nil A list of remotes with name and URL
 function M.get_remotes()
 	local remote_list, remote_success =
-		runner.execute_argv({ "jj", "git", "remote", "list" }, "Failed to get git remote", nil, true)
+		runner.execute({ "jj", "git", "remote", "list" }, "Failed to get git remote", nil, true)
 
 	if not remote_success or not remote_list then
 		return
@@ -643,7 +642,7 @@ function M.is_change_immutable(revset)
 		"--quiet",
 	}
 
-	local output, success = runner.execute_argv(cmd, "Error checking change immutability", nil, true)
+	local output, success = runner.execute(cmd, "Error checking change immutability", nil, true)
 	if not success or not output then
 		return false
 	end
@@ -666,7 +665,7 @@ function M.is_change_empty(revset)
 		"--quiet",
 	}
 
-	local output, success = runner.execute_argv(cmd, "Error checking if revset is empty", nil, true)
+	local output, success = runner.execute(cmd, "Error checking if revset is empty", nil, true)
 	if not success or not output then
 		return false
 	end
@@ -689,7 +688,7 @@ function M.is_change_conflicted(revset)
 		"--quiet",
 	}
 
-	local output, success = runner.execute_argv(cmd, "Error checking if revset has conflicts", nil, true)
+	local output, success = runner.execute(cmd, "Error checking if revset has conflicts", nil, true)
 
 	if not success or not output then
 		return false
@@ -716,7 +715,7 @@ function M.get_describe_text(revset)
 		"-T",
 		'coalesce(description, "\\n")',
 	}
-	local old_description_raw, success = runner.execute_argv(old_desc_cmd, "Failed to get old description")
+	local old_description_raw, success = runner.execute(old_desc_cmd, "Failed to get old description")
 	if not old_description_raw or not success then
 		return nil
 	end
@@ -732,7 +731,7 @@ function M.get_describe_text(revset)
 		"self.diff().summary()",
 	}
 
-	local status_result, success2 = runner.execute_argv(cmd_files, "Error getting status")
+	local status_result, success2 = runner.execute(cmd_files, "Error getting status")
 	if not success2 then
 		return nil
 	end
@@ -772,7 +771,7 @@ function M.get_commit_id(revset)
 		'commit_id ++ "\\n"',
 		"--quiet",
 	}
-	local output, success = runner.execute_argv(cmd, "Error extracting commit id", nil, true)
+	local output, success = runner.execute(cmd, "Error extracting commit id", nil, true)
 	if not success or not output then
 		return nil
 	end
@@ -807,7 +806,7 @@ function M.get_current_commit_id()
 		'commit_id ++ "\\n"',
 		"--quiet",
 	}
-	local output, success = runner.execute_argv(cmd, "Error extracting current revision's commit id", nil, true)
+	local output, success = runner.execute(cmd, "Error extracting current revision's commit id", nil, true)
 	if not success or not output then
 		return nil
 	end
@@ -857,7 +856,7 @@ function M.get_pushed_commit_id(start_revset, remote_name, max_walkback)
 			templ,
 		}
 
-		local out, ok = runner.execute_argv(cmd, "Error determining remote-reachable commit", nil, true)
+		local out, ok = runner.execute(cmd, "Error determining remote-reachable commit", nil, true)
 		if ok and out and not out:match("^%s*$") then
 			return vim.trim(out)
 		end
@@ -893,7 +892,7 @@ function M.get_unique_remote_bookmark_name(revset, remote_name)
 		tmpl,
 	}
 
-	local out, ok = runner.execute_argv(cmd, "Error getting remote bookmarks", nil, true)
+	local out, ok = runner.execute(cmd, "Error getting remote bookmarks", nil, true)
 	if not ok or not out or out:match("^%s*$") then
 		return nil
 	end
@@ -975,7 +974,7 @@ function M.list_github_prs(opts)
 	}
 
 	-- Run the command to get the pr's
-	local output, success = runner.execute_argv(cmd, "Failed to get prs")
+	local output, success = runner.execute(cmd, "Failed to get prs")
 	if not success or not output then
 		return
 	end
@@ -1022,7 +1021,7 @@ function M.open_first_conflicted_file(revset)
 	-- Resolve the first conflicted path before editing so we can still open it
 	-- reliably when the current working directory is outside the repo root.
 	local list_output, list_ok =
-		runner.execute_argv(cmd, string.format("could not list conflicted files for '%s'", revset), nil, true)
+		runner.execute(cmd, string.format("could not list conflicted files for '%s'", revset), nil, true)
 
 	local first_conflicted_path
 	if list_ok and type(list_output) == "string" and list_output ~= "" then
@@ -1035,7 +1034,7 @@ function M.open_first_conflicted_file(revset)
 		end
 	end
 
-	local _, ok = runner.execute_argv(
+	local _, ok = runner.execute(
 		{ "jj", "edit", revset, "--ignore-immutable" },
 		string.format("could not edit revision '%s'", revset)
 	)

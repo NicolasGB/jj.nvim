@@ -183,7 +183,7 @@ local function handle_enter()
 	}
 
 	-- Run the command
-	local output, success = runner.execute_argv(cmd, "Could not run diff from annotation")
+	local output, success = runner.execute(cmd, "Could not run diff from annotation")
 	if not success or not output or output == "" then
 		return
 	end
@@ -231,7 +231,7 @@ function M.file()
 	end
 
 	local raw_output, success =
-		runner.execute_argv(build_annotate_cmd(filename, template, revision), "Failed to annotate file")
+		runner.execute(build_annotate_cmd(filename, template, revision), "Failed to annotate file")
 	if not success or not raw_output then
 		return
 	end
@@ -365,7 +365,7 @@ function M.line()
 
 	local line_num = vim.fn.line(".")
 	local raw_output, success =
-		runner.execute_argv(build_annotate_cmd(filename, template, revision), "Failed to annotate line")
+		runner.execute(build_annotate_cmd(filename, template, revision), "Failed to annotate line")
 	if not success or not raw_output then
 		return
 	end
@@ -393,7 +393,7 @@ function M.line()
 		"self.description()",
 		"--no-graph",
 	}
-	local desc, ok = runner.execute_argv(cmd, "Failed getting description")
+	local desc, ok = runner.execute(cmd, "Failed getting description")
 	if not ok or not desc then
 		return
 	end

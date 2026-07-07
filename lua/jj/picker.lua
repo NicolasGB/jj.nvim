@@ -98,7 +98,7 @@ end
 --- Gets the files in the current jj repository
 --- @return jj.picker.file[]|nil A list of files with their changes or nil if not in a jj repo
 local function get_files()
-	local diff_ouptut, ok = runner.execute_argv({ "jj", "--no-pager", "diff", "--summary", "--quiet" })
+	local diff_ouptut, ok = runner.execute({ "jj", "--no-pager", "diff", "--summary", "--quiet" })
 	if not ok then
 		return
 	end
@@ -180,7 +180,7 @@ local function log_history(file_path)
 		[[change_id.shortest() ++ "\t" ++ coalesce(author.name(), "(no author)") ++ "\t" ++ committer.timestamp() ++ "\t" ++ coalesce(description.first_line(), "(no description)") ++ "\n"]],
 		jj_args.fileset(file_path),
 	}
-	local output, ok = runner.execute_argv(cmd)
+	local output, ok = runner.execute(cmd)
 	if not ok then
 		return
 	end
@@ -251,7 +251,7 @@ function M.file_history()
 				return
 			end
 
-			local _, ok = runner.execute_argv(
+			local _, ok = runner.execute(
 				{ "jj", "edit", item.rev, "--ignore-immutable" },
 				string.format("could not edit revision '%s'", item.rev)
 			)
@@ -277,7 +277,7 @@ local function get_conflicts()
 		[[change_id.shortest() ++ "\t" ++ coalesce(author.name(), "(no author)") ++ "\t" ++ coalesce(description.first_line(), "(no description)") ++ "\n"]],
 	}
 
-	local output, ok = runner.execute_argv(cmd)
+	local output, ok = runner.execute(cmd)
 	if not ok then
 		return
 	end
@@ -361,7 +361,7 @@ local function get_conflict_sections()
 		"-T",
 		[[self.conflicted_files().map(|e| e.path().display() ++ "\0" ++ e.path().absolute() ++ "\0")]],
 	}
-	local output, ok, _ = runner.execute_argv_raw(cmd)
+	local output, ok, _ = runner.execute_raw(cmd)
 	if not ok then
 		return
 	end

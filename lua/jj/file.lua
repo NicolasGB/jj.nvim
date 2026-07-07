@@ -237,7 +237,7 @@ local function get_file_content(rev, path, enc)
 		rev,
 		jj_args.fileset(path),
 	}
-	local raw, ok, stderr = runner.execute_argv_raw(cmd, nil, true)
+	local raw, ok, stderr = runner.execute_raw(cmd, nil, true)
 	if not ok or not raw then
 		local absent = stderr ~= nil and stderr:find("No such path", 1, true) ~= nil
 		return {}, false, false, enc or { fenc = "", bomb = false, ff = "unix" }, absent
@@ -283,7 +283,7 @@ function M.read_target(opts)
 		revision,
 		jj_args.fileset(path),
 	}
-	runner.execute_argv_raw_async(cmd, function(raw)
+	runner.execute_raw_async(cmd, function(raw)
 		local lines, had_eol, used_enc = decode(raw, enc)
 		if not lines then
 			utils.notify(had_eol --[[@as string]], vim.log.levels.ERROR)
@@ -352,7 +352,7 @@ local function write_revision_file(buf, change_id, rel_path, force)
 		"--",
 		jj_args.fileset(rel_path),
 	}
-	local _, ok = runner.execute_argv(cmd, "jj: failed to edit revision")
+	local _, ok = runner.execute(cmd, "jj: failed to edit revision")
 
 	os.remove(tmp)
 
@@ -385,7 +385,7 @@ function M.open_target(opts)
 		'change_id ++ "\n"',
 		"--quiet",
 	}
-	local raw_ids, ok = runner.execute_argv(cmd, "jj: failed to resolve revision", nil, true)
+	local raw_ids, ok = runner.execute(cmd, "jj: failed to resolve revision", nil, true)
 	if not ok or not raw_ids then
 		return
 	end
@@ -447,7 +447,7 @@ local function complete_target(arglead)
 		"-r",
 		rev,
 	}
-	local out, ok = runner.execute_argv(cmd, nil, nil, true)
+	local out, ok = runner.execute(cmd, nil, nil, true)
 	if not ok or not out then
 		return {}
 	end

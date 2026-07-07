@@ -20,7 +20,7 @@ local function open_revision(rev, path, enc)
 		'change_id ++ "\n"',
 		"--quiet",
 	}
-	local raw_ids, ok = runner.execute_argv(cmd, "jj: failed to resolve revision")
+	local raw_ids, ok = runner.execute(cmd, "jj: failed to resolve revision")
 	if not ok or not raw_ids then
 		return
 	end
@@ -153,13 +153,13 @@ diff.register_backend("native", {
 	show_revision = function(opts)
 		local terminal = require("jj.ui.terminal")
 
-		local cmd = string.format("jj show -r %s --quiet --no-pager", opts.rev)
+		local cmd = { "jj", "show", "-r", opts.rev, "--quiet", "--no-pager" }
 		terminal.run_floating(cmd)
 	end,
 	diff_revisions = function(opts)
 		local terminal = require("jj.ui.terminal")
 
-		local cmd = string.format("jj diff -f %s -t %s --quiet --no-pager", opts.left, opts.right)
+		local cmd = { "jj", "diff", "-f", opts.left, "-t", opts.right, "--quiet", "--no-pager" }
 		terminal.run_floating(cmd)
 	end,
 	diff_history_revisions = function(_)

@@ -849,19 +849,24 @@ The `log` function accepts an options table:
 ```lua
 local cmd = require("jj.cmd")
 cmd.log({
-  summary = false,      -- Show summary of changes (default: false)
-  reversed = false,     -- Reverse the log order (default: false)
-  no_graph = false,     -- Hide the graph (default: false)
-  limit = 20,          -- Limit number of entries (default: 20)
-  revisions = "'all()'" -- Revision specifier (default: all reachable)
+  summary = false,                     -- Show summary of changes (default: false)
+  reversed = false,                    -- Reverse the log order (default: false)
+  no_graph = false,                    -- Hide the graph (default: false)
+  limit = 50,                          -- Optional limit; omitted by default
+  revisions = "main::@",               -- Optional revset
+  raw_flags = { "-r", "main::@" }      -- Optional raw argv flags for `jj log`
 })
 
 -- Examples:
-cmd.log({ limit = 50 })                    -- Show 50 entries
-cmd.log({ revisions = "'main::@'" })       -- Show commits between main and current
-cmd.log({ summary = true, limit = 100 })   -- Show summary with high limit
-cmd.log({ raw = "-r 'main::@' --summary --no-graph" }) -- Pass raw flags directly
+cmd.log({ limit = 50 })
+cmd.log({ revisions = "main::@" })
+cmd.log({ summary = true, limit = 100 })
+cmd.log({ raw_flags = { "-r", "main::@", "--summary", "--no-graph" } })
 ```
+
+> [!IMPORTANT]
+> Breaking change: `cmd.log` now expects `raw_flags` as a `string[]` argv list.
+> The old `raw = "..."` string format is no longer supported.
 
 ## Configuration Examples
 
@@ -872,16 +877,20 @@ The `new` function accepts an options table:
 ```lua
 local cmd = require("jj.cmd")
 cmd.new({
-  show_log = false,     -- Display log after creating new change (default: false)
-  with_input = false,   -- Prompt for parent revision (default: false)
-  args = ""             -- Additional arguments to pass to jj new
+  show_log = false,                  -- Display log after creating new change (default: false)
+  with_input = false,                -- Prompt for parent revision (default: false)
+  args = { "--before", "@" }         -- Additional argv arguments passed to `jj new`
 })
 
 -- Examples:
-cmd.new({ show_log = true })                           -- Create new and show log
-cmd.new({ show_log = true, with_input = true })        -- Prompt for parent
-cmd.new({ args = "--before @" })                       -- Pass custom args
+cmd.new({ show_log = true })
+cmd.new({ show_log = true, with_input = true })
+cmd.new({ args = { "--before", "@" } })
 ```
+
+> [!IMPORTANT]
+> Breaking change: `cmd.new` now expects `args` as a `string[]` argv list.
+> The old `args = "--before @"` string format is no longer supported.
 
 ### Resolve Command Options
 
