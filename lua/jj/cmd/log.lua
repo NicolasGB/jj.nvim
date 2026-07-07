@@ -22,7 +22,7 @@ local HIGHLIGHT_RANGE = 2 -- Revision line + description line
 --- @field no_graph? boolean
 --- @field limit? uinteger
 --- @field revisions? string
---- @field raw_flags? string
+--- @field raw_flags? string[]
 
 ---@type jj.cmd.log_opts
 local default_log_opts = { summary = false, reversed = false, no_graph = false, limit = nil, raw_flags = nil }
@@ -298,29 +298,39 @@ end
 
 --- Build the jj log command string from options
 --- @param opts? jj.cmd.log_opts Optional command options
---- @return string The full jj log command
+--- @return string[] The full jj log command
 function M.build_log_cmd(opts)
-	local jj_cmd = "jj log --no-pager"
+	local jj_cmd = {
+		"jj",
+		"log",
+		"--no-pager",
+	}
 	local merged_opts = vim.tbl_extend("force", default_log_opts, opts or {})
 
 	if merged_opts.raw_flags then
-		-- Strip --no-pager from raw_flags since it's already in the base command
-		local flags = vim.trim(merged_opts.raw_flags:gsub("%-%-no%-pager", ""):gsub("%s+", " "))
-		if flags ~= "" then
-			return string.format("%s %s", jj_cmd, flags)
+		for _, flag in ipairs(merged_opts.raw_flags) do
+			-- Strip --no-pager from raw_flags since it's already in the base command
+			if flag ~= "--no-pager" then
+				table.insert(jj_cmd, flag)
+			end
 		end
 		return jj_cmd
 	end
 
-	for key, value in pairs(merged_opts) do
-		key = key:gsub("_", "-")
-		if key == "limit" and value then
-			jj_cmd = string.format("%s --%s %d", jj_cmd, key, value)
-		elseif key == "revisions" and value then
-			jj_cmd = string.format("%s --%s %s", jj_cmd, key, value)
-		elseif value then
-			jj_cmd = string.format("%s --%s", jj_cmd, key)
-		end
+	if merged_opts.summary then
+		table.insert(jj_cmd, "--summary")
+	end
+	if merged_opts.reversed then
+		table.insert(jj_cmd, "--reversed")
+	end
+	if merged_opts.no_graph then
+		table.insert(jj_cmd, "--no-graph")
+	end
+	if merged_opts.limit then
+		vim.list_extend(jj_cmd, { "--limit", tostring(merged_opts.limit) })
+	end
+	if merged_opts.revisions then
+		vim.list_extend(jj_cmd, { "--revisions", merged_opts.revisions })
 	end
 
 	return jj_cmd
@@ -384,22 +394,21 @@ function M.handle_log_new(flag, ignore_immut)
 	local cfg = flag_map[flag] or flag_map.default
 
 	-- Build command parts
-	local cmd_parts = { "jj", "new" }
+	local cmd = { "jj", "new" }
 	if cfg.opt ~= "" then
 		-- For -A flag, each revset needs its own -A prefix
 		for rev in revsets:gmatch("%S+") do
-			table.insert(cmd_parts, cfg.opt)
-			table.insert(cmd_parts, rev)
+			table.insert(cmd, cfg.opt)
+			table.insert(cmd, rev)
 		end
 	else
-		table.insert(cmd_parts, revsets)
+		table.insert(cmd, revsets)
 	end
 	if ignore_immut then
-		table.insert(cmd_parts, "--ignore-immutable")
+		table.insert(cmd, "--ignore-immutable")
 	end
 
-	local cmd = table.concat(cmd_parts, " ")
-	runner.execute_command_async(cmd, function()
+	runner.execute_async(cmd, function()
 		utils.notify(string.format(cfg.ok, revsets), vim.log.levels.INFO)
 		-- Refresh the log buffer after creating the change.
 		require("jj.cmd").log()
@@ -480,18 +489,15 @@ function M.handle_log_edit(ignore_immut, close_on_exit)
 	-- If we found a revision, edit it.
 
 	-- Build command parts.
-	local cmd_parts = { "jj", "edit" }
+	local cmd = { "jj", "edit" }
 	if ignore_immut then
-		table.insert(cmd_parts, "--ignore-immutable")
+		table.insert(cmd, "--ignore-immutable")
 	end
 
-	table.insert(cmd_parts, revset)
-
-	-- Build cmd string
-	local cmd = table.concat(cmd_parts, " ")
+	table.insert(cmd, revset)
 
 	-- Try to execute cmd
-	runner.execute_command_async(cmd, function()
+	runner.execute_async(cmd, function()
 		utils.reload_changed_file_buffers()
 
 		-- Close the terminal buffer
@@ -521,18 +527,15 @@ function M.handle_log_abandon(ignore_immut)
 	-- If we found revision(s), abandon it.
 
 	-- Build command parts.
-	local cmd_parts = { "jj", "abandon" }
+	local cmd = { "jj", "abandon" }
 	if ignore_immut then
-		table.insert(cmd_parts, "--ignore-immutable")
+		table.insert(cmd, "--ignore-immutable")
 	end
 
-	table.insert(cmd_parts, revsets)
-
-	-- Build cmd string
-	local cmd = table.concat(cmd_parts, " ")
+	table.insert(cmd, revsets)
 
 	-- Try to execute cmd
-	runner.execute_command_async(cmd, function()
+	runner.execute_async(cmd, function()
 		local text = "Abandoned change: `%s`"
 		if revsets:find(" ", 1) then
 			text = "Abandoned changes: `%s`"
@@ -559,8 +562,8 @@ function M.handle_log_fetch()
 			end,
 		}, function(choice)
 			if choice then
-				local cmd = string.format("jj git fetch --remote %s", choice.name)
-				runner.execute_command_async(cmd, function()
+				local cmd = { "jj", "git", "fetch", "--remote", choice.name }
+				runner.execute_async(cmd, function()
 					utils.notify(string.format("Fetching from %s...", choice), vim.log.levels.INFO)
 					M.log({})
 				end, "Error fetching from remote")
@@ -568,9 +571,9 @@ function M.handle_log_fetch()
 		end)
 	else
 		-- Only one remote, fetch from it directly
-		local cmd = "jj git fetch"
+		local cmd = { "jj", "git", "fetch" }
 		utils.notify("Fetching from remote...", vim.log.levels.INFO)
-		runner.execute_command_async(cmd, function()
+		runner.execute_async(cmd, function()
 			utils.notify("Successfully fetched from remote", vim.log.levels.INFO)
 			M.log({})
 		end, "Error fetching from remote")
@@ -581,7 +584,7 @@ end
 --- Ask the user which local bookmark to push.
 function M.handle_log_push_from_all()
 	local bookmarks = utils.get_all_bookmarks_with_status()
-	local cmd = "jj git push"
+	local cmd = { "jj", "git", "push" }
 	if not bookmarks or #bookmarks == 0 then
 		utils.notify("No bookmarks found to push", vim.log.levels.ERROR)
 		return
@@ -597,9 +600,11 @@ function M.handle_log_push_from_all()
 		end,
 	}, function(choice)
 		if choice then
-			local push_cmd = string.format("%s -b %s", cmd, choice.name)
+			-- Add the bookmark name to the command
+			vim.list_extend(cmd, { "-b", choice.name })
+
 			utils.notify(string.format("Pushing bookmark `%s`...", choice.name), vim.log.levels.INFO)
-			runner.execute_command_async(push_cmd, function(output)
+			runner.execute_async(cmd, function(output)
 				if output and string.find(output, "Nothing changed%.") then
 					utils.notify("Nothing changed.", vim.log.levels.INFO)
 				else
@@ -627,8 +632,9 @@ function M.handle_log_push_bookmark()
 	end
 
 	-- Function to push the bookmark, takes the full command as argument
+	--- @param cmd string[] The command to execute
 	local function push(cmd)
-		runner.execute_command_async(cmd, function(output)
+		runner.execute_async(cmd, function(output)
 			if output and string.find(output, "Nothing changed%.") then
 				utils.notify("Nothing changed.", vim.log.levels.INFO)
 			else
@@ -652,14 +658,14 @@ function M.handle_log_push_bookmark()
 			end,
 		}, function(choice)
 			if choice then
-				local cmd = "jj git push"
+				local cmd = { "jj", "git", "push" }
 				if choice.name == "[All]" then
 					-- Push all bookmarks
-					cmd = string.format("%s --all", cmd)
+					table.insert(cmd, "--all")
 					utils.notify("Pushing `ALL` bookmarks", vim.log.levels.INFO)
 				else
+					vim.list_extend(cmd, { "-b", choice.name })
 					utils.notify(string.format("Pushing bookmark `%s`...", choice.name), vim.log.levels.INFO)
-					cmd = string.format("%s -b %s", cmd, choice.name)
 				end
 				push(cmd)
 			else
@@ -669,7 +675,7 @@ function M.handle_log_push_bookmark()
 	else
 		-- If there's only one bookmark simply push it
 		local b = bookmarks[1].name
-		local cmd = string.format("jj git push -b %s", b)
+		local cmd = { "jj", "git", "push", "-b", b }
 		utils.notify(string.format("Pushing bookmark `%s`...", b), vim.log.levels.INFO)
 		push(cmd)
 	end
@@ -768,14 +774,12 @@ function M.handle_log_bookmark_del()
 
 	---@param b_names string[] Bookmark names to delete
 	local function delete_bookmarks(b_names)
-		local escaped_list = {}
+		local cmd = { "jj", "bookmark", "delete" }
 		for _, b in ipairs(b_names) do
-			table.insert(escaped_list, vim.fn.shellescape(b))
+			table.insert(cmd, b)
 		end
-		local escaped_bookmarks = table.concat(escaped_list, " ")
-		local cmd = string.format("jj bookmark delete %s", escaped_bookmarks)
 		local b_str = table.concat(b_names, " ")
-		runner.execute_command_async(cmd, function()
+		runner.execute_async(cmd, function()
 			utils.notify(string.format("Deleted bookmark `%s`", b_str), vim.log.levels.INFO)
 			M.log({})
 		end, string.format("Error deleting bookmark `%s`", b_str))
@@ -830,8 +834,8 @@ function M.handle_log_bookmark()
 				-- Prompt for new bookmark name
 				vim.ui.input({ prompt = "Enter new bookmark name: ", default = prefix }, function(input)
 					if input and input ~= "" then
-						local cmd = string.format("jj bookmark create %s -r %s", input, revset)
-						runner.execute_command_async(cmd, function()
+						local cmd = { "jj", "bookmark", "create", input, "-r", revset }
+						runner.execute_async(cmd, function()
 							utils.notify(
 								string.format("Created bookmark `%s` at `%s`", input, revset),
 								vim.log.levels.INFO
@@ -842,8 +846,8 @@ function M.handle_log_bookmark()
 				end)
 			else
 				-- Move existing bookmark to the revision
-				local cmd = string.format("jj bookmark move %s --to %s -B", choice, revset)
-				runner.execute_command_async(cmd, function()
+				local cmd = { "jj", "bookmark", "move", choice, "--to", revset, "-B" }
+				runner.execute_async(cmd, function()
 					utils.notify(string.format("Moved bookmark `%s` to `%s`", choice, revset), vim.log.levels.INFO)
 					M.log({})
 				end, "Error moving bookmark")
@@ -907,9 +911,9 @@ function M.handle_log_quick_squash()
 		return
 	end
 
-	local cmd = string.format("jj squash -r %s -u --ignore-immutable", revset)
+	local cmd = { "jj", "squash", "-r", revset, "-u", "--ignore-immutable" }
 	utils.notify(string.format("Squashing `%s` into it's parent...", revset), vim.log.levels.INFO)
-	runner.execute_command_async(cmd, function()
+	runner.execute_async(cmd, function()
 		utils.notify(string.format("Successfully squashed `%s` into it's parent", revset), vim.log.levels.INFO)
 		M.log({})
 	end, string.format("Error squashing `%s` into it's parent", revset))
@@ -1050,12 +1054,12 @@ function M.handle_summary_edit(revset, ignore_immut)
 	-- Close the log buffer
 	terminal.close_terminal_buffer()
 
-	local cmd = string.format("jj edit %s", revset)
+	local cmd = { "jj", "edit", revset }
 	if ignore_immut then
-		cmd = cmd .. " --ignore-immutable"
+		table.insert(cmd, "--ignore-immutable")
 	end
 
-	runner.execute_command_async(cmd, function()
+	runner.execute_async(cmd, function()
 		utils.reload_changed_file_buffers()
 		utils.notify(string.format("Editing revset: `%s`", revset), vim.log.levels.INFO)
 		-- Open the file in the current window
@@ -1119,7 +1123,7 @@ end
 
 --- Build the summary command for a revset
 --- @param revset string The revision to show summary for
---- @return string The jj log command
+--- @return string[] The jj log command
 local function build_summary_cmd(revset)
 	local template = '"Commit ID: " ++ commit_id ++ "\\n" '
 		.. '++ "Change ID: " ++ change_id ++ "\\n" '
@@ -1128,7 +1132,15 @@ local function build_summary_cmd(revset)
 		.. "++ description "
 		.. '++ "\\n" ++ self.diff().summary()'
 
-	return string.format("jj log -r %s --no-graph -T '%s'", revset, template)
+	return {
+		"jj",
+		"log",
+		"-r",
+		revset,
+		"--no-graph",
+		"-T",
+		template,
+	}
 end
 
 --- Handle showing summary tooltip for revision under cursor
@@ -1155,7 +1167,7 @@ function M.handle_log_summary()
 	local cmd = build_summary_cmd(revset)
 
 	-- Run command synchronously first to calculate dimensions
-	local output, success = runner.execute_command(cmd, nil, nil, false)
+	local output, success = runner.execute(cmd, nil, nil, false)
 	if not success or not output then
 		return
 	end
@@ -1614,15 +1626,22 @@ function M.handle_rebase_execute(mode, ignore_immut)
 	end
 
 	utils.notify(string.format("Rebasing...", revsets, mode, destination_revset), vim.log.levels.INFO, 500)
-	local cmd = string.format("jj rebase -r '%s' %s %s", revsets, mode_flat, destination_revset)
+	local cmd = {
+		"jj",
+		"rebase",
+		"-r",
+		revsets,
+		mode_flat,
+		destination_revset,
+	}
 
 	-- If ignore_immut is true, add the flag
 	-- This is not currently exposed in keymaps but could be in the future
 	if ignore_immut then
-		cmd = cmd .. " --ignore-immutable"
+		table.insert(cmd, "--ignore-immutable")
 	end
 
-	runner.execute_command_async(cmd, function()
+	runner.execute_async(cmd, function()
 		utils.notify(
 			string.format("Rebased `%s` %s `%s` successfully", revsets, mode, destination_revset),
 			vim.log.levels.INFO
@@ -1653,19 +1672,19 @@ function M.handle_squash_execute(mode, ignore_immut)
 
 	utils.notify(string.format("Squashing...", revsets, mode, destination_revset), vim.log.levels.INFO, 500)
 	-- U flag to keep destination's message
-	local cmd = string.format("jj squash -f '%s' -u", revsets)
+	local cmd = { "jj", "squash", "-f", revsets, "-u" }
 
 	if mode == "into" then
-		cmd = cmd .. string.format(" -t %s", destination_revset)
+		vim.list_extend(cmd, { "-t", destination_revset })
 	end
 
 	-- If ignore_immut is true, add the flag
 	-- This is not currently exposed in keymaps but could be in the future
 	if ignore_immut then
-		cmd = cmd .. " --ignore-immutable"
+		table.insert(cmd, "--ignore-immutable")
 	end
 
-	runner.execute_command_async(cmd, function()
+	runner.execute_async(cmd, function()
 		utils.notify(
 			string.format("Squashed `%s` into `%s` successfully", revsets, destination_revset),
 			vim.log.levels.INFO
@@ -1702,15 +1721,15 @@ function M.handle_duplicate_execute(mode, ignore_immut)
 	end
 
 	utils.notify(string.format("Duplicating...", revsets, mode, destination_revset), vim.log.levels.INFO, 500)
-	local cmd = string.format("jj duplicate %s %s %s", revsets, mode_flat, destination_revset)
+	local cmd = { "jj", "duplicate", revsets, mode_flat, destination_revset }
 
 	-- If ignore_immut is true, add the flag
 	-- This is not currently exposed in keymaps but could be in the future
 	if ignore_immut then
-		cmd = cmd .. " --ignore-immutable"
+		table.insert(cmd, "--ignore-immutable")
 	end
 
-	runner.execute_command_async(cmd, function()
+	runner.execute_async(cmd, function()
 		utils.notify(
 			string.format("Duplicated `%s` %s `%s` successfully", revsets, mode, destination_revset),
 			vim.log.levels.INFO

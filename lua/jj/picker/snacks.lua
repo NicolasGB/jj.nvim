@@ -163,8 +163,8 @@ function M.file_log_history(opts, log_lines)
 				return
 			end
 
-			local _, ok = runner.execute_command(
-				string.format("jj edit %s --ignore-immutable", item.rev),
+			local _, ok = runner.execute(
+				{ "jj", "edit", item.rev, "--ignore-immutable" },
 				string.format("could not edit revision '%s'", item.rev)
 			)
 
@@ -217,8 +217,8 @@ function M.conflict(opts, conflicts)
 					return
 				end
 
-				local _, ok = runner.execute_command(
-					string.format("jj edit %s", item.rev),
+				local _, ok = runner.execute(
+					{ "jj", "edit", item.rev, "--ignore-immutable" },
 					string.format("could not edit revision '%s'", item.rev)
 				)
 

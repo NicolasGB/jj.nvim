@@ -19,21 +19,24 @@ local default_describe_opts = {
 --- @param revset? string The revision to describe
 --- @param sync? boolean Whether to execute command synchronously
 local function execute_describe(description, revset, sync)
-	local cmd = "jj describe"
+	local cmd = {
+		"jj",
+		"describe",
+	}
 	if revset then
-		cmd = cmd .. " -r " .. revset
+		table.insert(cmd, "-r")
+		table.insert(cmd, revset)
 	end
-	cmd = cmd .. " --stdin"
+	table.insert(cmd, "--stdin")
 
 	-- Use --stdin to properly handle multi-line and special characters
 	if sync then
-		runner.execute_command_sync(cmd, function()
-			utils.notify("Description set.", vim.log.levels.INFO)
-		end, "Failed to describe", description)
+		runner.execute(cmd, "Failed to describe", description)
+		utils.notify("Description set.", vim.log.levels.INFO)
 		return
 	end
 
-	runner.execute_command_async(cmd, function()
+	runner.execute_async(cmd, function()
 		utils.notify("Description set.", vim.log.levels.INFO)
 	end, "Failed to describe", description)
 end

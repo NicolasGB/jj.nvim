@@ -10,11 +10,20 @@ local file = require("jj.file")
 --- @param path string The file path (absolute or repo-relative)
 --- @param enc? jj.file.enc Encoding settings for the file content
 local function open_revision(rev, path, enc)
-	local raw_ids, ok = runner.execute_command(
-		string.format([[jj log --no-graph -r %s -T 'change_id ++ "\n"' --quiet]], vim.fn.shellescape(rev)),
-		"jj: failed to resolve revision"
-	)
-	if not ok or not raw_ids then return end
+	local cmd = {
+		"jj",
+		"log",
+		"--no-graph",
+		"-r",
+		rev,
+		"-T",
+		'change_id ++ "\n"',
+		"--quiet",
+	}
+	local raw_ids, ok = runner.execute(cmd, "jj: failed to resolve revision")
+	if not ok or not raw_ids then
+		return
+	end
 	local ids = vim.split(vim.trim(raw_ids), "\n", { trimempty = true })
 	if #ids ~= 1 then
 		utils.notify(string.format("Revision '%s' is ambiguous", rev), vim.log.levels.ERROR)
@@ -144,13 +153,13 @@ diff.register_backend("native", {
 	show_revision = function(opts)
 		local terminal = require("jj.ui.terminal")
 
-		local cmd = string.format("jj show -r %s --quiet --no-pager", opts.rev)
+		local cmd = { "jj", "show", "-r", opts.rev, "--quiet", "--no-pager" }
 		terminal.run_floating(cmd)
 	end,
 	diff_revisions = function(opts)
 		local terminal = require("jj.ui.terminal")
 
-		local cmd = string.format("jj diff -f %s -t %s --quiet --no-pager", opts.left, opts.right)
+		local cmd = { "jj", "diff", "-f", opts.left, "-t", opts.right, "--quiet", "--no-pager" }
 		terminal.run_floating(cmd)
 	end,
 	diff_history_revisions = function(_)

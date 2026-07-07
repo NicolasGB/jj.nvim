@@ -4,6 +4,7 @@ local utils = require("jj.utils")
 local runner = require("jj.core.runner")
 local buffer = require("jj.core.buffer")
 local parser = require("jj.core.parser")
+local jj_args = require("jj.core.args")
 
 --TODO: Maybe if annotating on the file is slow we could cache the annotations.
 
@@ -41,15 +42,17 @@ end
 --- @param path string
 --- @param template string
 --- @param rev? string
---- @return string
+--- @return string[]
 local function build_annotate_cmd(path, template, rev)
-	local rev_flag = rev and rev ~= "" and string.format("-r %s ", vim.fn.shellescape(rev)) or ""
-	return string.format(
-		"jj file annotate %s%s -T %s",
-		rev_flag,
-		vim.fn.shellescape(path),
-		vim.fn.shellescape(template)
-	)
+	local cmd = { "jj", "file", "annotate" }
+	if rev and rev ~= "" then
+		table.insert(cmd, "-r")
+		table.insert(cmd, rev)
+	end
+	table.insert(cmd, path)
+	table.insert(cmd, "-T")
+	table.insert(cmd, template)
+	return cmd
 end
 
 --- Sets the highlights for the blame bufer
@@ -170,10 +173,17 @@ local function handle_enter()
 	-- Get the local name
 	local filename = vim.b[0].jj_annotation_file
 
-	local cmd = string.format("jj diff --git -r %s %s", parts.rev.value, filename)
+	local cmd = {
+		"jj",
+		"diff",
+		"--git",
+		"-r",
+		parts.rev.value,
+		jj_args.fileset(filename),
+	}
 
 	-- Run the command
-	local output, success = runner.execute_command(cmd, "Could not run diff from annotation")
+	local output, success = runner.execute(cmd, "Could not run diff from annotation")
 	if not success or not output or output == "" then
 		return
 	end
@@ -221,7 +231,7 @@ function M.file()
 	end
 
 	local raw_output, success =
-		runner.execute_command(build_annotate_cmd(filename, template, revision), "Failed to annotate file")
+		runner.execute(build_annotate_cmd(filename, template, revision), "Failed to annotate file")
 	if not success or not raw_output then
 		return
 	end
@@ -355,7 +365,7 @@ function M.line()
 
 	local line_num = vim.fn.line(".")
 	local raw_output, success =
-		runner.execute_command(build_annotate_cmd(filename, template, revision), "Failed to annotate line")
+		runner.execute(build_annotate_cmd(filename, template, revision), "Failed to annotate line")
 	if not success or not raw_output then
 		return
 	end
@@ -374,10 +384,16 @@ function M.line()
 		return
 	end
 
-	local desc, ok = runner.execute_command(
-		string.format("jj log -r %s -T 'self.description()' --no-graph", parsed_line.rev.value),
-		"Failed getting description"
-	)
+	local cmd = {
+		"jj",
+		"log",
+		"-r",
+		parsed_line.rev.value,
+		"-T",
+		"self.description()",
+		"--no-graph",
+	}
+	local desc, ok = runner.execute(cmd, "Failed getting description")
 	if not ok or not desc then
 		return
 	end

@@ -2,7 +2,11 @@ local M = {}
 
 local utils = require("jj.utils")
 local terminal = require("jj.ui.terminal")
+local jj_args = require("jj.core.args")
 
+--- Build the jj split command based on the provided options.
+---@param opts jj.cmd.split.opts
+---@return string[] The constructed jj split command.
 local function build_split_command(opts)
 	local args = { "jj", "split" }
 
@@ -25,11 +29,11 @@ local function build_split_command(opts)
 
 	if opts.filesets then
 		for _, fileset in ipairs(opts.filesets) do
-			table.insert(args, utils.escape_fileset(fileset))
+			table.insert(args, jj_args.fileset(fileset))
 		end
 	end
 
-	return table.concat(args, " ")
+	return args
 end
 
 --- Split natively
@@ -47,6 +51,8 @@ function M.split(opts)
 		return
 	end
 
+	--- Run the jj split command in a floating terminal
+	---@param cmd string[]
 	local function run_split(cmd)
 		terminal.run_floating(cmd, nil, {
 			title = " JJ Split ",

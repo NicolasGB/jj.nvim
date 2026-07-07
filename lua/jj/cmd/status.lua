@@ -5,6 +5,7 @@ local utils = require("jj.utils")
 local runner = require("jj.core.runner")
 local parser = require("jj.core.parser")
 local terminal = require("jj.ui.terminal")
+local jj_args = require("jj.core.args")
 
 --- Handle restoring a file from the jj status buffer
 --- Supports both renamed and non-renamed files
@@ -15,29 +16,27 @@ function M.handle_status_restore()
 	end
 
 	if file_info.is_rename then
-		-- For renamed files, remove the new file and restore the old one from parent revision
-		local rm_cmd = string.format("rm %s", vim.fn.shellescape(file_info.new_path))
-		local restore_cmd = string.format("jj restore --from @- %s", utils.escape_fileset(file_info.old_path))
+		local restore_cmd = {
+			"jj",
+			"restore",
+			"--from",
+			"@-",
+			jj_args.fileset(file_info.old_path),
+			jj_args.fileset(file_info.new_path),
+		}
 
-		local _, rm_success = runner.execute_command(rm_cmd, "Failed to remove renamed file")
-		if rm_success then
-			local _, restore_success = runner.execute_command(restore_cmd, "Failed to restore original file")
-			if restore_success then
-				utils.notify(
-					"Reverted rename: " .. file_info.new_path .. " -> " .. file_info.old_path,
-					vim.log.levels.INFO
-				)
-				require("jj.cmd").status()
-			end
+		local _, restore_success = runner.execute(restore_cmd, "Failed to restore original file")
+		if restore_success then
+			utils.notify("Reverted rename: " .. file_info.new_path .. " -> " .. file_info.old_path, vim.log.levels.INFO)
+			require("jj.cmd").status()
 		end
 	else
 		-- For non-renamed files, use regular restore
-		utils.notify(utils.escape_fileset(file_info.old_path))
-		local restore_cmd = string.format("jj restore %s", utils.escape_fileset(file_info.old_path))
+		local restore_cmd = { "jj", "restore", jj_args.fileset(file_info.old_path) }
 
-		local _, success = runner.execute_command(restore_cmd, "Failed to restore")
+		local _, success = runner.execute(restore_cmd, "Failed to restore")
 		if success then
-			utils.notify("Restored: " .. file_info.old_path, vim.log.levels.INFO)
+			utils.notify("Restored: `" .. file_info.old_path .. "`", vim.log.levels.INFO)
 			require("jj.cmd").status()
 		end
 	end
@@ -95,16 +94,16 @@ function M.status(opts)
 		return
 	end
 
-	local cmd_str = "jj status --no-pager"
+	local cmd = { "jj", "status", "--no-pager" }
 
 	if opts and opts.notify then
-		local output, success = runner.execute_command(cmd_str, "Failed to get status")
+		local output, success = runner.execute(cmd, "Failed to get status")
 		if success then
 			utils.notify(output and output or "", vim.log.levels.INFO)
 		end
 	else
 		-- Default behavior: show in buffer
-		terminal.run(cmd_str, M.status_keymaps())
+		terminal.run(cmd, M.status_keymaps())
 	end
 end
 

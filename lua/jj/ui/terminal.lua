@@ -120,7 +120,7 @@ function M.keymap_help()
 	end
 
 	-- create a buffer and floating window to show the key mappings
-	local buf, win = buffer.create_float({
+	local buf, _ = buffer.create_float({
 		title = " Key mappings ",
 		title_pos = "left",
 		enter = true,
@@ -249,7 +249,7 @@ function M.is_log_buffer_open()
 end
 
 --- Run the command in a floating window
---- @param cmd string|string[] The command to run in the floating window
+--- @param cmd string[] The command to run in the floating window
 --- @param keymaps jj.core.buffer.keymap[]|nil Additional keymaps to set for this floating buffer
 --- @param float_opts? {title?: string, modifiable?: boolean, keep_modifiable?: boolean, on_exit?: fun(exit_code: integer), interactive?: boolean}
 function M.run_floating(cmd, keymaps, float_opts)
@@ -455,7 +455,7 @@ end
 
 --- Run a command and show it's output in a terminal buffer
 --- If a previous command already existed it smartly reuses the buffer cleaning the previous output
---- @param cmd string|string[] The command to run in the terminal buffer
+--- @param cmd string[] The command to run in the terminal buffer
 --- @param keymaps jj.core.buffer.keymap[]|nil Additional keymaps to set for this command buffer
 --- @return integer|nil buf The buffer handle, or nil on failure
 function M.run(cmd, keymaps)
@@ -669,7 +669,7 @@ end
 --- @field height? number Tooltip height (default: 80% of lines)
 
 --- Run a command in a PTY-based tooltip window
---- @param cmd string The command to run
+--- @param cmd string[] The command to run
 --- @param tool_opts? jj.ui.terminal.tooltip_opts Tooltip options
 --- @return number|nil buf Buffer handle, or nil on failure
 --- @return number|nil win Window handle, or nil on failure

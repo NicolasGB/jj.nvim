@@ -354,7 +354,7 @@ end
 --- @class jj.cmd.new_opts
 --- @field show_log? boolean Whether or not to display the log command after creating a new
 --- @field with_input? boolean Whether or not to use nvim input to decide the parent of the new commit
---- @field args? string The arguments to append to the new command
+--- @field args? string[] The arguments to append to the new command
 
 -- Jujutsu new
 --- @param opts? jj.cmd.new_opts
@@ -365,9 +365,9 @@ function M.new(opts)
 
 	opts = opts or {}
 
-	--- @param cmd string
+	--- @param cmd string[]
 	local function execute_new(cmd)
-		runner.execute_command_async(cmd, function()
+		runner.execute_async(cmd, function()
 			utils.notify("Command `new` was succesful.", vim.log.levels.INFO)
 			-- Show the updated log if the user requested it
 			if opts.show_log then
@@ -386,15 +386,15 @@ function M.new(opts)
 			prompt = "Parent(s) of the new change [default: @]",
 		}, function(input)
 			if input then
-				execute_new(string.format("jj new %s", input))
+				execute_new({ "jj", "new", input })
 			end
 			terminal.close_terminal_buffer()
 		end)
 	else
 		-- Otherwise follow a classic flow for inputing
-		local cmd = "jj new"
+		local cmd = { "jj", "new" }
 		if opts.args then
-			cmd = string.format("jj new %s", opts.args)
+			vim.list_extend(cmd, opts.args)
 		end
 
 		execute_new(cmd)
@@ -416,7 +416,7 @@ function M.edit()
 		default = "",
 	}, function(input)
 		if input then
-			runner.execute_command_async(string.format("jj edit %s", input), function()
+			runner.execute_async({ "jj", "edit", input }, function()
 				utils.reload_changed_file_buffers()
 				M.log({})
 			end, "Error editing change")
@@ -432,8 +432,8 @@ function M.squash()
 		return
 	end
 
-	local cmd = "jj squash"
-	runner.execute_command_async(cmd, function()
+	local cmd = { "jj", "squash" }
+	runner.execute_async(cmd, function()
 		utils.notify("Command `squash` was succesful.", vim.log.levels.INFO)
 		if terminal.is_log_buffer_open() then
 			M.log()
@@ -505,9 +505,9 @@ function M.rebase()
 		default = "trunk()",
 	}, function(input)
 		if input then
-			local cmd = string.format("jj rebase -d '%s'", input)
+			local cmd = { "jj", "rebase", "-d", input }
 			utils.notify(string.format("Beginning rebase on %s", input), vim.log.levels.INFO)
-			runner.execute_command_async(cmd, function()
+			runner.execute_async(cmd, function()
 				utils.notify("Rebase successful.", vim.log.levels.INFO)
 				M.log({})
 			end, "Error rebasing")
@@ -539,8 +539,8 @@ function M.bookmark_create(opts)
 				default = "@",
 			}, function(revset)
 				revset = revset or "@"
-				local cmd = string.format("jj b c %s -r %s", input, revset)
-				runner.execute_command_async(cmd, function()
+				local cmd = { "jj", "bookmark", "create", input, "-r", revset }
+				runner.execute_async(cmd, function()
 					utils.notify(
 						string.format("Bookmark `%s` created successfully for %s", input, revset),
 						vim.log.levels.INFO
@@ -575,8 +575,8 @@ function M.bookmark_move()
 				default = "@",
 			}, function(revset)
 				if revset then
-					local cmd = string.format("jj b m %s --to %s -B", choice, revset)
-					runner.execute_command_async(cmd, function()
+					local cmd = { "jj", "bookmark", "move", choice, "--to", revset, "-B" }
+					runner.execute_async(cmd, function()
 						utils.notify(
 							string.format("Bookmark `%s` moved successfully to %s", choice, revset),
 							vim.log.levels.INFO
@@ -604,8 +604,8 @@ function M.bookmark_delete()
 		prompt = "Bookmark name: ",
 	}, function(input)
 		if input then
-			local cmd = string.format("jj b d %s", input)
-			runner.execute_command_async(cmd, function()
+			local cmd = { "jj", "bookmark", "delete", input }
+			runner.execute_async(cmd, function()
 				utils.notify(string.format("Bookmark `%s` deleted successfully.", input), vim.log.levels.INFO)
 				M.log({})
 			end, "Error deleting bookmark")
@@ -631,16 +631,13 @@ function M.bookmark_track()
 
 	vim.ui.select(bookmarks, { prompt = "Which bookmark do you want to track?" }, function(choice)
 		if choice then
-			runner.execute_command_async(
-				string.format("jj bookmark track %s --quiet", vim.fn.shellescape(choice)),
-				function()
-					utils.notify(string.format("Bookmark `%s` is now tracked.", choice))
-					if log_open then
-						M.log()
-					end
-				end,
-				"Could not track bookmark"
-			)
+			local cmd = { "jj", "bookmark", "track", choice, "--quiet" }
+			runner.execute_async(cmd, function()
+				utils.notify(string.format("Bookmark `%s` is now tracked.", choice))
+				if log_open then
+					M.log()
+				end
+			end, "Could not track bookmark")
 		end
 	end)
 end
@@ -661,16 +658,13 @@ function M.bookmark_forget()
 
 	vim.ui.select(bookmarks, { prompt = "Which bookmark do you want to forget?" }, function(choice)
 		if choice then
-			runner.execute_command_async(
-				string.format("jj bookmark forget %s --quiet", vim.fn.shellescape(choice)),
-				function()
-					utils.notify(string.format("Bookmark `%s` is now untracked.", choice))
-					if log_open then
-						M.log()
-					end
-				end,
-				"Could not forget bookmark"
-			)
+			local cmd = { "jj", "bookmark", "forget", choice, "--quiet" }
+			runner.execute_async(cmd, function()
+				utils.notify(string.format("Bookmark `%s` is now untracked.", choice))
+				if log_open then
+					M.log()
+				end
+			end, "Could not forget bookmark")
 		end
 	end)
 end
@@ -681,8 +675,8 @@ function M.undo()
 		return
 	end
 
-	local cmd = "jj undo"
-	runner.execute_command_async(cmd, function()
+	local cmd = { "jj", "undo" }
+	runner.execute_async(cmd, function()
 		utils.notify("Command `undo` was succesful.", vim.log.levels.INFO)
 		if terminal.is_log_buffer_open() then
 			M.log({})
@@ -696,8 +690,8 @@ function M.redo()
 		return
 	end
 
-	local cmd = "jj redo"
-	runner.execute_command_async(cmd, function()
+	local cmd = { "jj", "redo" }
+	runner.execute_async(cmd, function()
 		utils.notify("Command `redo` was succesful.", vim.log.levels.INFO)
 		if terminal.is_log_buffer_open() then
 			M.log({})
@@ -717,8 +711,8 @@ function M.abandon()
 		default = "",
 	}, function(input)
 		if input then
-			local cmd = string.format("jj abandon %s", input)
-			runner.execute_command_async(cmd, function()
+			local cmd = { "jj", "abandon", input }
+			runner.execute_async(cmd, function()
 				utils.notify("Change abandoned successfully.", vim.log.levels.INFO)
 				M.log({})
 			end, "Error abandoning change")
@@ -753,8 +747,8 @@ function M.fetch()
 			end,
 		}, function(choice)
 			if choice then
-				local cmd = string.format("jj git fetch --remote %s", choice.name)
-				runner.execute_command_async(cmd, function()
+				local cmd = { "jj", "git", "fetch", "--remote", choice.name }
+				runner.execute_async(cmd, function()
 					utils.notify(string.format("Fetching from %s...", choice), vim.log.levels.INFO)
 					if log_open then
 						M.log({})
@@ -764,9 +758,9 @@ function M.fetch()
 		end)
 	else
 		-- Only one remote, fetch from it directly
-		local cmd = "jj git fetch"
+		local cmd = { "jj", "git", "fetch" }
 		utils.notify("Fetching from remote...", vim.log.levels.INFO)
-		runner.execute_command_async(cmd, function()
+		runner.execute_async(cmd, function()
 			utils.notify("Successfully fetched from remote", vim.log.levels.INFO)
 			if log_open then
 				M.log({})
@@ -839,23 +833,23 @@ function M.push(opts)
 
 	local notify_msg = "Pushing bookmarks `ALL` bookmarks"
 
-	local cmd = "jj git push"
+	local cmd = { "jj", "git", "push" }
 	if opts.bookmark then
 		notify_msg = string.format("Pushing bookmark `%s`", opts.bookmark)
-		cmd = string.format("%s --bookmark %s", cmd, opts.bookmark)
+		vim.list_extend(cmd, { "--bookmark", opts.bookmark })
 	elseif opts.deleted then
 		notify_msg = "Pushing deleted bookmarks"
-		cmd = cmd .. " --deleted"
+		table.insert(cmd, "--deleted")
 	end
 
 	if opts.remote then
-		cmd = string.format("%s --remote %s", cmd, opts.remote)
+		vim.list_extend(cmd, { "--remote", opts.remote })
 		notify_msg = string.format("%s to remote `%s`", notify_msg, opts.remote)
 	end
 
 	utils.notify(notify_msg .. "...", vim.log.levels.INFO, 1000)
 
-	runner.execute_command_async(cmd, function()
+	runner.execute_async(cmd, function()
 		utils.notify("Successfully pushed to remote", vim.log.levels.INFO)
 		if log_open then
 			M.log({})
@@ -894,13 +888,21 @@ function M.open_pr(opts)
 	end
 
 	-- Get the bookmark from the current change (@)
-	local bookmark, success =
-		runner.execute_command("jj log -r @ --no-graph -T 'bookmarks'", "Failed to get current bookmark", nil, true)
+	local bookmark, success = runner.execute(
+		{ "jj", "log", "-r", "@", "--no-graph", "-T", "bookmarks" },
+		"Failed to get current bookmark",
+		nil,
+		true
+	)
 
 	if not success or not bookmark or bookmark:match("^%s*$") then
 		-- If no bookmark on @, try @-
-		bookmark, success =
-			runner.execute_command("jj log -r @- --no-graph -T 'bookmarks'", "Failed to get parent bookmark", nil, true)
+		bookmark, success = runner.execute(
+			{ "jj", "log", "-r", "@-", "--no-graph", "-T", "bookmarks" },
+			"Failed to get parent bookmark",
+			nil,
+			true
+		)
 
 		if not success or not bookmark or bookmark:match("^%s*$") then
 			utils.notify("No bookmark found on @ or @- commits. Cannot open PR.", vim.log.levels.ERROR)
@@ -925,8 +927,8 @@ function M.commit(description)
 	local should_refresh = terminal.is_log_buffer_open()
 
 	if description and description ~= "" then
-		local cmd = "jj commit --message " .. vim.fn.shellescape(description)
-		runner.execute_command_async(cmd, function()
+		local cmd = { "jj", "commit", "--message", description }
+		runner.execute_async(cmd, function()
 			utils.notify("Committed.", vim.log.levels.INFO)
 			if should_refresh then
 				vim.schedule(function()
@@ -942,8 +944,8 @@ function M.commit(description)
 		M.status()
 		vim.ui.input({ prompt = "Description: ", default = "" }, function(input)
 			if input and not input:match("^%s*$") then
-				local cmd = "jj commit --message " .. vim.fn.shellescape(input)
-				runner.execute_command_async(cmd, function()
+				local cmd = { "jj", "commit", "--message", input }
+				runner.execute_async(cmd, function()
 					utils.notify("Committed.", vim.log.levels.INFO)
 					if should_refresh then
 						vim.schedule(function()
@@ -980,8 +982,8 @@ function M.commit(description)
 			utils.notify("Description cannot be empty", vim.log.levels.ERROR)
 			return
 		end
-		local cmd = "jj commit --message " .. vim.fn.shellescape(trimmed_description)
-		runner.execute_command_async(cmd, function()
+		local cmd = { "jj", "commit", "--message", trimmed_description }
+		runner.execute_async(cmd, function()
 			utils.notify("Committed.", vim.log.levels.INFO)
 			if should_refresh then
 				vim.schedule(function()
@@ -1020,8 +1022,8 @@ function M.tag_set(rev)
 	-- Ask the user for the tag name
 	vim.ui.input({ prompt = "Tag name: ", default = "" }, function(input)
 		if input and not input:match("^%s*$") then
-			local cmd = string.format("jj tag set %s -r %s", input, rev)
-			runner.execute_command_async(cmd, function()
+			local cmd = { "jj", "tag", "set", input, "-r", rev }
+			runner.execute_async(cmd, function()
 				utils.notify(string.format("Tag `%s` set on `%s`.", input, rev), vim.log.levels.INFO)
 				if should_refresh then
 					vim.schedule(function()
@@ -1044,8 +1046,8 @@ function M.tag_delete(tag)
 
 	-- If the tag is provided, delete it directly without asking the user
 	if tag then
-		local cmd = string.format("jj tag delete %s", tag)
-		runner.execute_command_async(cmd, function()
+		local cmd = { "jj", "tag", "delete", tag }
+		runner.execute_async(cmd, function()
 			utils.notify(string.format("Tag `%s` deleted.", tag), vim.log.levels.INFO)
 			if terminal.is_log_buffer_open() then
 				vim.schedule(function()
@@ -1070,8 +1072,8 @@ function M.tag_delete(tag)
 
 	vim.ui.select(tags, { prompt = "Select tag to delete: " }, function(choice)
 		if choice then
-			local cmd = string.format("jj tag delete %s", choice)
-			runner.execute_command_async(cmd, function()
+			local cmd = { "jj", "tag", "delete", choice }
+			runner.execute_async(cmd, function()
 				utils.notify(string.format("Tag `%s` deleted.", choice), vim.log.levels.INFO)
 				if should_refresh then
 					vim.schedule(function()
@@ -1126,8 +1128,8 @@ function M.tag_push()
 					prompt = "Select tag to push: ",
 				}, function(tag_choice)
 					if tag_choice then
-						local cmd = string.format("git push %s %s", choice.name, tag_choice)
-						runner.execute_command_async(cmd, function()
+						local cmd = { "git", "push", choice.name, tag_choice }
+						runner.execute_async(cmd, function()
 							utils.notify(
 								string.format("Tag `%s` pushed successfully to remote `%s`.", tag_choice, choice.name),
 								vim.log.levels.INFO
@@ -1156,8 +1158,8 @@ function M.tag_push()
 			prompt = "Select tag to push: ",
 		}, function(tag_choice)
 			if tag_choice then
-				local cmd = string.format("git push %s %s", remotes[1].name, tag_choice)
-				runner.execute_command_async(cmd, function()
+				local cmd = { "git", "push", remotes[1].name, tag_choice }
+				runner.execute_async(cmd, function()
 					utils.notify(
 						string.format("Tag `%s` pushed successfully to remote `%s`.", tag_choice, remotes[1].name),
 						vim.log.levels.INFO
@@ -1225,13 +1227,13 @@ function M.fetch_pr(opts)
 				end
 
 				local ref = string.format("pull/%s/head:pr-%s-%d", pr, pr, count)
-				local cmd = string.format("git fetch origin %s", ref)
+				local cmd = { "git", "fetch", "origin", ref }
 
-				runner.execute_command_async(
+				runner.execute_async(
 					cmd,
 					function()
 						-- If we successfully pulled the PR, notify the user and refresh the log if it's open
-						runner.execute_command_async("jj git import", function()
+						runner.execute_async({ "jj", "git", "import" }, function()
 							utils.notify(
 								string.format("PR #%s fetched as pr-%s-%d.", pr, pr, count),
 								vim.log.levels.INFO
@@ -1323,8 +1325,8 @@ function M.j(args)
 
 	local cmd = nil
 	if #args == 0 then
-		local default_cmd_str, success = runner.execute_command(
-			"jj config list ui.default-command",
+		local default_cmd_str, success = runner.execute(
+			{ "jj", "config", "list", "ui.default-command" },
 			"Error getting user's default command",
 			nil,
 			true
@@ -1364,7 +1366,7 @@ function M.j(args)
 			end
 		end,
 		new = function()
-			M.new({ show_log = true, args = remaining_args_str, with_input = false })
+			M.new({ show_log = true, args = remaining_args, with_input = false })
 		end,
 		rebase = function()
 			M.rebase()
@@ -1376,7 +1378,7 @@ function M.j(args)
 			M.redo()
 		end,
 		log = function()
-			M.log({ raw_flags = remaining_args_str ~= "" and remaining_args_str or nil })
+			M.log({ raw_flags = #remaining_args > 0 and remaining_args or nil })
 		end,
 		split = function()
 			local opts = {

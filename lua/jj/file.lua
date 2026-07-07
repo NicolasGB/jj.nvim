@@ -5,6 +5,7 @@ local runner = require("jj.core.runner")
 local buffer = require("jj.core.buffer")
 local utils = require("jj.utils")
 local parser = require("jj.core.parser")
+local jj_args = require("jj.core.args")
 
 --- @class jj.file.read_target_opts
 --- @field rev? string Revision to read the file from
@@ -70,8 +71,12 @@ end
 --- @return "le"|"be"|nil order
 local function unicode_width(fenc)
 	local f = fenc:lower():gsub("%-", "")
-	if f == "utf16le" or f == "ucs2le" then return 2, "le" end
-	if f == "utf32le" or f == "ucs4le" then return 4, "le" end
+	if f == "utf16le" or f == "ucs2le" then
+		return 2, "le"
+	end
+	if f == "utf32le" or f == "ucs4le" then
+		return 4, "le"
+	end
 	if f == "utf16be" or f == "ucs2be" or f == "utf16" or f == "ucs2" or f == "unicode" then
 		return 2, "be"
 	end
@@ -181,7 +186,7 @@ local function encode(lines, eol, enc)
 	local width, order = unicode_width(enc.fenc)
 	if width then
 		-- Always serialise via the little-endian variant,
-    -- see https://github.com/neovim/neovim/issues/40262.
+		-- see https://github.com/neovim/neovim/issues/40262.
 		local converted = vim.iconv(text, "utf-8", width == 2 and "utf-16le" or "utf-32le")
 		if not converted then
 			return nil, string.format("Could not convert content from utf-8 to '%s'", enc.fenc)
@@ -224,11 +229,15 @@ M._encode = encode
 --- @return boolean absent True when the path does not exist in `rev` (e.g. a
 ---				file added since `rev`).
 local function get_file_content(rev, path, enc)
-	local raw, ok, stderr = runner.execute_command_raw(
-		string.format("jj file show -r %s %s", vim.fn.shellescape(rev), vim.fn.shellescape(path)),
-		nil,
-		true
-	)
+	local cmd = {
+		"jj",
+		"file",
+		"show",
+		"-r",
+		rev,
+		jj_args.fileset(path),
+	}
+	local raw, ok, stderr = runner.execute_raw(cmd, nil, true)
 	if not ok or not raw then
 		local absent = stderr ~= nil and stderr:find("No such path", 1, true) ~= nil
 		return {}, false, false, enc or { fenc = "", bomb = false, ff = "unix" }, absent
@@ -238,7 +247,11 @@ local function get_file_content(rev, path, enc)
 		utils.notify(had_eol --[[@as string]], vim.log.levels.ERROR)
 		return {}, false, false, used_enc, false
 	end
-	return lines, had_eol --[[@as boolean]], true, used_enc, false
+	return lines,
+		had_eol, --[[@as boolean]]
+		true,
+		used_enc,
+		false
 end
 M.get_file_content = get_file_content
 
@@ -262,8 +275,15 @@ function M.read_target(opts)
 		enc = M.get_buf_encoding(buf)
 	end
 
-	local cmd = string.format("jj file show -r %s %s", vim.fn.shellescape(revision), vim.fn.shellescape(path))
-	runner.execute_command_raw_async(cmd, function(raw)
+	local cmd = {
+		"jj",
+		"file",
+		"show",
+		"-r",
+		revision,
+		jj_args.fileset(path),
+	}
+	runner.execute_raw_async(cmd, function(raw)
 		local lines, had_eol, used_enc = decode(raw, enc)
 		if not lines then
 			utils.notify(had_eol --[[@as string]], vim.log.levels.ERROR)
@@ -314,23 +334,31 @@ local function write_revision_file(buf, change_id, rel_path, force)
 	-- so the parent directory for rel_path already exists there.
 	local prog_config = 'merge-tools.jj-nvim-write.program="cp"'
 	-- json_encode produces valid TOML inline arrays.
-	local args_config = "merge-tools.jj-nvim-write.edit-args="
-		.. vim.fn.json_encode({ tmp, "$right/" .. rel_path })
+	local args_config = "merge-tools.jj-nvim-write.edit-args=" .. vim.fn.json_encode({ tmp, "$right/" .. rel_path })
 
-	local _, ok = runner.execute_command(
-		string.format(
-			"jj diffedit --from 'root()' --to %s --config %s --config %s --tool jj-nvim-write -- %s",
-			vim.fn.shellescape(change_id),
-			vim.fn.shellescape(prog_config),
-			vim.fn.shellescape(args_config),
-			vim.fn.shellescape(rel_path)
-		),
-		"jj: failed to edit revision"
-	)
+	local cmd = {
+		"jj",
+		"diffedit",
+		"--from",
+		"root()",
+		"--to",
+		change_id,
+		"--config",
+		prog_config,
+		"--config",
+		args_config,
+		"--tool",
+		"jj-nvim-write",
+		"--",
+		jj_args.fileset(rel_path),
+	}
+	local _, ok = runner.execute(cmd, "jj: failed to edit revision")
 
 	os.remove(tmp)
 
-	if not ok then return end
+	if not ok then
+		return
+	end
 	vim.bo[buf].modified = false
 	utils.notify(string.format("Written to revision %s", change_id))
 end
@@ -347,13 +375,20 @@ function M.open_target(opts)
 		return
 	end
 
-	local raw_ids, ok = runner.execute_command(
-		string.format([[jj log --no-graph -r %s -T 'change_id ++ "\n"' --quiet]], vim.fn.shellescape(revision)),
-		"jj: failed to resolve revision",
-		nil,
-		true
-	)
-	if not ok or not raw_ids then return end
+	local cmd = {
+		"jj",
+		"log",
+		"--no-graph",
+		"-r",
+		revision,
+		"-T",
+		'change_id ++ "\n"',
+		"--quiet",
+	}
+	local raw_ids, ok = runner.execute(cmd, "jj: failed to resolve revision", nil, true)
+	if not ok or not raw_ids then
+		return
+	end
 	local ids = vim.split(vim.trim(raw_ids), "\n", { trimempty = true })
 	if #ids ~= 1 then
 		utils.notify(string.format("Revision '%s' is ambiguous", revision), vim.log.levels.ERROR)
@@ -405,12 +440,14 @@ local function complete_target(arglead)
 		return {}
 	end
 
-	local out, ok = runner.execute_command(
-		string.format("jj file list -r %s", vim.fn.shellescape(rev)),
-		nil,
-		nil,
-		true
-	)
+	local cmd = {
+		"jj",
+		"file",
+		"list",
+		"-r",
+		rev,
+	}
+	local out, ok = runner.execute(cmd, nil, nil, true)
 	if not ok or not out then
 		return {}
 	end
@@ -438,7 +475,9 @@ function M.register_command()
 		callback = function()
 			local name = vim.api.nvim_buf_get_name(0)
 			local change_id, path = utils.parse_jj_uri(name)
-			if not change_id or not path then return end
+			if not change_id or not path then
+				return
+			end
 			-- Keep reloads of an added-file diff buffer empty rather than erroring.
 			local lines, had_eol, ok_read, used_enc, absent = get_file_content(change_id, path)
 			if not ok_read and not absent then

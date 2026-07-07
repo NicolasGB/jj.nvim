@@ -1,6 +1,7 @@
 local utils = require("jj.utils")
 local runner = require("jj.core.runner")
 local parser = require("jj.core.parser")
+local jj_args = require("jj.core.args")
 
 --- @class jj.picker
 
@@ -12,7 +13,7 @@ local parser = require("jj.core.parser")
 --- @field file string The current path of the file
 --- @field status string JJ-style status code (e.g. "M ", "R ") for picker formatting
 --- @field rename? string Previous path when this item is a rename
---- @field diff_cmd string The command to get the diff of the file
+--- @field diff_cmd string[] The command to get the diff of the file
 --- @field confirm_action string The default picker action for the item
 
 --- @class jj.picker.log_line
@@ -97,7 +98,7 @@ end
 --- Gets the files in the current jj repository
 --- @return jj.picker.file[]|nil A list of files with their changes or nil if not in a jj repo
 local function get_files()
-	local diff_ouptut, ok = runner.execute_command("jj --no-pager diff --summary --quiet")
+	local diff_ouptut, ok = runner.execute({ "jj", "--no-pager", "diff", "--summary", "--quiet" })
 	if not ok then
 		return
 	end
@@ -121,7 +122,7 @@ local function get_files()
 				text = line:sub(3),
 				file = file_path,
 				status = change .. " ",
-				diff_cmd = string.format("jj --no-pager diff %s", utils.escape_fileset(file_path)),
+				diff_cmd = { "jj", "--no-pager", "diff", jj_args.fileset(file_path) },
 				confirm_action = "open_and_diff",
 			}
 
@@ -168,13 +169,18 @@ end
 ---@param file_path string The path of the file to log
 ---@return jj.picker.log_line[]|nil A list of log lines or nil if not in a jj repo
 local function log_history(file_path)
-	local format = table.concat({
-		"jj --no-pager log %s",
-		"-r 'all() ~ @'",
+	local cmd = {
+		"jj",
+		"log",
+		"--no-pager",
+		"-r",
+		"all() ~ @",
 		"--no-graph",
-		[[ -T 'change_id.shortest() ++ "\t" ++ coalesce(author.name(), "(no author)") ++ "\t" ++ committer.timestamp() ++ "\t" ++ coalesce(description.first_line(), "(no description)") ++ "\n"' ]],
-	}, " ")
-	local output, ok = runner.execute_command(string.format(format, utils.escape_fileset(file_path)))
+		"-T",
+		[[change_id.shortest() ++ "\t" ++ coalesce(author.name(), "(no author)") ++ "\t" ++ committer.timestamp() ++ "\t" ++ coalesce(description.first_line(), "(no description)") ++ "\n"]],
+		jj_args.fileset(file_path),
+	}
+	local output, ok = runner.execute(cmd)
 	if not ok then
 		return
 	end
@@ -205,7 +211,7 @@ local function log_history(file_path)
 					"jj",
 					"--no-pager",
 					"diff",
-					utils.escape_fileset(file_path),
+					jj_args.fileset(file_path),
 					"-r",
 					rev,
 					"--stat",
@@ -245,8 +251,8 @@ function M.file_history()
 				return
 			end
 
-			local _, ok = runner.execute_command(
-				string.format("jj edit %s --ignore-immutable", item.rev),
+			local _, ok = runner.execute(
+				{ "jj", "edit", item.rev, "--ignore-immutable" },
 				string.format("could not edit revision '%s'", item.rev)
 			)
 
@@ -261,9 +267,17 @@ end
 --- Gets the list of conflicted revisions
 --- @return jj.picker.conflict[]|nil A list of conflicted revisions or nil if not in a jj repo
 local function get_conflicts()
-	local cmd =
-		[[jj log -r 'conflicts()' --no-graph -T 'change_id.shortest() ++ "\t" ++ coalesce(author.name(), "(no author)") ++ "\t" ++ coalesce(description.first_line(), "(no description)") ++ "\n"']]
-	local output, ok = runner.execute_command(cmd)
+	local cmd = {
+		"jj",
+		"log",
+		"-r",
+		"conflicts()",
+		"--no-graph",
+		"-T",
+		[[change_id.shortest() ++ "\t" ++ coalesce(author.name(), "(no author)") ++ "\t" ++ coalesce(description.first_line(), "(no description)") ++ "\n"]],
+	}
+
+	local output, ok = runner.execute(cmd)
 	if not ok then
 		return
 	end
@@ -337,9 +351,17 @@ end
 --- it.
 --- @return jj.picker.conflict_section[]|nil A list of conflict sections or nil if not in a jj repo
 local function get_conflict_sections()
-	local output, ok, _ = runner.execute_command_raw(
-		[[jj log --no-graph --quiet -r @ -T 'self.conflicted_files().map(|e| e.path().display() ++ "\0" ++ e.path().absolute() ++ "\0")']]
-	)
+	local cmd = {
+		"jj",
+		"log",
+		"--no-graph",
+		"--quiet",
+		"-r",
+		"@",
+		"-T",
+		[[self.conflicted_files().map(|e| e.path().display() ++ "\0" ++ e.path().absolute() ++ "\0")]],
+	}
+	local output, ok, _ = runner.execute_raw(cmd)
 	if not ok then
 		return
 	end
