@@ -436,35 +436,35 @@ print("\n=== Running parse_default_cmd tests ===\n")
 
 run_test("parse_default_cmd: parses config list array output", function()
 	local output = 'ui.default-command = ["log", "--no-pager", "--limit", "18"]'
-	assert_table_equals({ "log", "--no-pager", "--limit", "18" }, parser.parse_default_cmd(output))
+	assert_table_equals({ "log", "--no-pager", "--limit", "18" }, parser.parse_json_command(output))
 end)
 
 run_test("parse_default_cmd: parses config list single string output", function()
 	local output = 'ui.default-command = "log"'
-	assert_table_equals({ "log" }, parser.parse_default_cmd(output))
+	assert_table_equals({ "log" }, parser.parse_json_command(output))
 end)
 
 run_test("parse_default_cmd: parses bare array (config get format)", function()
 	local output = '["log", "--limit", "10"]'
-	assert_table_equals({ "log", "--limit", "10" }, parser.parse_default_cmd(output))
+	assert_table_equals({ "log", "--limit", "10" }, parser.parse_json_command(output))
 end)
 
 run_test("parse_default_cmd: parses bare string (config get format)", function()
 	local output = '"log"'
-	assert_table_equals({ "log" }, parser.parse_default_cmd(output))
+	assert_table_equals({ "log" }, parser.parse_json_command(output))
 end)
 
 run_test("parse_default_cmd: parses unquoted string", function()
 	local output = "log"
-	assert_table_equals({ "log" }, parser.parse_default_cmd(output))
+	assert_table_equals({ "log" }, parser.parse_json_command(output))
 end)
 
 run_test("parse_default_cmd: returns nil for empty string", function()
-	assert_is_nil(parser.parse_default_cmd(""))
+	assert_is_nil(parser.parse_json_command(""))
 end)
 
 run_test("parse_default_cmd: returns nil for nil", function()
-	assert_is_nil(parser.parse_default_cmd(nil))
+	assert_is_nil(parser.parse_json_command(nil))
 end)
 
 print("\n=== Running parse_push_args tests ===\n")

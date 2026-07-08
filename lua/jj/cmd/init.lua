@@ -1326,13 +1326,13 @@ function M.j(args)
 	local cmd = nil
 	if #args == 0 then
 		local default_cmd_str, success = runner.execute(
-			{ "jj", "config", "list", "ui.default-command" },
+			{ "jj", "config", "list", "ui.default-command", "-T", 'json(value) ++ "\\n"' },
 			"Error getting user's default command",
 			nil,
 			true
 		)
 		if success then
-			cmd = parser.parse_default_cmd(default_cmd_str or "")
+			cmd = parser.parse_json_command(default_cmd_str or "")
 		end
 		-- jj's built-in default command is "log"
 		if cmd == nil then
