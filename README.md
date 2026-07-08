@@ -55,6 +55,7 @@
 - [Documentation](#documentation)
 - [FAQ](#faq)
 - [License](#license)
+- [Support](#support)
 
 ## Current Features
 
@@ -1354,3 +1355,15 @@ Once the plugin is more complete I'll write docs for each of the commands.
 ## License
 
 [MIT](License)
+
+## Support
+
+If `jj.nvim` improves your workflow, consider supporting its development.
+
+Your support helps me spend more time improving the plugin, fixing bugs, and adding new features.
+
+<a href="https://buymeacoffee.com/nicolasgb" target="_blank">
+  <img src="https://img.buymeacoffee.com/button-api/?text=Buy+me+a+coffee&emoji=☕&slug=nicolasgb&button_colour=FFDD00&font_colour=000000&font_family=Poppins&outline_colour=000000&coffee_colour=ffffff" alt="Buy Me A Coffee" height="50">
+</a>
+
+If you can't contribute financially, starring the repository and sharing it with other Jujutsu users is just as appreciated.
