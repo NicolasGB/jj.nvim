@@ -432,6 +432,69 @@ run_test("scan_conflict_sections: empty file yields empty list", function()
 	assert_table_equals({}, parser.scan_conflict_sections("a.txt", "/abs/a.txt", {}))
 end)
 
+print("\n=== Running parse_file_info_from_status_line tests ===\n")
+
+run_test("status line: parses regular modified file", function()
+	assert_table_equals(
+		{ old_path = "src/main.rs", new_path = "src/main.rs", is_rename = false },
+		parser.parse_file_info_from_status_line("M src/main.rs")
+	)
+end)
+
+run_test("status line: parses top-level brace rename", function()
+	assert_table_equals(
+		{ old_path = "old.txt", new_path = "new.txt", is_rename = true },
+		parser.parse_file_info_from_status_line("R {old.txt => new.txt}")
+	)
+end)
+
+run_test("status line: parses rename with brace group at end", function()
+	assert_table_equals(
+		{ old_path = "dir/old.txt", new_path = "dir/new.txt", is_rename = true },
+		parser.parse_file_info_from_status_line("R dir/{old.txt => new.txt}")
+	)
+end)
+
+run_test("status line: parses rename with brace group mid-path", function()
+	assert_table_equals({
+		old_path = "Business/OAuth/Exceptions/OAuth2RefreshTokenExpiredException.php",
+		new_path = "Business/OAuth2/Exceptions/OAuth2RefreshTokenExpiredException.php",
+		is_rename = true,
+	}, parser.parse_file_info_from_status_line(
+		"R Business/{OAuth => OAuth2}/Exceptions/OAuth2RefreshTokenExpiredException.php"
+	))
+end)
+
+run_test("status line: parses rename with empty old side mid-path", function()
+	assert_table_equals({
+		old_path = "Business/Exceptions/Error.php",
+		new_path = "Business/OAuth2/Sub/Exceptions/Error.php",
+		is_rename = true,
+	}, parser.parse_file_info_from_status_line("R Business/{ => OAuth2/Sub}/Exceptions/Error.php"))
+end)
+
+run_test("status line: parses rename with empty new side mid-path", function()
+	assert_table_equals({
+		old_path = "Business/OAuth/Exceptions/Error.php",
+		new_path = "Business/Exceptions/Error.php",
+		is_rename = true,
+	}, parser.parse_file_info_from_status_line("R Business/{OAuth => }/Exceptions/Error.php"))
+end)
+
+run_test("status line: parses rename with empty side at top level", function()
+	assert_table_equals(
+		{ old_path = "a.txt", new_path = "dir/a.txt", is_rename = true },
+		parser.parse_file_info_from_status_line("R { => dir}/a.txt")
+	)
+end)
+
+run_test("status line: parses copied file with brace group", function()
+	assert_table_equals(
+		{ old_path = "dir/old.txt", new_path = "dir/new.txt", is_rename = true },
+		parser.parse_file_info_from_status_line("C dir/{old.txt => new.txt}")
+	)
+end)
+
 print("\n=== Running parse_default_cmd tests ===\n")
 
 run_test("parse_default_cmd: parses config list array output", function()
