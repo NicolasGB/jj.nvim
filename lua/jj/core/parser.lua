@@ -1,33 +1,47 @@
 --- @class jj.core.parser
 local M = {}
 
---- Parse the default command from jj config
+--- Checks if the given value is a list of strings.
+local function is_string_list(value)
+	if type(value) ~= "table" then
+		return false
+	end
+	for _, item in ipairs(value) do
+		if type(item) ~= "string" then
+			return false
+		end
+	end
+	return true
+end
+
+--- Parses and converts the given JSON command output into an array of command arguments.
+--- the command can either be a single string or an array of strings. If the output is empty or invalid, returns nil.
 --- @param cmd_output string The output from `jj config get ui.default-command`
 --- @return table|nil args Array of command arguments, or nil if parsing fails
-function M.parse_default_cmd(cmd_output)
+function M.parse_json_command(cmd_output)
 	if not cmd_output or cmd_output == "" then
 		return nil
 	end
 
-	-- Remove whitespace and strip "key = " prefix from `jj config list` output
+	-- Remove whitespace
 	local trimmed_cmd = vim.trim(cmd_output)
-	trimmed_cmd = trimmed_cmd:gsub("^[%w._-]+ = ", "")
+	if trimmed_cmd == "" then
+		return nil
+	end
 
-	-- Try to parse as TOML array: ["item1", "item2", ...]
-	-- Pattern "%[(.*)%]" captures everything between square brackets
-	local array_items = trimmed_cmd:match("%[(.*)%]")
-	if array_items then
-		local args = {}
-		-- Pattern '"([^"]+)"' captures content between double quotes (non-greedy)
-		for item in array_items:gmatch('"([^"]+)"') do
-			table.insert(args, item)
+	if trimmed_cmd:match("^Warning:%s+No matching config key") then
+		return nil
+	end
+
+	local ok, decoded = pcall(vim.json.decode, trimmed_cmd)
+	if ok then
+		if type(decoded) == "string" then
+			return decoded ~= "" and { decoded } or nil
 		end
-		return #args > 0 and args or nil
-	else
-		-- Single string value, remove surrounding quotes if present
-		-- Pattern '^"?(.-)"?$' optionally matches quotes at start/end, captures content
-		local single_value = trimmed_cmd:match('^"?(.-)"?$')
-		return single_value and { single_value } or nil
+		if is_string_list(decoded) then
+			return #decoded > 0 and decoded or nil
+		end
+		return nil
 	end
 end
 
