@@ -75,24 +75,20 @@ function M.parse_file_info_from_status_line(line)
 
 	line = vim.trim(line)
 
-	-- Handle renamed files in nested path form:
-	--   R dir/{old_name => new_name}
-	local dir_path, old_name, new_name = line:match("^R%s+(.*)/{(.*)%s=>%s([^}]+)}$")
-	if dir_path and old_name and new_name then
-		return {
-			old_path = dir_path .. "/" .. old_name,
-			new_path = dir_path .. "/" .. new_name,
-			is_rename = true,
-		}
-	end
-
-	-- Handle renamed files in top-level brace form:
+	-- Handle renamed/copied files with a brace group anywhere in the path,
+	-- where either side may be empty:
 	--   R {old_name => new_name}
-	local old_top, new_top = line:match("^R%s+{(.-)%s=>%s([^}]+)}$")
-	if old_top and new_top then
+	--   R dir/{old_name => new_name}/rest
+	--   R dir/{ => new_dir}/rest
+	local prefix, old_part, new_part, suffix = line:match("^[RC]%s+(.-){(.-) => (.-)}(.*)$")
+	if prefix then
+		local function join(part)
+			local path = (prefix .. part .. suffix):gsub("//", "/"):gsub("^/", "")
+			return path
+		end
 		return {
-			old_path = old_top,
-			new_path = new_top,
+			old_path = join(old_part),
+			new_path = join(new_part),
 			is_rename = true,
 		}
 	end
