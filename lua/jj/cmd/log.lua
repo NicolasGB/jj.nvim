@@ -12,9 +12,7 @@ local log_selected_hl_group = "JJLogSelectedHlGroup"
 local log_selected_ns_id = vim.api.nvim_create_namespace(log_selected_hl_group)
 local log_special_mode_target_hl_group = "JJLogSpecialModeTargetHlGroup"
 local log_special_mode_target_ns_id = vim.api.nvim_create_namespace(log_special_mode_target_hl_group)
-local rebase_mode_autocmd_id = nil
-local last_rebase_target_line = nil
-local HIGHLIGHT_RANGE = 2 -- Revision line + description line
+local special_mode_autocmd_id = nil
 
 --- @class jj.cmd.log_opts
 --- @field summary? boolean
@@ -75,7 +73,7 @@ local function apply_nowait_to_unique_keymaps(keymaps)
 
 	for _, keymap in ipairs(split_keymaps) do
 		local lhs = keymap.lhs
-		local mode = keymap.modes
+		local mode = keymap.modes or "n"
 		lhs_by_mode[mode] = lhs_by_mode[mode] or {}
 		table.insert(lhs_by_mode[mode], lhs)
 	end
@@ -102,16 +100,67 @@ function M.init_log_highlights()
 	vim.api.nvim_set_hl(0, log_special_mode_target_hl_group, cfg.targeted)
 end
 
+--- Get the next revision line in the log buffer after the current cursor position.
+--- @param pos integer? Optional line number to start searching from. If not provided, uses the current cursor line.
+--- @return integer? The line number of the next revision, or nil if none found. 1-indexed.
+local function get_next_revision_line(pos)
+	local buf = terminal.state.buf or vim.api.nvim_get_current_buf()
+	local total_lines = vim.api.nvim_buf_line_count(buf)
+
+	-- Start scanning from the line after the current revision line
+	local start = pos
+	if not start then
+		start = vim.api.nvim_win_get_cursor(0)[1] + 1 -- Add 1 to start looking  for the next rev and not the actual
+	else
+		start = start + 1
+	end
+
+	for line = start, total_lines do
+		local content = vim.api.nvim_buf_get_lines(buf, line - 1, line, false)[1]
+		if parser.get_revset(content) then
+			return line
+		end
+	end
+
+	return nil
+end
+
+--- Get the previous revision line in the log buffer before the current cursor position.
+--- @param pos integer? Optional line number to start searching from. If not provided, uses the current cursor line. 1-indexed.
+--- @return integer? The line number of the previous revision, or nil if none found. 1-indexed.
+local function get_prev_revision_line(pos)
+	local buf = terminal.state.buf or vim.api.nvim_get_current_buf()
+	local start = pos
+	if not start then
+		start = vim.api.nvim_win_get_cursor(0)[1]
+		-- Remove the current line to start looking for the previous rev and not the actual if not on the first line to avoid out of bounds
+		if start ~= 1 then
+			start = start - 1
+		end
+	end
+
+	for line = start, 1, -1 do
+		local content = vim.api.nvim_buf_get_lines(buf, line - 1, line, false)[1]
+		if parser.get_revset(content) then
+			return line
+		end
+	end
+
+	return nil
+end
+
 --- Find the revision line under cursor, handling description lines
+---@return integer The line number of the revision line under the cursor, or the previous line if the current line is a description.
+---@return string|nil The revset of the revision line under the cursor, or nil if not found. 1-indexed.
 local function get_revset_line()
 	local buf = terminal.state.buf or vim.api.nvim_get_current_buf()
-	local current_line_num = vim.api.nvim_win_get_cursor(0)[1] - 1
+	local current_line_num = vim.api.nvim_win_get_cursor(0)[1]
 	local line = vim.api.nvim_get_current_line()
 	local revset_line = current_line_num
 
 	if not parser.get_revset(line) and current_line_num > 0 then
-		revset_line = current_line_num - 1
-		line = vim.api.nvim_buf_get_lines(buf, revset_line, revset_line + 1, false)[1]
+		revset_line = get_prev_revision_line() or current_line_num
+		line = vim.api.nvim_buf_get_lines(buf, revset_line - 1, revset_line, false)[1]
 	end
 
 	return revset_line, parser.get_revset(line)
@@ -139,46 +188,53 @@ local function get_highlight_marks()
 
 	if mode == "v" or mode == "V" then
 		-- Visual mode: get selected lines
-		local start_line = vim.fn.line("v")
-		local end_line = vim.fn.line(".")
-		if start_line > end_line then
-			start_line, end_line = end_line, start_line
+		local selected_start_line = vim.fn.line("v")
+		local selected_end_line = vim.fn.line(".")
+		if selected_start_line > selected_end_line then
+			selected_start_line, selected_end_line = selected_end_line, selected_start_line
 		end
 
-		local lines = vim.api.nvim_buf_get_lines(buf, start_line - 1, end_line, false)
-		for i, line in ipairs(lines) do
-			-- If the current line has a revset highlight it with the following one (which is the description)
-			if parser.get_revset(line) then
-				-- Compute the actual line number
-				local mark_lstart = start_line + i - 2 -- marks expect 0 api since, start-line and ipars are both 1 indexed we need to remove 2 to transform to 0-index (For future self)
-				local mark_lend = start_line + i - 1 -- We highlight start + description so we actually want to stop at the next line included
-				local next_line = lines[i + 1] -- Get the next line contents
-				if not next_line then
-					-- Only fetch if it's the last selected line and has a revset
-					local next_line_num = start_line + i
-					next_line = vim.api.nvim_buf_get_lines(buf, next_line_num - 1, next_line_num, false)[1] or ""
-				end
-
-				table.insert(marks, {
-					line = mark_lstart,
-					col = 0, -- Maybe at some  point will make the parser say where the data starts but one thing at the time
-					end_line = mark_lend,
-					end_col = #next_line,
-				})
-			end
+		-- Get the lines based on revision content
+		local start_line = get_prev_revision_line(selected_start_line) or selected_start_line
+		local end_line = get_next_revision_line(selected_end_line)
+		if not end_line then
+			end_line = vim.api.nvim_buf_line_count(buf)
+		else
+			end_line = end_line - 1 -- Remove 1 more to highlight until the line before the next revision line, which is the description line
 		end
+
+		local end_col = vim.api.nvim_buf_get_lines(buf, end_line - 1, end_line, false)[1]
+		table.insert(marks, {
+			line = start_line - 1, -- Remove 1 since 1-indexed
+			col = 0,
+			end_line = end_line - 1, -- Remove 1 since 1-indexed
+			end_col = end_col and #end_col or 0, -- If end_col is nil, set it to 0
+		})
 	else
 		--
 		-- Normal mode: current or previous line
 		local revset_line, rev = get_revset_line()
 		if rev then
 			-- Get the next line (description)
-			local next_line = vim.api.nvim_buf_get_lines(buf, revset_line + 1, revset_line + 2, false)[1] or ""
+			local end_line = get_next_revision_line()
+			if not end_line then
+				-- If there is no next revision line, we highlight until the end of the buffer
+				end_line = vim.api.nvim_buf_line_count(buf)
+			else
+				end_line = end_line - 1 -- We want to highlight until the line before the next revision line, which is the description line
+			end
+
+			-- If not the first line
+			if revset_line >= 1 then
+				revset_line = revset_line - 1 -- Remove 1 since 1-indexed
+			end
+
+			local end_line_length = vim.api.nvim_buf_get_lines(buf, end_line - 1, end_line, false)[1] or ""
 			table.insert(marks, {
 				line = revset_line,
 				col = 0,
-				end_line = revset_line + 1,
-				end_col = #next_line,
+				end_line = end_line - 1, -- Remove 1 since 1-indexed
+				end_col = #end_line_length,
 			})
 		end
 	end
@@ -187,31 +243,32 @@ local function get_highlight_marks()
 end
 
 --- Apply highlight to target revision
+--- @param buf integer Buffer number
+--- @param revset_line integer Line number of the revision to highlight (1-indexed)
+--- @param hl_group string Highlight group to use
 local function apply_target_highlight(buf, revset_line, hl_group)
+	local end_line = get_next_revision_line()
+	if not end_line then
+		-- If the last line get the end
+		end_line = vim.api.nvim_buf_line_count(buf)
+	else
+		end_line = end_line - 1 -- Remove 1 since 1-indexed
+	end
 	vim.api.nvim_buf_set_extmark(
 		buf,
 		log_special_mode_target_ns_id,
-		revset_line,
+		revset_line - 1, -- Remove 1 since it's 1-indexed
 		0,
-		{ end_line = revset_line + HIGHLIGHT_RANGE, end_col = 0, hl_group = hl_group }
+		{ end_line = end_line, end_col = 0, hl_group = hl_group }
 	)
-	last_rebase_target_line = revset_line
 end
 
 --- Clear previous target highlight
 local function clear_target_highlight(buf)
-	if last_rebase_target_line ~= nil then
-		vim.api.nvim_buf_clear_namespace(
-			buf,
-			log_special_mode_target_ns_id,
-			last_rebase_target_line,
-			last_rebase_target_line + HIGHLIGHT_RANGE
-		)
-	end
-	last_rebase_target_line = nil
+	vim.api.nvim_buf_clear_namespace(buf, log_special_mode_target_ns_id, 0, -1)
 end
 
---- Update rebase target highlight on cursor movement
+--- Update special mode target highlight on cursor movement
 local function update_special_mode_target_highlight()
 	local buf = terminal.state.buf
 	if not buf then
@@ -226,7 +283,9 @@ local function update_special_mode_target_highlight()
 	end
 
 	-- Only highlight if rev is not in selection
-	local is_in_selection = vim.b.jj_rebase_revsets and string.find(vim.b.jj_rebase_revsets, rev, 1, true)
+	local selected_revsets = vim.b.jj_rebase_revsets or vim.b.jj_squash_revsets or vim.b.jj_duplicate_revsets
+
+	local is_in_selection = selected_revsets and string.find(selected_revsets, rev, 1, true)
 	if not is_in_selection then
 		apply_target_highlight(buf, revset_line, log_special_mode_target_hl_group)
 	end
@@ -252,6 +311,11 @@ local function extract_revsets_from_terminal_buffer()
 		local end_line = vim.fn.line(".")
 		if start_line > end_line then
 			start_line, end_line = end_line, start_line
+		end
+
+		-- Check if the start line has a revset if not we fetch until the previous rev
+		if not parser.get_revset(vim.api.nvim_buf_get_lines(buf, start_line - 1, start_line, false)[1]) then
+			start_line = get_prev_revision_line(start_line) or 1
 		end
 
 		local lines = vim.api.nvim_buf_get_lines(buf, start_line - 1, end_line, false)
@@ -1196,21 +1260,17 @@ end
 --- Move cursor to the next or previous revision line in the log buffer.
 --- @param direction integer 1 for next, -1 for previous
 local function select_revision(direction)
-	local buf = terminal.state.buf or vim.api.nvim_get_current_buf()
-	local total_lines = vim.api.nvim_buf_line_count(buf)
+	local target_line
+	if direction == 1 then
+		target_line = get_next_revision_line()
+	elseif direction == -1 then
+		target_line = get_prev_revision_line()
+	else
+		return
+	end
 
-	-- Start scanning from the line after/before the current revision line
-	local revset_line, _ = get_revset_line()
-	local start = revset_line + 1 + direction -- revset_line is 0-indexed; convert to 1-indexed then step
-
-	local line = start
-	while line >= 1 and line <= total_lines do
-		local content = vim.api.nvim_buf_get_lines(buf, line - 1, line, false)[1]
-		if parser.get_revset(content) then
-			buffer.set_cursor(buf, { line, 0 })
-			return
-		end
-		line = line + direction
+	if target_line then
+		vim.api.nvim_win_set_cursor(0, { target_line, 0 })
 	end
 end
 
@@ -1569,21 +1629,20 @@ function M.transition_mode(target_mode)
 	local new_keymaps = M.get_keymaps_for_mode(target_mode)
 	terminal.replace_terminal_keymaps(new_keymaps)
 
-	-- Set up or tear down rebase mode autocmd
+	-- Set up or tear down special mode autocmd
 	if target_mode ~= "normal" then
-		rebase_mode_autocmd_id = vim.api.nvim_create_autocmd("CursorMoved", {
+		special_mode_autocmd_id = vim.api.nvim_create_autocmd("CursorMoved", {
 			buffer = terminal.state.buf,
 			callback = update_special_mode_target_highlight,
 		})
 		-- Highlight initial position
 		update_special_mode_target_highlight()
-	elseif rebase_mode_autocmd_id then
-		vim.api.nvim_del_autocmd(rebase_mode_autocmd_id)
-		rebase_mode_autocmd_id = nil
+	elseif special_mode_autocmd_id then
+		vim.api.nvim_del_autocmd(special_mode_autocmd_id)
+		special_mode_autocmd_id = nil
 		-- Clear target highlight
 		local buf = terminal.state.buf or 0
 		vim.api.nvim_buf_clear_namespace(buf, log_special_mode_target_ns_id, 0, -1)
-		last_rebase_target_line = nil
 	end
 
 	-- Update buffer mode state
