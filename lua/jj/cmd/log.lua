@@ -188,11 +188,7 @@ local function get_highlight_marks()
 
 	if mode == "v" or mode == "V" then
 		-- Visual mode: get selected lines
-		local selected_start_line = vim.fn.line("v")
-		local selected_end_line = vim.fn.line(".")
-		if selected_start_line > selected_end_line then
-			selected_start_line, selected_end_line = selected_end_line, selected_start_line
-		end
+		local _, selected_start_line, selected_end_line = utils.get_visual_selection(buf)
 
 		-- Get the lines based on revision content
 		local start_line = get_prev_revision_line(selected_start_line) or selected_start_line

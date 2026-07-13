@@ -10,35 +10,54 @@ local jj_args = require("jj.core.args")
 --- Handle restoring a file from the jj status buffer
 --- Supports both renamed and non-renamed files
 function M.handle_status_restore()
-	local file_info = parser.parse_file_info_from_status_line(vim.api.nvim_get_current_line())
-	if not file_info then
+	local lines = utils.get_visual_selection(terminal.state.buf)
+	if not lines then
+		lines = { vim.api.nvim_get_current_line() }
+	end
+
+	--- @type jj.core.parser.status_file[]
+	local files = {}
+
+	for _, line in ipairs(lines) do
+		local file_info = parser.parse_file_info_from_status_line(line)
+		if file_info then
+			table.insert(files, file_info)
+		end
+	end
+
+	-- Return early if no files were found in the selection
+	if #files == 0 then
+		utils.notify("No files selected to restore", vim.log.levels.WARN)
 		return
 	end
 
-	if file_info.is_rename then
-		local restore_cmd = {
-			"jj",
-			"restore",
-			"--from",
-			"@-",
-			jj_args.fileset(file_info.old_path),
-			jj_args.fileset(file_info.new_path),
-		}
-
-		local _, restore_success = runner.execute(restore_cmd, "Failed to restore original file")
-		if restore_success then
-			utils.notify("Reverted rename: " .. file_info.new_path .. " -> " .. file_info.old_path, vim.log.levels.INFO)
-			require("jj.cmd").status()
+	-- For each file found restore it
+	local cmd = { "jj", "restore" }
+	for _, file in ipairs(files) do
+		if file.is_rename then
+			-- If it's a rename add both old and new paths to the restore command
+			vim.list_extend(cmd, { jj_args.fileset(file.old_path), jj_args.fileset(file.new_path) })
+		else
+			table.insert(cmd, jj_args.fileset(file.old_path))
 		end
-	else
-		-- For non-renamed files, use regular restore
-		local restore_cmd = { "jj", "restore", jj_args.fileset(file_info.old_path) }
+	end
 
-		local _, success = runner.execute(restore_cmd, "Failed to restore")
-		if success then
-			utils.notify("Restored: `" .. file_info.old_path .. "`", vim.log.levels.INFO)
-			require("jj.cmd").status()
+	local _, restore_success = runner.execute(cmd, "Failed to restore original file")
+	if restore_success then
+		local notif_msg = "Restored file:\n"
+		if #files > 1 then
+			notif_msg = "Restored files:\n"
 		end
+
+		for _, file in ipairs(files) do
+			if file.is_rename then
+				notif_msg = notif_msg .. "- `" .. file.old_path .. "` -> `" .. file.new_path .. "`\n"
+			else
+				notif_msg = notif_msg .. "- `" .. file.old_path .. "`\n"
+			end
+		end
+		utils.notify(notif_msg, vim.log.levels.INFO)
+		M.status() -- Refresh the status buffer after restoring files
 	end
 end
 
@@ -73,14 +92,18 @@ end
 function M.status_keymaps()
 	local cmd = require("jj.cmd")
 	local cfg = cmd.config.keymaps.status or {}
+
+	--- @type jj.cmd.keymap_specs
 	local specs = {
 		open_file = {
 			desc = "Open file under cursor",
 			handler = M.handle_status_enter,
+			modes = { "n" },
 		},
 		restore_file = {
 			desc = "Restore file under cursor",
 			handler = M.handle_status_restore,
+			modes = { "n", "v" },
 		},
 	}
 

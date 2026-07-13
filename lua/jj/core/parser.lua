@@ -1,4 +1,10 @@
 --- @class jj.core.parser
+
+--- @class jj.core.parser.status_file
+--- @field old_path string The original path of the file
+--- @field new_path string The new path of the file (if renamed)
+--- @field is_rename boolean Whether the file was renamed
+
 local M = {}
 
 --- Checks if the given value is a list of strings.
@@ -67,7 +73,7 @@ end
 
 --- Parse the current line in the jj status buffer to extract file information.
 --- Handles renamed files and regular status lines.
---- @return {old_path : string, new_path : string, is_rename : boolean}|nil A table with , or nil if parsing fails
+--- @return jj.core.parser.status_file|nil A table with , or nil if parsing fails
 function M.parse_file_info_from_status_line(line)
 	if not line then
 		return nil
