@@ -466,7 +466,10 @@ function M.handle_log_new(flag, ignore_immut)
 			table.insert(cmd, rev)
 		end
 	else
-		table.insert(cmd, revsets)
+		-- Revsets should always be inserted 1 by one
+		for rev in revsets:gmatch("%S+") do
+			table.insert(cmd, rev)
+		end
 	end
 	if ignore_immut then
 		table.insert(cmd, "--ignore-immutable")
@@ -475,7 +478,7 @@ function M.handle_log_new(flag, ignore_immut)
 	runner.execute_async(cmd, function()
 		utils.notify(string.format(cfg.ok, revsets), vim.log.levels.INFO)
 		-- Refresh the log buffer after creating the change.
-		require("jj.cmd").log()
+		M.log()
 	end, string.format(cfg.err, revsets))
 end
 

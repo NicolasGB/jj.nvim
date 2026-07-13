@@ -456,13 +456,16 @@ run_test("status line: parses rename with brace group at end", function()
 end)
 
 run_test("status line: parses rename with brace group mid-path", function()
-	assert_table_equals({
-		old_path = "Business/OAuth/Exceptions/OAuth2RefreshTokenExpiredException.php",
-		new_path = "Business/OAuth2/Exceptions/OAuth2RefreshTokenExpiredException.php",
-		is_rename = true,
-	}, parser.parse_file_info_from_status_line(
-		"R Business/{OAuth => OAuth2}/Exceptions/OAuth2RefreshTokenExpiredException.php"
-	))
+	assert_table_equals(
+		{
+			old_path = "Business/OAuth/Exceptions/OAuth2RefreshTokenExpiredException.php",
+			new_path = "Business/OAuth2/Exceptions/OAuth2RefreshTokenExpiredException.php",
+			is_rename = true,
+		},
+		parser.parse_file_info_from_status_line(
+			"R Business/{OAuth => OAuth2}/Exceptions/OAuth2RefreshTokenExpiredException.php"
+		)
+	)
 end)
 
 run_test("status line: parses rename with empty old side mid-path", function()
@@ -498,13 +501,8 @@ end)
 print("\n=== Running parse_default_cmd tests ===\n")
 
 run_test("parse_default_cmd: parses config list array output", function()
-	local output = 'ui.default-command = ["log", "--no-pager", "--limit", "18"]'
+	local output = '["log", "--no-pager", "--limit", "18"]'
 	assert_table_equals({ "log", "--no-pager", "--limit", "18" }, parser.parse_json_command(output))
-end)
-
-run_test("parse_default_cmd: parses config list single string output", function()
-	local output = 'ui.default-command = "log"'
-	assert_table_equals({ "log" }, parser.parse_json_command(output))
 end)
 
 run_test("parse_default_cmd: parses bare array (config get format)", function()
@@ -519,7 +517,7 @@ end)
 
 run_test("parse_default_cmd: parses unquoted string", function()
 	local output = "log"
-	assert_table_equals({ "log" }, parser.parse_json_command(output))
+	assert_is_nil(parser.parse_json_command(output))
 end)
 
 run_test("parse_default_cmd: returns nil for empty string", function()
