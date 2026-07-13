@@ -420,8 +420,8 @@ function M.parse_bookmark_names(bookmark_str)
 	for _, item in ipairs(raw_items) do
 		local parts = vim.split(item, "::", { plain = true })
 		if #parts == 2 then
-			-- Strip asterisks and @remote
-			local base_name = parts[1]:gsub("%*", ""):gsub("@.*$", "")
+			-- Strip asterisks and @remote and ??
+			local base_name = parts[1]:gsub("%*", ""):gsub("@.*$", ""):gsub("%?%?", "")
 			local is_deleted = parts[2] == "false"
 
 			if base_name ~= "" and not seen[base_name] then
