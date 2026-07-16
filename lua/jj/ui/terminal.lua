@@ -390,7 +390,7 @@ function M.run_floating(cmd, keymaps, float_opts)
 					end
 					-- Store the subcommand on successful exit
 					if exit_code == 0 then
-						state.floating_buf_cmd = vim.split(cmd, "%s+")[2]
+						state.floating_buf_cmd = cmd[2]
 					end
 					-- Make the bufer optionally not modifiable
 					if not float_opts.keep_modifiable then
