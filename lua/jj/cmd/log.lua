@@ -951,6 +951,21 @@ function M.handle_log_squash()
 	utils.notify("Squash `started`.", vim.log.levels.INFO, 500)
 end
 
+function M.handle_log_squash_interactive()
+	local revsets_str = extract_revsets_from_terminal_buffer()
+	-- Validate revsets
+	if not revsets_str or revsets_str == "" then
+		return
+	end
+
+	vim.b.jj_squash_revsets = revsets_str
+	-- Set highlights
+	setup_selected_highlights()
+
+	M.transition_mode("squash_interactive")
+	utils.notify("Interactive squash `started`.", vim.log.levels.INFO, 500)
+end
+
 --- Duplicate bookmark(s)
 function M.handle_log_duplicate()
 	local revsets_str = extract_revsets_from_terminal_buffer()
@@ -967,19 +982,52 @@ function M.handle_log_duplicate()
 	utils.notify("Duplication `started`.", vim.log.levels.INFO, 500)
 end
 
---- Quick squash the bookmark under the cursor into it's parent
-function M.handle_log_quick_squash()
+--- Quick squash the bookmark under the cursor into its parent
+--- @param interactive boolean|nil If true, will add the --interactive flag to the jj squash command
+function M.handle_log_quick_squash(interactive)
 	local revset = get_revset()
 	if not revset or revset == "" then
 		return
 	end
 
 	local cmd = { "jj", "squash", "-r", revset, "-u", "--ignore-immutable" }
-	utils.notify(string.format("Squashing `%s` into it's parent...", revset), vim.log.levels.INFO)
-	runner.execute_async(cmd, function()
-		utils.notify(string.format("Successfully squashed `%s` into it's parent", revset), vim.log.levels.INFO)
-		M.log({})
-	end, string.format("Error squashing `%s` into it's parent", revset))
+
+	if interactive then
+		table.insert(cmd, "--interactive")
+
+		terminal.run_floating(cmd, nil, {
+			title = "Squash Interactive",
+			modifiable = true,
+			keep_modifiable = true,
+			interactive = true,
+			on_exit = function(exit_code)
+				if exit_code == 0 then
+					utils.notify(
+						string.format("Successfully squashed `%s` into it's parent", revset),
+						vim.log.levels.INFO
+					)
+					M.log({})
+				else
+					utils.notify(
+						string.format("Cancelled squashing `%s` into it's parent", revset),
+						vim.log.levels.WARN
+					)
+					-- Since we previously replaced the floating with the squash we actually want to re run the log cmd
+					if require("jj").config.terminal.window.type == "floating" then
+						vim.schedule(function()
+							M.log({})
+						end)
+					end
+				end
+			end,
+		})
+	else
+		utils.notify(string.format("Squashing `%s` into it's parent...", revset), vim.log.levels.INFO)
+		runner.execute_async(cmd, function()
+			utils.notify(string.format("Successfully squashed `%s` into it's parent", revset), vim.log.levels.INFO)
+			M.log({})
+		end, string.format("Error squashing `%s` into it's parent", revset))
+	end
 end
 
 --- Handle log split
@@ -1402,14 +1450,25 @@ function M.log_keymaps()
 			handler = M.handle_log_squash,
 			modes = { "n", "v" },
 		},
+		squash_interactive = {
+			desc = "Squash bookmark(s) interactively",
+			handler = M.handle_log_squash_interactive,
+			modes = { "n", "v" },
+		},
 		duplicate = {
 			desc = "Duplicate bookmark(s)",
 			handler = M.handle_log_duplicate,
 			modes = { "n", "v" },
 		},
 		quick_squash = {
-			desc = "Squash the bookmark under the cursor into it's parent (-r) keeping parent's message (-u), alwas ignores immutability",
+			desc = "Squash the bookmark under the cursor into its parent (-r) keeping parent's message (-u), always ignores immutability",
 			handler = M.handle_log_quick_squash,
+			modes = { "n" },
+		},
+		quick_interactive_squash = {
+			desc = "Squash the bookmark under the cursor into its parent (-r) keeping parent's message (-u), always ignores immutability, but opens an interactive prompt",
+			handler = M.handle_log_quick_squash,
+			args = { true },
 			modes = { "n" },
 		},
 		summary = {
@@ -1504,7 +1563,7 @@ function M.rebase_keymaps()
 		},
 		exit_mode = {
 			desc = "Exit rebase to normal mode",
-			handler = M.handle_special_mode_exit,
+			handler = M.exit_special_mode,
 			args = { "Rebase" },
 			modes = { "n" },
 		},
@@ -1514,8 +1573,9 @@ function M.rebase_keymaps()
 end
 
 --- Squash mode keymaps
+--- @param interactive boolean
 --- @return jj.core.buffer.keymap[]
-function M.squash_keymaps()
+function M.squash_keymaps(interactive)
 	local cmd = require("jj.cmd")
 	local keymaps = cmd.config.keymaps.log.squash_mode or {}
 
@@ -1524,18 +1584,18 @@ function M.squash_keymaps()
 		into = {
 			desc = "Squash into (-t) the revision under cursor",
 			handler = M.handle_squash_execute,
-			args = { "into" },
+			args = { "into", false, interactive },
 			modes = { "n" },
 		},
 		into_immutable = {
 			desc = "Squash onto (-i) the revision under cursor (ignores immutability)",
 			handler = M.handle_squash_execute,
-			args = { "into", true },
+			args = { "into", true, interactive },
 			modes = { "n" },
 		},
 		exit_mode = {
 			desc = "Exit squash to normal mode",
-			handler = M.handle_special_mode_exit,
+			handler = M.exit_special_mode,
 			args = { "Squash" },
 			modes = { "n" },
 		},
@@ -1591,7 +1651,7 @@ function M.duplicate_keymaps()
 		},
 		exit_mode = {
 			desc = "Exit normal to normal mode",
-			handler = M.handle_special_mode_exit,
+			handler = M.exit_special_mode,
 			args = { "Duplication" },
 			modes = { "n" },
 		},
@@ -1609,7 +1669,9 @@ function M.get_keymaps_for_mode(mode)
 	elseif mode == "rebase" then
 		return M.rebase_keymaps()
 	elseif mode == "squash" then
-		return M.squash_keymaps()
+		return M.squash_keymaps(false)
+	elseif mode == "squash_interactive" then
+		return M.squash_keymaps(true)
 	elseif mode == "duplicate" then
 		return M.duplicate_keymaps()
 	end
@@ -1617,7 +1679,7 @@ function M.get_keymaps_for_mode(mode)
 end
 
 --- Transition between buffer modes by swapping keymaps
---- @param target_mode "normal"|"rebase"|"squash"|"duplicate" Target mode name (e.g., "normal", "rebase")
+--- @param target_mode "normal"|"rebase"|"squash"|"squash_interactive"|"duplicate" Target mode name (e.g., "normal", "rebase")
 function M.transition_mode(target_mode)
 	-- Get the mode keymaps
 	if target_mode == vim.b.jj_mode then
@@ -1650,7 +1712,7 @@ end
 
 --- Handle special mode exit
 --- @param mode "Rebase"|"Squash"|"Duplicate" The mode that is being exited, used for notification message
-function M.handle_special_mode_exit(mode)
+function M.exit_special_mode(mode)
 	-- Clear stored revsets
 	vim.b.jj_rebase_revsets = nil
 	vim.b.jj_squash_revsets = nil
@@ -1667,7 +1729,7 @@ end
 
 --- Handle rebase execution with mode
 --- @param mode "onto" | "after" | "before" Rebase mode
---- @param ignore_immut boolean? Wether or not to ignore immutability
+--- @param ignore_immut boolean? Whether or not to ignore immutability
 function M.handle_rebase_execute(mode, ignore_immut)
 	-- Get all revsets in the format "xx xy xz"
 	local revsets = vim.b.jj_rebase_revsets
@@ -1704,14 +1766,8 @@ function M.handle_rebase_execute(mode, ignore_immut)
 			string.format("Rebased `%s` %s `%s` successfully", revsets, mode, destination_revset),
 			vim.log.levels.INFO
 		)
-		vim.b.jj_rebase_revsets = nil
 
-		-- Clear all highlighting before transitioning
-		local buf = terminal.state.buf or 0
-		vim.api.nvim_buf_clear_namespace(buf, log_selected_ns_id, 0, -1)
-		vim.api.nvim_buf_clear_namespace(buf, log_special_mode_target_ns_id, 0, -1)
-
-		M.transition_mode("normal")
+		M.exit_special_mode("Rebase")
 		-- Refresh log
 		M.log({})
 	end, "Error during rebase.")
@@ -1719,8 +1775,9 @@ end
 
 --- Handle squash execution
 --- @param mode "into" Squash mode
---- @param ignore_immut boolean? Wether or not to ignore immutability
-function M.handle_squash_execute(mode, ignore_immut)
+--- @param ignore_immut boolean? Whether or not to ignore immutability
+--- @param interactive boolean|nil  If true, will add the --interactive flag to the jj squash command
+function M.handle_squash_execute(mode, ignore_immut, interactive)
 	-- Get all revsets in the format "xx xy xz"
 	local revsets = vim.b.jj_squash_revsets
 	local destination_revset = get_revset()
@@ -1742,27 +1799,66 @@ function M.handle_squash_execute(mode, ignore_immut)
 		table.insert(cmd, "--ignore-immutable")
 	end
 
-	runner.execute_async(cmd, function()
-		utils.notify(
-			string.format("Squashed `%s` into `%s` successfully", revsets, destination_revset),
-			vim.log.levels.INFO
-		)
-		vim.b.jj_squash_revsets = nil
+	if interactive then
+		-- If interactive is true, run the command in a floating terminal with --interactive flag
+		table.insert(cmd, "--interactive")
+		terminal.run_floating(cmd, nil, {
+			title = " JJ Squash ",
+			modifiable = true,
+			keep_modifiable = true,
+			interactive = true,
+			on_exit = function(exit_code)
+				if exit_code == 0 then
+					utils.notify(
+						string.format("Squashed `%s` into `%s` successfully", revsets, destination_revset),
+						vim.log.levels.INFO
+					)
+					vim.b.jj_squash_revsets = nil
 
-		-- Clear all highlighting before transitioning
-		local buf = terminal.state.buf or 0
-		vim.api.nvim_buf_clear_namespace(buf, log_selected_ns_id, 0, -1)
-		vim.api.nvim_buf_clear_namespace(buf, log_special_mode_target_ns_id, 0, -1)
+					-- Clear all highlighting before transitioning
+					M.exit_special_mode("Squash")
+					-- Refresh log
+					M.log({})
+				else
+					utils.notify(
+						string.format("Cancelled squashing `%s` into `%s`", revsets, destination_revset),
+						vim.log.levels.WARN
+					)
 
-		M.transition_mode("normal")
-		-- Refresh log
-		M.log({})
-	end, "Error during squashing.")
+					M.exit_special_mode("Squash")
+					-- Since we previously replaced the floating with the squash we actually want to re run the log cmd
+					if require("jj").config.terminal.window.type == "floating" then
+						vim.schedule(function()
+							M.log({})
+						end)
+					end
+				end
+			end,
+		})
+	else
+		-- Otherwise, run the command asynchronously without --interactive flag
+		runner.execute_async(cmd, function()
+			utils.notify(
+				string.format("Squashed `%s` into `%s` successfully", revsets, destination_revset),
+				vim.log.levels.INFO
+			)
+			vim.b.jj_squash_revsets = nil
+
+			-- Clear all highlighting before transitioning
+			local buf = terminal.state.buf or 0
+			vim.api.nvim_buf_clear_namespace(buf, log_selected_ns_id, 0, -1)
+			vim.api.nvim_buf_clear_namespace(buf, log_special_mode_target_ns_id, 0, -1)
+
+			M.exit_special_mode("Squash")
+			-- Refresh log
+			M.log({})
+		end, "Error during squashing.")
+	end
 end
 
 -- Handle duplicate execution
 --- @param mode "onto" | "after" | "before" Rebase mode
---- @param ignore_immut boolean? Wether or not to ignore immutability
+--- @param ignore_immut boolean? Whether or not to ignore immutability
 function M.handle_duplicate_execute(mode, ignore_immut)
 	-- Get all revsets in the format "xx xy xz"
 	local revsets = vim.b.jj_duplicate_revsets
@@ -1792,14 +1888,8 @@ function M.handle_duplicate_execute(mode, ignore_immut)
 			string.format("Duplicated `%s` %s `%s` successfully", revsets, mode, destination_revset),
 			vim.log.levels.INFO
 		)
-		vim.b.jj_duplicate_revsets = nil
 
-		-- Clear all highlighting before transitioning
-		local buf = terminal.state.buf or 0
-		vim.api.nvim_buf_clear_namespace(buf, log_selected_ns_id, 0, -1)
-		vim.api.nvim_buf_clear_namespace(buf, log_special_mode_target_ns_id, 0, -1)
-
-		M.transition_mode("normal")
+		M.exit_special_mode("Duplicate")
 		-- Refresh log
 		M.log({})
 	end, "Error during duplication.")

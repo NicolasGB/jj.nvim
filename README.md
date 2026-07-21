@@ -203,26 +203,30 @@ Deleting and pushing tags (for colocated repositories) is also supported and cha
 
 ### Squash changes from the log buffer
 
-Enter an interactive squash mode to squash one or more changes into a destination:
+Enter squash mode from the log buffer to squash one or more changes into a destination:
 
-- `s` - Enter squash mode targeting the revision under cursor (in normal mode) or selected revisions (in visual mode)
-- `<S-s>` - Quick squash the revision under cursor into its parent
+- `s` - Enter standard squash mode for the revision under cursor (Normal mode) or selected revisions (Visual mode)
+- `is` - Enter **interactive** squash mode for the revision under cursor or Visual selection
+- `<S-s>` - Immediately squash the revision under cursor into its parent
+- `<S-i><S-s>` - Interactively squash the revision under cursor into its parent
 
-Once in squash mode, the interface highlights your selection and the current squash destination:
+Both standard and interactive squash modes highlight the operation before it runs:
 
-- Selected changes are highlighted in your configured `selected_hl` color (default: dark magenta)
-- The cursor position (potential squash destination) is highlighted in your configured `targeted_hl` color (default: green)
-- Move the cursor to preview different squash destinations with live highlighting
+- Selected changes use `highlights.log.selected` (dark magenta by default).
+- The potential destination under the cursor uses `highlights.log.targeted` (green by default).
+- Move the cursor to preview another destination; the target highlight updates live. A selected revision is not also shown as a target.
 
-From squash mode, choose how to squash:
+From either squash mode, choose the destination:
 
 - `<CR>` - Squash into (`-t`) the revision under cursor
-- `<S-CR>` - Squash into (`-t`) ignoring immutability
+- `<S-CR>` - Squash into (`-t`) while ignoring immutability
 - `<Esc>` or `<C-c>` - Exit squash mode without making changes
 
-**Visual mode selection:** Select multiple revisions in visual mode before pressing `s` to squash them all at once. The plugin extracts each selected revision and squashes them together.
+**Interactive squash:** After choosing a destination with `is` and `<CR>` (or `<S-CR>`), `jj.nvim` opens `jj squash --interactive` in a floating terminal. Use jj's interactive UI to select the content to squash; on success, the log is refreshed. The `is` mapping is intentionally a two-key sequence so it does not conflict with the normal `s` mapping.
 
-**Quick squash:** In normal mode, press `<S-s>` to quickly squash the current revision into its parent. This ignores immutability.
+**Visual mode selection:** Select multiple revisions in Visual mode before pressing `s` or `is` to squash them all at once. The plugin extracts each selected revision and squashes them together.
+
+**Quick squash:** `<S-s>` performs the non-interactive operation and `<S-i><S-s>` opens jj's interactive UI. Both target the current revision's parent and ignore immutability.
 
 ![Squash-from-log](https://github.com/NicolasGB/jj.nvim/raw/main/assets/squash.gif)
 
@@ -692,13 +696,15 @@ revision via `jj diffedit`. Immutable revisions show an error on write.
             before_immutable = "<S-b>",             -- Duplicate before revision under cursor (ignore immutability)
             exit_mode = { "<Esc>", "<C-c>" }, -- Exit duplicate mode
         },
-        squash = "s",                       -- Enter squash mode targeting revision under cursor or selected revisions
+        squash = "s",                       -- Enter standard squash mode for revision under cursor or selected revisions
+        squash_interactive = "is",            -- Enter interactive squash mode; choose a target, then use jj's interactive UI
         squash_mode = {
             into = "<CR>",                     -- Squash into revision under cursor
             into_immutable = "<S-CR>",         -- Squash into revision under cursor (ignore immutability)
-            exit_mode = { "<Esc>", "<C-c>" }, -- Exit squash mode
+            exit_mode = { "<Esc>", "<C-c>" }, -- Exit standard or interactive squash mode
         },
         quick_squash = "<S-s>",             -- Quick squash revision under cursor into its parent (ignore immutability)
+        quick_interactive_squash = "<S-i><S-s>", -- Quick interactive squash into parent (ignore immutability)
         split = "<C-s>",                    -- Split the revision under cursor
         resolve = "gr",                     -- Resolve conflicts for revision under cursor
         history = "<S-h>",                  -- Show a history-aware diff for the selected revision range
