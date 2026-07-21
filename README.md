@@ -1,4 +1,8 @@
-# jj.nvim
+<h1 align="center">
+  <img src="assets/jj-nvim-logo-nord.png" alt="jj.nvim logo" width="200">
+  <br>
+  jj.nvim
+</h1>
 
 ⚠️ **WORK IN PROGRESS** ⚠️
 

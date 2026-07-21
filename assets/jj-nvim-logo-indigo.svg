@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="30%" r="90%">
+      <stop offset="0" stop-color="#22284a"/>
+      <stop offset="1" stop-color="#0b1022"/>
+    </radialGradient>
+    <filter id="shadow" x="-35%" y="-35%" width="170%" height="170%">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#000" flood-opacity=".5"/>
+    </filter>
+    <filter id="birdShadow" x="-45%" y="-45%" width="190%" height="190%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity=".45"/>
+    </filter>
+    <clipPath id="leftBird"><rect x="0" y="0" width="205" height="410"/></clipPath>
+    <clipPath id="rightBird"><rect x="205" y="0" width="205" height="410"/></clipPath>
+  </defs>
+
+  <rect width="1024" height="1024" rx="190" fill="url(#bg)"/>
+  <circle cx="512" cy="515" r="392" fill="#11182c" stroke="#46517a" stroke-width="5"/>
+
+  <!-- One bird is mirrored geometrically to guarantee exact symmetry. -->
+  <g id="left-bird" transform="translate(105 270) rotate(-42 205 205)" filter="url(#birdShadow)">
+    <image href="jj-birds-transparent.svg" x="0" y="0" width="410" height="410" preserveAspectRatio="xMidYMid meet" clip-path="url(#leftBird)"/>
+  </g>
+  <use href="#left-bird" transform="matrix(-1 0 0 1 1024 0)"/>
+
+  <!-- The N is intentionally in front: the birds emerge from behind its shoulders. -->
+  <image href="neovim-official.svg" x="246" y="188" width="532" height="648" preserveAspectRatio="xMidYMid meet" filter="url(#shadow)"/>
+</svg>
