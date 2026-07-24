@@ -1064,4 +1064,26 @@ function M.open_first_conflicted_file(revset)
 	end
 end
 
+--- Extract selected lines from visual mode, and the marks for the start and end lines.
+--- @param bufnr integer The buffer number to get the selection from
+--- @return string[]|nil The selected lines, or nil if not in visual mode
+--- @return integer|nil The start line of the selection (1-based)
+--- @return integer|nil The end line of the selection (1-based)
+function M.get_visual_selection(bufnr)
+	local mode = vim.fn.mode()
+	if mode ~= "v" and mode ~= "V" and mode ~= "\22" then
+		return nil, nil, nil
+	end
+
+	local selected_start_line = vim.fn.line("v")
+	local selected_end_line = vim.fn.line(".")
+	if selected_start_line > selected_end_line then
+		selected_start_line, selected_end_line = selected_end_line, selected_start_line
+	end
+
+	local lines = vim.api.nvim_buf_get_lines(bufnr, selected_start_line - 1, selected_end_line, false)
+
+	return lines, selected_start_line, selected_end_line
+end
+
 return M

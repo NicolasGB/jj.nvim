@@ -372,14 +372,17 @@ Open the current buffer's file in your browser on the hosted remote (GitHub/GitL
 
 In Visual mode, select lines and run `:Jbrowse` to open a range.
 
-### Open a changed file
+### Open or restore changed files
 
-Just press enter to open a file from the `status` output in your current window.
+The `status` buffer supports these default keybindings:
+
+- `<CR>` — Open the file under the cursor in the current window.
+- `<S-x>` — Restore the file under the cursor.
+- Visual mode + `<S-x>` — Restore every changed file in the selected status lines at once.
+
+Restoring multiple files runs one `jj restore` command, refreshes the status buffer when it succeeds, and reports every restored path. Renamed files are handled correctly: both the old and new paths are restored.
+
 ![Open-status](https://github.com/NicolasGB/jj.nvim/raw/main/assets/enter-status.gif)
-
-### Restore a changed file
-
-Press `<S-x>` on a file from the `status` output and that's it, it's restored.
 
 ![Restore-status](https://github.com/NicolasGB/jj.nvim/raw/main/assets/x-status.gif)
 
