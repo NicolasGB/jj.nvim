@@ -52,8 +52,10 @@ local resolve_module = require("jj.cmd.resolve")
 --- @field rebase? string|string[]
 --- @field rebase_mode? jj.cmd.rebase.keymaps
 --- @field squash? string|string[]
+--- @field squash_interactive? string|string[]
 --- @field squash_mode? jj.cmd.squash.keymaps
 --- @field quick_squash? string|string[]
+--- @field quick_interactive_squash? string|string[]
 --- @field summary? string|string[]
 --- @field summary_tooltip? jj.cmd.summary_tooltip.keymaps
 --- @field tag_set? string|string[]
@@ -205,11 +207,14 @@ M.config = {
 				exit_mode = { "<Esc>", "<C-c>" },
 			},
 			squash = "s",
+			squash_interactive = "is",
 			squash_mode = {
 				into = "<CR>",
 				into_immutable = "<S-CR>",
 				exit_mode = { "<Esc>", "<C-c>" },
 			},
+			quick_squash = "<S-s>",
+			quick_interactive_squash = "<S-i><S-s>",
 			duplicate = "<C-y>",
 			duplicate_mode = {
 				onto = { "<CR>", "o" },
@@ -220,7 +225,6 @@ M.config = {
 				before_immutable = "<S-b>",
 				exit_mode = { "<Esc>", "<C-c>" },
 			},
-			quick_squash = "<S-s>",
 			summary = "<S-k>",
 			summary_tooltip = {
 				diff = "<S-d>",

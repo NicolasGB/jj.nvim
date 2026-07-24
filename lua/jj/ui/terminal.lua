@@ -426,6 +426,7 @@ function M.run_floating(cmd, keymaps, float_opts)
 			{ modes = { "n", "v" }, lhs = "c", rhs = function() end },
 			{ modes = { "n", "v" }, lhs = "a", rhs = function() end },
 			{ modes = { "n", "v" }, lhs = "<S-a>", rhs = function() end },
+			{ modes = { "n", "v" }, lhs = "<S-i>", rhs = function() end },
 			{ modes = { "n", "v" }, lhs = "u", rhs = function() end },
 		}
 		-- IF it's interactive do not block them
@@ -599,6 +600,7 @@ function M.run(cmd, keymaps)
 			{ modes = { "n", "v" }, lhs = "c", rhs = function() end },
 			{ modes = { "n", "v" }, lhs = "a", rhs = function() end },
 			{ modes = { "n", "v" }, lhs = "<S-a>", rhs = function() end },
+			{ modes = { "n", "v" }, lhs = "<S-i>", rhs = function() end },
 			{ modes = { "n", "v" }, lhs = "u", rhs = function() end },
 		})
 
