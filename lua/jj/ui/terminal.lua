@@ -84,6 +84,33 @@ end
 -- Re-export
 M.state = state
 
+--- Keymaps shared by split and non-interactive floating terminal output buffers.
+--- Return a new table so callers can safely append command-specific keymaps.
+--- @return jj.core.buffer.keymap[]
+local function default_output_keymaps()
+	return {
+		{ modes = { "n" }, lhs = "g?", rhs = M.keymap_help },
+		-- Disable insert, command, append, and undo in rendered command output.
+		{ modes = { "n", "v" }, lhs = "i", rhs = "<Nop>" },
+		{ modes = { "n", "v" }, lhs = "c", rhs = "<Nop>" },
+		{ modes = { "n", "v" }, lhs = "a", rhs = "<Nop>" },
+		{ modes = { "n", "v" }, lhs = "<S-a>", rhs = "<Nop>" },
+		{ modes = { "n", "v" }, lhs = "<S-i>", rhs = "<Nop>" },
+		{ modes = { "n", "v" }, lhs = "u", rhs = "<Nop>" },
+	}
+end
+
+--- Remove the shell-prompt mappings automatically added by nvim_open_term().
+--- Rendered output buffers do not contain interactive shell prompts, and command-specific
+--- keymaps may reuse these keys afterward. Interactive terminals intentionally keep them.
+--- @param buf integer
+local function remove_prompt_keymaps(buf)
+	buffer.remove_keymaps(buf, {
+		{ modes = { "n" }, lhs = "[[", rhs = "<Nop>" },
+		{ modes = { "n" }, lhs = "]]", rhs = "<Nop>" },
+	})
+end
+
 --- Setup function to configure terminal options
 --- @param user_opts jj.ui.terminal.opts Configuration options
 function M.setup(user_opts)
@@ -420,19 +447,8 @@ function M.run_floating(cmd, keymaps, float_opts)
 
 	-- Set keymaps only if they haven't been set for this buffer
 	if not vim.b[state.floating_buf].jj_keymaps_set then
-		local default_keymaps = {
-			{ modes = { "n" }, lhs = "g?", rhs = M.keymap_help },
-			{ modes = { "n", "v" }, lhs = "i", rhs = function() end },
-			{ modes = { "n", "v" }, lhs = "c", rhs = function() end },
-			{ modes = { "n", "v" }, lhs = "a", rhs = function() end },
-			{ modes = { "n", "v" }, lhs = "<S-a>", rhs = function() end },
-			{ modes = { "n", "v" }, lhs = "<S-i>", rhs = function() end },
-			{ modes = { "n", "v" }, lhs = "u", rhs = function() end },
-		}
-		-- IF it's interactive do not block them
-		if float_opts.interactive then
-			default_keymaps = {}
-		end
+		-- Interactive terminals need their native editing keys; rendered output does not.
+		local default_keymaps = float_opts.interactive and {} or default_output_keymaps()
 
 		-- Merge default keymaps with provided keymaps
 		if keymaps and #keymaps > 0 then
@@ -442,11 +458,7 @@ function M.run_floating(cmd, keymaps, float_opts)
 		end
 
 		if not float_opts.interactive then
-			-- Remove prompt keymaps
-			buffer.remove_keymaps(state.floating_buf, {
-				{ modes = { "n", "v" }, lhs = "[[", rhs = function() end },
-				{ modes = { "n", "v" }, lhs = "]]", rhs = function() end },
-			})
+			remove_prompt_keymaps(state.floating_buf)
 		end
 
 		buffer.set_keymaps(state.floating_buf, default_keymaps)
@@ -593,25 +605,11 @@ function M.run(cmd, keymaps)
 	-- Set keymaps only if they haven't been set for this buffer
 	-- Set base keymaps only if they haven't been set for this buffer yet
 	if not vim.b[state.buf].jj_keymaps_set then
-		buffer.set_keymaps(state.buf, {
-			{ modes = { "n" }, lhs = "g?", rhs = M.keymap_help },
-			-- Disable insert, command and append modes
-			{ modes = { "n", "v" }, lhs = "i", rhs = function() end },
-			{ modes = { "n", "v" }, lhs = "c", rhs = function() end },
-			{ modes = { "n", "v" }, lhs = "a", rhs = function() end },
-			{ modes = { "n", "v" }, lhs = "<S-a>", rhs = function() end },
-			{ modes = { "n", "v" }, lhs = "<S-i>", rhs = function() end },
-			{ modes = { "n", "v" }, lhs = "u", rhs = function() end },
-		})
-
+		buffer.set_keymaps(state.buf, default_output_keymaps())
 		vim.b[state.buf].jj_keymaps_set = true
 	end
 
-	-- Remove prompt keymaps
-	buffer.remove_keymaps(state.buf, {
-		{ modes = { "n", "v" }, lhs = "[[", rhs = function() end },
-		{ modes = { "n", "v" }, lhs = "]]", rhs = function() end },
-	})
+	remove_prompt_keymaps(state.buf)
 
 	-- Remove command-specific keymaps from previous runs
 	if vim.b[state.buf].jj_command_keymaps then
