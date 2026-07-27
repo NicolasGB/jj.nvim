@@ -92,6 +92,7 @@
   - `:Jhdiff [revision]` - Horizontal split diff
 - Picker for [Snacks.nvim](https://github.com/folke/snacks.nvim)
   - `picker.status()` displays the current changed files with live diff preview (or falls back to `vim.ui.select()`)
+  - `picker.log()` displays the repository log with a `jj show` preview and lets you edit the selected revision (or falls back to `vim.ui.select()`)
   - `picker.file_history()` displays the current buffer's revision history and lets you edit the selected change (or falls back to `vim.ui.select()`)
   - `picker.conflict()` lists conflicted revisions, previews their changes, and launches conflict resolution (with Snacks, or `vim.ui.select()` as a fallback)
   - `picker.conflict_sections()` lists each individual conflict section in the current revision and navigates to it in the current window, a split or a tab (with Snacks, or `vim.ui.select()` as a fallback)
@@ -406,6 +407,16 @@ If Snacks is not enabled, `picker.status()` falls back to `vim.ui.select()`, whe
 When Snacks is enabled, you get a fuzzy picker with a diff preview for each revision. Selecting an entry edits that revision with `jj edit <rev> --ignore-immutable` and refreshes changed buffers.
 
 If Snacks is not enabled, `picker.file_history()` falls back to `vim.ui.select()` with the same revision list. Selecting an entry performs the same edit action and buffer refresh, but without the Snacks preview UI.
+
+### Log picker (Snacks.nvim)
+
+`picker.log()` shows the repository log, so you can fuzzy-find any revision instead of scrolling the log buffer.
+
+By default it uses jj's configured default revset (the same set of revisions as running `jj log`). Pass a revset to widen or narrow the list, e.g. `picker.log({ revset = "all()" })`.
+
+When Snacks is enabled, you get a fuzzy picker with a `jj show` diff preview for each revision. Selecting an entry edits that revision with `jj edit <rev> --ignore-immutable` and refreshes changed buffers.
+
+If Snacks is not enabled, `picker.log()` falls back to `vim.ui.select()` with the same revision list, performing the same edit action without the Snacks preview UI.
 
 ### Conflict picker (Snacks.nvim)
 
@@ -1325,6 +1336,7 @@ vim.keymap.set("n", "<leader>jA", annotate.line, { desc = "JJ annotate line" })
     -- Pickers
     local picker = require("jj.picker")
     vim.keymap.set("n", "<leader>gj", function() picker.status() end, { desc = "JJ Picker status" })
+    vim.keymap.set("n", "<leader>jgl", function() picker.log() end, { desc = "JJ Picker log" })
     vim.keymap.set("n", "<leader>jgh", function() picker.file_history() end, { desc = "JJ Picker history" })
     vim.keymap.set("n", "<leader>jgc", function() picker.conflict() end, { desc = "JJ Picker conflicts" })
     vim.keymap.set("n", "<leader>jgs", function() picker.conflict_sections() end, { desc = "JJ Picker conflict sections" })
