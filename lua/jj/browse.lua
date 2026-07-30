@@ -61,10 +61,21 @@ function M.browse(opts)
 		return
 	end
 
-	local abs_path = vim.api.nvim_buf_get_name(0)
-	if not utils.is_file(abs_path) then
-		utils.notify("Current buffer is not a file", vim.log.levels.ERROR)
-		return
+	local buf_name = vim.api.nvim_buf_get_name(0)
+	-- `jj://` virtual buffers (opened via :Jedit) carry the revision and a
+	-- cwd-relative path in their name rather than pointing at a real file.
+	local jj_change_id, jj_path = utils.parse_jj_uri(buf_name)
+
+	local abs_path
+	if jj_path then
+		local cwd = vim.uv.cwd()
+		abs_path = cwd and vim.fs.joinpath(cwd, jj_path) or jj_path
+	else
+		abs_path = buf_name
+		if not utils.is_file(abs_path) then
+			utils.notify("Current buffer is not a file", vim.log.levels.ERROR)
+			return
+		end
 	end
 
 	local root = utils.get_jj_root()
@@ -88,7 +99,7 @@ function M.browse(opts)
 		line2 = line1
 	end
 
-	local revset = "@"
+	local revset = jj_change_id or "@"
 	if opts then
 		if type(opts.args) == "string" and opts.args ~= "" then
 			revset = vim.trim(opts.args)
@@ -116,7 +127,7 @@ function M.browse(opts)
 
 		-- If a revset has been given the walkback is none since the user doesn't expect any walkback
 		local max_walkback = 20
-		if revset ~= "@" then
+		if revset ~= (jj_change_id or "@") then
 			max_walkback = 0
 		end
 
