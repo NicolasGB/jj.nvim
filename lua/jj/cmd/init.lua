@@ -99,6 +99,8 @@ local resolve_module = require("jj.cmd.resolve")
 --- @class jj.cmd.status.keymaps
 --- @field open_file? string|string[] Keymaps for the status command buffer, setting a keymap to nil will disable it
 --- @field restore_file? string|string[]
+--- @field undo? string|string[]
+--- @field redo? string|string[]
 
 --- @class jj.cmd.floating.keymaps The floating buffer is the one shown when diffing from the log buffer
 --- @field close? string|string[] Keymaps to close the floating buffer
@@ -243,6 +245,8 @@ M.config = {
 		status = {
 			open_file = "<CR>",
 			restore_file = "<S-x>",
+			undo = "<S-u>",
+			redo = "<S-r>",
 		},
 		close = { "q", "<Esc>" },
 		floating = {

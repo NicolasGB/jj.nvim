@@ -86,6 +86,17 @@ function M.handle_status_enter()
 	-- Open the file in that window, replacing current buffer
 	vim.cmd("edit " .. vim.fn.fnameescape(filepath))
 end
+--- Handle undoing form the status buffer
+function M.handle_status_undo()
+	require("jj.cmd").undo()
+	M.status()
+end
+
+--- Handle undoing form the status buffer
+function M.handle_status_redo()
+	require("jj.cmd").redo()
+	M.status()
+end
 
 --- Resolve status keymaps from config
 --- @return jj.core.buffer.keymap[]
@@ -104,6 +115,16 @@ function M.status_keymaps()
 			desc = "Restore file under cursor",
 			handler = M.handle_status_restore,
 			modes = { "n", "v" },
+		},
+		undo = {
+			desc = "Undo last change",
+			handler = M.handle_status_undo,
+			modes = { "n" },
+		},
+		redo = {
+			desc = "Redo last undone change",
+			handler = M.handle_status_redo,
+			modes = { "n" },
 		},
 	}
 
