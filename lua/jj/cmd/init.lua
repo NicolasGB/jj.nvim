@@ -133,6 +133,7 @@ local resolve_module = require("jj.cmd.resolve")
 ---@field on_exit? fun(exit_code: number) Callback invoked when command exits
 
 --- @class jj.cmd.opts
+--- @field confirm_destructive_actions? boolean Prompt before immediate destructive keymap actions
 --- @field describe? jj.cmd.describe
 --- @field log? jj.cmd.log
 --- @field resolve_strategies? jj.cmd.resolve.strategy[] List of conflict resolve strategies shared across cmd integrations
@@ -164,6 +165,7 @@ local resolve_module = require("jj.cmd.resolve")
 
 --- @type jj.cmd.opts
 M.config = {
+	confirm_destructive_actions = true,
 	describe = {
 		editor = {
 			type = "buffer",

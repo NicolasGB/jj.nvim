@@ -616,6 +616,9 @@ revision via `jj diffedit`. Immutable revisions show an error on write.
 
   -- Configure cmd module (describe editor, keymaps)
   cmd = {
+    -- Prompt before immediate destructive keymap actions
+    confirm_destructive_actions = true,
+
     -- Configure describe editor
     describe = {
       editor = {
@@ -736,6 +739,20 @@ revision via `jj diffedit`. Immutable revisions show an error on write.
 
 }}
 
+```
+
+### Destructive Action Confirmations
+
+`cmd.confirm_destructive_actions` controls confirmation prompts for destructive actions that execute immediately from a keymap. It defaults to `true` and protects abandoning changes, restoring files from the status buffer, and non-interactive quick squash.
+
+Disable it to run those actions immediately:
+
+```lua
+require("jj").setup({
+  cmd = {
+    confirm_destructive_actions = false,
+  },
+})
 ```
 
 ### Describe Editor Modes

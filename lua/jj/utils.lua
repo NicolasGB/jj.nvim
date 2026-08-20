@@ -1086,4 +1086,28 @@ function M.get_visual_selection(bufnr)
 	return lines, selected_start_line, selected_end_line
 end
 
+--- Invoke an action immediately or after a user confirmation prompt.
+---
+--- When `confirm` is false, `fn` runs immediately. When it is true, `fn` is
+--- invoked only after the user selects "Yes"; choosing "No" or cancelling does
+--- nothing. The confirmed path is asynchronous because it uses `vim.ui.select()`.
+---
+---@param confirm boolean Whether to prompt before invoking `fn`
+---@param action string Description of the action, interpolated into the prompt
+---@param fn fun() Action to invoke after confirmation, or immediately when disabled
+function M.with_confirmation(confirm, action, fn)
+	if not confirm then
+		fn()
+		return
+	end
+
+	vim.ui.select({ "Yes", "No" }, {
+		prompt = ("Do you really want to %s?"):format(action),
+	}, function(choice)
+		if choice == "Yes" then
+			fn()
+		end
+	end)
+end
+
 return M
