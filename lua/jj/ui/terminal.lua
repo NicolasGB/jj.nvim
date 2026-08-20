@@ -124,73 +124,133 @@ end
 
 --- Help for terminal buffer
 function M.keymap_help()
-	-- get the normal mode keys defined for the current buffer
 	local keys = vim.api.nvim_buf_get_keymap(0, "n")
+	local mappings = {}
+	local max_key_width = 0
 
-	-- sort the keys table by desc
-	table.sort(keys, function(a, b)
-		return (a.desc or "") < (b.desc or "")
+	for _, mapping in ipairs(keys) do
+		if mapping.desc and mapping.desc ~= "" then
+			table.insert(mappings, mapping)
+			max_key_width = math.max(max_key_width, vim.api.nvim_strwidth(mapping.lhs))
+		end
+	end
+
+	-- Keep actions discoverable by sorting on their descriptions, with the key as
+	-- a stable tie breaker.
+	table.sort(mappings, function(a, b)
+		local a_desc = a.desc:lower()
+		local b_desc = b.desc:lower()
+		if a_desc == b_desc then
+			return a.lhs < b.lhs
+		end
+		return a_desc < b_desc
 	end)
 
-	-- Figure out the width of the longest key for later formatting
-	-- Ignore keys for entries without a desc
-	local max_key_width = 0
-	for _, mapping in ipairs(keys) do
-		local desc = mapping["desc"]
-		if desc ~= nil then
-			local key = mapping["lhs"]
-			local key_width = vim.api.nvim_strwidth(key)
-			if key_width > max_key_width then
-				max_key_width = key_width
+	local key_column_width = math.max(max_key_width, 3)
+	local prefix_width = 2 + key_column_width + 3
+	local max_window_width = math.max(30, vim.o.columns - 6)
+	local natural_width = vim.api.nvim_strwidth("  KEY" .. string.rep(" ", key_column_width - 3) .. " │ ACTION")
+	for _, mapping in ipairs(mappings) do
+		natural_width = math.max(natural_width, prefix_width + vim.api.nvim_strwidth(mapping.desc))
+	end
+	local width = math.min(natural_width, max_window_width, 110)
+	local description_width = math.max(12, width - prefix_width)
+
+	local lines = {}
+	local highlights = {}
+	local function add_line(text, groups)
+		table.insert(lines, text)
+		local row = #lines - 1
+		for _, group in ipairs(groups or {}) do
+			table.insert(highlights, {
+				row = row,
+				start_col = group.start_col,
+				end_col = group.end_col,
+				hl_group = group.hl_group,
+			})
+		end
+	end
+
+	local heading = "  " .. string.format("%-" .. key_column_width .. "s", "KEY") .. " │ ACTION"
+	add_line(heading, {
+		{ start_col = 2, end_col = #heading, hl_group = "Title" },
+	})
+	local divider = "  " .. string.rep("─", key_column_width) .. "─┼─" .. string.rep("─", description_width)
+	add_line(divider, {
+		{ start_col = 0, end_col = #divider, hl_group = "FloatBorder" },
+	})
+
+	-- Wrap descriptions ourselves to keep continuation lines aligned with the
+	-- action column instead of letting the window wrap from column zero.
+	for _, mapping in ipairs(mappings) do
+		local chunks = {}
+		local current = ""
+		for word in mapping.desc:gmatch("%S+") do
+			local candidate = current == "" and word or (current .. " " .. word)
+			if current ~= "" and vim.api.nvim_strwidth(candidate) > description_width then
+				table.insert(chunks, current)
+				current = word
+			else
+				current = candidate
+			end
+		end
+		table.insert(chunks, current)
+
+		for index, chunk in ipairs(chunks) do
+			if index == 1 then
+				local padded_key = mapping.lhs .. string.rep(" ", key_column_width - vim.api.nvim_strwidth(mapping.lhs))
+				local line = "  " .. padded_key .. " │ " .. chunk
+				add_line(line, {
+					{ start_col = 2, end_col = 2 + #mapping.lhs, hl_group = "Special" },
+					{
+						start_col = 2 + key_column_width + 1,
+						end_col = 2 + key_column_width + 2,
+						hl_group = "FloatBorder",
+					},
+				})
+			else
+				add_line(string.rep(" ", prefix_width) .. chunk)
 			end
 		end
 	end
 
-	-- create a buffer and floating window to show the key mappings
-	local buf, _ = buffer.create_float({
-		title = " Key mappings ",
-		title_pos = "left",
+	local height = math.min(#lines, math.max(3, vim.o.lines - 6))
+	local buf, win = buffer.create_float({
+		title = string.format(" JJ Keymaps · %d ", #mappings),
+		title_pos = "center",
 		enter = true,
-		bufhidden = "hide",
+		bufhidden = "wipe",
+		width = width,
+		height = height,
 		win_options = {
-			wrap = true,
+			wrap = false,
 			number = false,
 			relativenumber = false,
-			cursorline = false,
+			cursorline = true,
 			signcolumn = "no",
+			winfixbuf = true,
 		},
 	})
 
-	-- helper function to pad a given key with spaces if necessary such that
-	-- its size will match max_key_width calculated above.
-	local function space_pad(key)
-		local key_width = vim.api.nvim_strwidth(key)
-		local delta = max_key_width - key_width
-		if delta > 0 then
-			return key .. string.rep(" ", delta)
-		end
-		return key
+	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+	local namespace = vim.api.nvim_create_namespace("jj_keymap_help")
+	for _, highlight in ipairs(highlights) do
+		vim.api.nvim_buf_set_extmark(buf, namespace, highlight.row, highlight.start_col, {
+			end_col = highlight.end_col,
+			hl_group = highlight.hl_group,
+			priority = 200,
+		})
 	end
+	vim.bo[buf].filetype = "jj-keymaps"
+	vim.bo[buf].modifiable = false
+	vim.api.nvim_win_set_cursor(win, { math.min(3, #lines), 0 })
+	vim.api.nvim_win_set_config(win, {
+		footer = " q / Esc close ",
+		footer_pos = "right",
+	})
 
-	-- create formated entries for items with a non-nil desc
-	local lines = {}
-	for _, entry in ipairs(keys) do
-		if entry["desc"] ~= nil then
-			local line = string.format("  %s   %s", space_pad(entry["lhs"]), entry["desc"])
-			table.insert(lines, line)
-		end
-	end
-
-	-- add some helper text at the end
-	table.insert(lines, "")
-	table.insert(lines, '   Use "q" or ESC to close this window')
-
-	-- add the formatted lines to the buffer
-	vim.api.nvim_buf_set_lines(buf, 3, -1, false, lines)
-
-	-- Use q or ESC to close the buffer
-	vim.keymap.set("n", "q", "<cmd>close<CR>", { buffer = buf })
-	vim.keymap.set("n", "<Esc>", "<cmd>close<CR>", { buffer = buf })
+	vim.keymap.set("n", "q", "<cmd>close<CR>", { buffer = buf, silent = true })
+	vim.keymap.set("n", "<Esc>", "<cmd>close<CR>", { buffer = buf, silent = true })
 end
 
 --- Close the current terminal buffer if it exists
