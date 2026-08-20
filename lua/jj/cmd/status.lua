@@ -112,6 +112,19 @@ function M.handle_status_redo()
 	M.status()
 end
 
+--- Handle diffing the file under the cursor
+function M.handle_diff_file()
+	local diff = require("jj.diff")
+
+	local file_info = parser.parse_file_info_from_status_line(vim.api.nvim_get_current_line())
+
+	if not file_info then
+		return
+	end
+
+	diff.diff_current({ path = file_info.new_path })
+end
+
 --- Resolve status keymaps from config
 --- @return jj.core.buffer.keymap[]
 function M.status_keymaps()
@@ -138,6 +151,11 @@ function M.status_keymaps()
 		redo = {
 			desc = "Redo last undone change",
 			handler = M.handle_status_redo,
+			modes = { "n" },
+		},
+		diff_file = {
+			desc = "Diff file under cursor",
+			handler = M.handle_diff_file,
 			modes = { "n" },
 		},
 	}

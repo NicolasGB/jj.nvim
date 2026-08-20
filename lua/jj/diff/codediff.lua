@@ -160,8 +160,68 @@ diff.register_backend("codediff", {
 		local change_id, jj_path = utils.parse_jj_uri(buf_name)
 		local revset = opts.rev or (change_id and (change_id .. "-")) or "@-"
 
+		-- CodeDiff's public single-revision mode derives the path from the
+		-- current buffer; it has no path argument. Run the command in the context
+		-- of a short-lived window containing the requested working-copy file so a
+		-- caller such as the jj status buffer does not need to become that file.
+		if opts.path then
+			local path, path_err = utils.normalize_relative_path(opts.path)
+			if not path then
+				utils.notify(path_err or "Could not resolve file path for CodeDiff", vim.log.levels.ERROR)
+				return
+			end
+
+			local current_file = vim.fs.normalize(vim.fn.fnamemodify(path, ":p"))
+			local stat = vim.uv.fs_stat(current_file)
+			if not stat or stat.type ~= "file" then
+				utils.notify("File not found: " .. path, vim.log.levels.ERROR)
+				return
+			end
+
+			local commit_id = utils.get_commit_id(revset)
+			if not commit_id then
+				return
+			end
+
+			local file_buf = vim.fn.bufadd(current_file)
+			vim.fn.bufload(file_buf)
+
+			-- Prefer an existing window for the file. Creating another window for a
+			-- buffer that is already visible can fail with E36 in a crowded layout.
+			local launcher_win = vim.fn.bufwinid(file_buf)
+			local owns_launcher_win = false
+			if launcher_win == -1 then
+				local ok_win, win_or_err = pcall(vim.api.nvim_open_win, file_buf, false, {
+					relative = "editor",
+					row = 0,
+					col = 0,
+					width = 1,
+					height = 1,
+					style = "minimal",
+					focusable = false,
+				})
+				if not ok_win then
+					utils.notify(tostring(win_or_err or "Could not create CodeDiff launcher window"), vim.log.levels.ERROR)
+					return
+				end
+				launcher_win = win_or_err
+				owns_launcher_win = true
+			end
+
+			local ok_cmd, err = pcall(vim.api.nvim_win_call, launcher_win, function()
+				vim.cmd(string.format("CodeDiff file %s", commit_id))
+			end)
+			if owns_launcher_win and vim.api.nvim_win_is_valid(launcher_win) then
+				vim.api.nvim_win_close(launcher_win, true)
+			end
+			if not ok_cmd then
+				utils.notify(err or "Could not launch CodeDiff", vim.log.levels.ERROR)
+			end
+			return
+		end
+
 		-- For jj:// buffers, compare the current in-memory buffer against <revset> for the same file.
-		if change_id and not opts.path then
+		if change_id then
 			local path = jj_path
 			if not path or path == "" then
 				utils.notify("Invalid jj:// buffer path", vim.log.levels.ERROR)
