@@ -598,14 +598,20 @@ function M.handle_log_abandon(ignore_immut)
 	table.insert(cmd, revsets)
 
 	-- Try to execute cmd
-	runner.execute_async(cmd, function()
-		local text = "Abandoned change: `%s`"
-		if revsets:find(" ", 1) then
-			text = "Abandoned changes: `%s`"
+	utils.with_confirmation(
+		require("jj.cmd").config.confirm_destructive_actions,
+		("abandon `%s`"):format((revsets:gsub("%s+", " | "))),
+		function()
+			runner.execute_async(cmd, function()
+				local text = "Abandoned change: `%s`"
+				if revsets:find(" ", 1) then
+					text = "Abandoned changes: `%s`"
+				end
+				utils.notify(string.format(text, revsets), vim.log.levels.INFO)
+				M.log({})
+			end, "Error abandoning change")
 		end
-		utils.notify(string.format(text, revsets), vim.log.levels.INFO)
-		M.log({})
-	end, "Error abandoning change")
+	)
 end
 
 --- Handle fetching from `jj log` buffer.
@@ -1022,11 +1028,20 @@ function M.handle_log_quick_squash(interactive)
 			end,
 		})
 	else
-		utils.notify(string.format("Squashing `%s` into it's parent...", revset), vim.log.levels.INFO)
-		runner.execute_async(cmd, function()
-			utils.notify(string.format("Successfully squashed `%s` into it's parent", revset), vim.log.levels.INFO)
-			M.log({})
-		end, string.format("Error squashing `%s` into it's parent", revset))
+		utils.with_confirmation(
+			require("jj.cmd").config.confirm_destructive_actions,
+			("squash `%s` into its parents"):format(revset),
+			function()
+				utils.notify(string.format("Squashing `%s` into it's parent...", revset), vim.log.levels.INFO)
+				runner.execute_async(cmd, function()
+					utils.notify(
+						string.format("Successfully squashed `%s` into it's parent", revset),
+						vim.log.levels.INFO
+					)
+					M.log({})
+				end, string.format("Error squashing `%s` into it's parent", revset))
+			end
+		)
 	end
 end
 

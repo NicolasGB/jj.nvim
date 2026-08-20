@@ -42,23 +42,37 @@ function M.handle_status_restore()
 		end
 	end
 
-	local _, restore_success = runner.execute(cmd, "Failed to restore original file")
-	if restore_success then
-		local notif_msg = "Restored file:\n"
-		if #files > 1 then
-			notif_msg = "Restored files:\n"
+	local action
+	if #files == 1 then
+		local file = files[1]
+		if file.is_rename then
+			action = ("restore changes to `%s` and `%s`"):format(file.old_path, file.new_path)
+		else
+			action = ("restore changes to `%s`"):format(file.old_path)
 		end
-
-		for _, file in ipairs(files) do
-			if file.is_rename then
-				notif_msg = notif_msg .. "- `" .. file.old_path .. "` -> `" .. file.new_path .. "`\n"
-			else
-				notif_msg = notif_msg .. "- `" .. file.old_path .. "`\n"
-			end
-		end
-		utils.notify(notif_msg, vim.log.levels.INFO)
-		M.status() -- Refresh the status buffer after restoring files
+	else
+		action = ("restore changes to %d files"):format(#files)
 	end
+
+	utils.with_confirmation(require("jj.cmd").config.confirm_destructive_actions, action, function()
+		local _, restore_success = runner.execute(cmd, "Failed to restore original file")
+		if restore_success then
+			local notif_msg = "Restored file:\n"
+			if #files > 1 then
+				notif_msg = "Restored files:\n"
+			end
+
+			for _, file in ipairs(files) do
+				if file.is_rename then
+					notif_msg = notif_msg .. "- `" .. file.old_path .. "` -> `" .. file.new_path .. "`\n"
+				else
+					notif_msg = notif_msg .. "- `" .. file.old_path .. "`\n"
+				end
+			end
+			utils.notify(notif_msg, vim.log.levels.INFO)
+			M.status() -- Refresh the status buffer after restoring files
+		end
+	end)
 end
 
 --- Handle opening a file from the jj status buffer
