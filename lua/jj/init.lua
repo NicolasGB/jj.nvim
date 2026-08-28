@@ -45,6 +45,7 @@ M.config = {
 	},
 	terminal = {
 		cursor_render_delay = 10,
+		scrollback = 50000,
 		window = {
 			type = "hsplit",
 			split_size = 0.5,

@@ -595,6 +595,11 @@ revision via `jj diffedit`. Immutable revisions show an error on write.
     -- This delay allows the terminal emulator to complete rendering before restoring cursor position
     cursor_render_delay = 10,
 
+    -- Maximum number of lines retained in terminal output buffers (default: 50000)
+    -- If rendered log output jumps erratically, try increasing this value.
+    -- Set to nil to use Neovim's own default.
+    scrollback = 50000,
+
     -- Configure terminal window
     window = {
        type = "hsplit",           -- Type of window the terminal is displayed in (hsplit/vsplit/floating/tab)
