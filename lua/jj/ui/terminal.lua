@@ -4,6 +4,7 @@ local M = {}
 --- Terminal configuration
 --- @class jj.ui.terminal.opts
 --- @field cursor_render_delay? integer The delay in ms when cursor rerendering the terminal state (default: 10ms). If you're loosing the column of the cursor try adding more delay. I currently did not find a better way to do so due to async handling of the ouptut in the terminal
+--- @field scrollback? integer Maximum number of lines retained in terminal buffers. When nil, use Neovim's default.
 --- @field window? jj.terminal.window Options for the window used
 ---
 --- @class jj.terminal.window
@@ -79,6 +80,15 @@ local function clamp_ratio(value, field)
 		return 1.0
 	end
 	return value
+end
+
+--- Apply the configured scrollback limit after a buffer becomes a terminal.
+--- Leaving the option nil preserves Neovim's default.
+--- @param buf integer
+local function apply_scrollback(buf)
+	if opts.scrollback ~= nil then
+		vim.bo[buf].scrollback = opts.scrollback
+	end
 end
 
 -- Re-export
@@ -436,6 +446,9 @@ function M.run_floating(cmd, keymaps, float_opts)
 			end,
 		})
 		state.floating_chan = jid
+		if jid and jid > 0 then
+			apply_scrollback(state.floating_buf)
+		end
 		vim.cmd("startinsert")
 	else
 		-- Create new terminal channel
@@ -445,6 +458,7 @@ function M.run_floating(cmd, keymaps, float_opts)
 			return
 		end
 		state.floating_chan = chan
+		apply_scrollback(state.floating_buf)
 
 		-- Move cursor to top before output arrives
 		vim.api.nvim_win_set_cursor(win, { 1, 0 })
@@ -609,6 +623,7 @@ function M.run(cmd, keymaps)
 		return
 	end
 	state.chan = chan
+	apply_scrollback(state.buf)
 
 	-- If the command is a string split it into parts
 	-- to store the subcommand later
@@ -803,6 +818,7 @@ function M.run_tooltip(cmd, tool_opts)
 		vim.api.nvim_buf_delete(state.tooltip_buf, { force = true })
 		return nil, nil
 	end
+	apply_scrollback(state.tooltip_buf)
 
 	state.tooltip_job_id = vim.fn.jobstart(cmd, {
 		pty = true,
