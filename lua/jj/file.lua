@@ -364,6 +364,73 @@ local function write_revision_file(buf, change_id, rel_path, force)
 end
 M.write_revision_file = write_revision_file
 
+local pending_lines
+
+--- Apply the lines staged by `set_lines_keeping_marks()` to the current buffer.
+--- Only reachable through the `:lockmarks` dispatch below.
+function M._flush_pending_lines()
+	local lines = pending_lines
+	pending_lines = nil
+	vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+end
+
+--- Replace a buffer's contents without shifting the positions recorded against
+--- it, quickfix and location list entries among them.
+--- @param buf number
+--- @param lines string[]
+local function set_lines_keeping_marks(buf, lines)
+	pending_lines = lines
+	-- `:lockmarks` has no API equivalent, and it acts on the current buffer.
+	vim.api.nvim_buf_call(buf, function()
+		vim.cmd("lockmarks lua require('jj.file')._flush_pending_lines()")
+	end)
+end
+
+--- Fill `buf` with `lines`, keeping a fill that starts an undo history out of
+--- it, so that undoing the first edit cannot leave the buffer empty.
+--- @param buf number
+--- @param lines string[]
+local function fill_revision_buffer(buf, lines)
+	if vim.fn.undotree(buf).seq_last > 0 then
+		set_lines_keeping_marks(buf, lines)
+		return
+	end
+	local ul = vim.bo[buf].undolevels
+	vim.bo[buf].undolevels = -1
+	set_lines_keeping_marks(buf, lines)
+	vim.bo[buf].undolevels = ul
+end
+
+--- Give `buf` the options and the write handler a revision buffer needs, so
+--- that writing it updates the revision it names instead of creating a file
+--- called `jj://...`. Idempotent, so a reload may repeat it.
+--- @param buf number
+--- @param change_id string
+--- @param path string
+local function setup_revision_buffer(buf, change_id, path)
+	-- Not `acwrite`: quickfix and pickers only ever reuse a window showing a
+	-- buffer with an empty 'buftype', and split or hijack another window
+	-- otherwise. `BufWriteCmd` intercepts writes either way.
+	vim.bo[buf].buftype = ""
+	vim.bo[buf].swapfile = false
+	vim.bo[buf].buflisted = true
+	if vim.bo[buf].filetype == "" then
+		local ft = vim.filetype.match({ filename = path })
+		if ft then
+			vim.bo[buf].filetype = ft
+		end
+	end
+	if not vim.b[buf].jj_write_bound then
+		vim.api.nvim_create_autocmd("BufWriteCmd", {
+			buffer = buf,
+			callback = function()
+				write_revision_file(buf, change_id, path, vim.v.cmdbang == 1)
+			end,
+		})
+		vim.b[buf].jj_write_bound = true
+	end
+end
+
 --- Opens a target file revision in a new buffer.
 --- @param opts jj.file.open_target_opts
 function M.open_target(opts)
@@ -401,32 +468,16 @@ function M.open_target(opts)
 		utils.notify(string.format("Could not read `%s` from `%s`", path, change_id), vim.log.levels.ERROR)
 		return
 	end
-	local ft = vim.filetype.match({ filename = path })
-
 	local buf, _ = buffer.create({
 		name = string.format("jj://%s/%s", change_id, path),
 		split = opts.split or "current",
 		modifiable = true,
-		buftype = "acwrite",
 		bufhidden = "wipe",
-		filetype = ft,
 	})
+	setup_revision_buffer(buf, change_id, path)
 	M.set_buf_encoding(buf, used_enc)
-	vim.bo[buf].buflisted = true
-	vim.bo[buf].swapfile = false
-	local ul = vim.bo[buf].undolevels
-	vim.bo[buf].undolevels = -1
-	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-	vim.bo[buf].undolevels = ul
+	fill_revision_buffer(buf, lines)
 	vim.bo[buf].eol = had_eol
-
-	vim.api.nvim_create_autocmd("BufWriteCmd", {
-		buffer = buf,
-		callback = function()
-			write_revision_file(buf, change_id, path, vim.v.cmdbang == 1)
-		end,
-	})
-
 	vim.bo[buf].modified = false
 	vim.bo[buf].modifiable = not utils.is_change_immutable(change_id)
 end
@@ -485,9 +536,10 @@ function M.register_command()
 				return
 			end
 			local buf = vim.api.nvim_get_current_buf()
+			setup_revision_buffer(buf, change_id, path)
 			M.set_buf_encoding(buf, used_enc)
 			vim.bo[buf].modifiable = true
-			vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+			fill_revision_buffer(buf, lines)
 			vim.bo[buf].eol = had_eol
 			vim.bo[buf].modified = false
 			vim.bo[buf].modifiable = not utils.is_change_immutable(change_id)

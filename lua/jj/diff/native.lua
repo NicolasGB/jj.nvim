@@ -58,7 +58,8 @@ local function open_revision(rev, path, enc)
 		vim.bo[buf].filetype = ft
 	end
 
-	vim.bo[buf].buftype = "acwrite"
+	-- See `setup_revision_buffer()` in `jj.file` for why this is not `acwrite`.
+	vim.bo[buf].buftype = ""
 	vim.bo[buf].bufhidden = "wipe"
 	vim.bo[buf].readonly = false
 	vim.bo[buf].swapfile = false
