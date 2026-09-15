@@ -595,7 +595,8 @@ function M.handle_log_abandon(ignore_immut)
 		table.insert(cmd, "--ignore-immutable")
 	end
 
-	table.insert(cmd, revsets)
+	local split_rev = vim.split(revsets, "%s+", { trimempty = true })
+	vim.list_extend(cmd, split_rev)
 
 	-- Try to execute cmd
 	utils.with_confirmation(
