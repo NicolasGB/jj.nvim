@@ -1833,8 +1833,10 @@ function M.handle_squash_execute(mode, ignore_immut, interactive)
 
 					-- Clear all highlighting before transitioning
 					M.exit_special_mode("Squash")
-					-- Refresh log
-					M.log({})
+					vim.schedule(function()
+						-- Refresh log
+						M.log({})
+					end)
 				else
 					utils.notify(
 						string.format("Cancelled squashing `%s` into `%s`", revsets, destination_revset),
