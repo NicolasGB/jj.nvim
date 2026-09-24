@@ -627,6 +627,59 @@ function M.open_pr_for_bookmark(bookmark)
 	end)
 end
 
+--- Resolve a revset to a single ID that `jj` accepts wherever a revision is
+--- expected. This is normally the change ID. A divergent change ID matches
+--- several commits, so for a divergent change it is the commit ID instead.
+--- @param revset string The revset to resolve
+--- @param silent? boolean Do not notify when `jj` fails (an ambiguous revset is still reported)
+--- @return string|nil id The resolved ID, or nil if the revset is not a single revision
+function M.resolve_revision_id(revset, silent)
+	local cmd = {
+		"jj",
+		"log",
+		"--no-graph",
+		"-r",
+		revset,
+		"-T",
+		'if(divergent, commit_id, change_id) ++ "\n"',
+		"--quiet",
+	}
+	local raw_ids, ok = runner.execute(cmd, "jj: failed to resolve revision", nil, silent)
+	if not ok or not raw_ids then
+		return nil
+	end
+	local ids = vim.split(vim.trim(raw_ids), "\n", { trimempty = true })
+	if #ids ~= 1 then
+		M.notify(string.format("Revision '%s' is ambiguous", revset), vim.log.levels.ERROR)
+		return nil
+	end
+	return ids[1]
+end
+
+--- Check if a given revset is a hidden commit, e.g. a commit ID that was
+--- rewritten since it was resolved.
+--- @param revset string The revset to check
+--- @return boolean True if the commit is hidden, false otherwise
+function M.is_commit_hidden(revset)
+	local cmd = {
+		"jj",
+		"log",
+		"--no-graph",
+		"-r",
+		revset,
+		"-T",
+		"hidden",
+		"--quiet",
+	}
+
+	local output, success = runner.execute(cmd, "Error checking commit visibility", nil, true)
+	if not success or not output then
+		return false
+	end
+
+	return vim.trim(output) == "true"
+end
+
 --- Check if a given revset represents an immutable change
 --- @param revset string The revset to check
 --- @return boolean True if the change is immutable, false otherwise

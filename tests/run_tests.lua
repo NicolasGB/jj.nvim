@@ -990,6 +990,69 @@ run_test("get_file_content: genuine read error returns failure without absent", 
 	end
 end)
 
+print("\n=== Running resolve_revision_id tests ===\n")
+
+local function with_execute(fake, fn)
+	local runner = require("jj.core.runner")
+	local original = runner.execute
+	local original_notify = utils.notify
+	runner.execute = fake
+	utils.notify = function() end
+	local ok_test, err = pcall(fn)
+	runner.execute = original
+	utils.notify = original_notify
+	if not ok_test then
+		error(err)
+	end
+end
+
+run_test("resolve_revision_id: uses a divergence-aware template", function()
+	with_execute(function(cmd)
+		assert_table_equals({
+			"jj",
+			"log",
+			"--no-graph",
+			"-r",
+			"@--",
+			"-T",
+			'if(divergent, commit_id, change_id) ++ "\n"',
+			"--quiet",
+		}, cmd)
+		return "428616b9c0ffee\n", true
+	end, function()
+		assert_equals("428616b9c0ffee", utils.resolve_revision_id("@--"))
+	end)
+end)
+
+run_test("resolve_revision_id: returns nil for a multi-revision revset", function()
+	with_execute(function()
+		return "kopmqmqk\nvnwtpplv\n", true
+	end, function()
+		assert_is_nil(utils.resolve_revision_id("@ | @-"))
+	end)
+end)
+
+run_test("resolve_revision_id: returns nil when jj fails", function()
+	with_execute(function()
+		return nil, false
+	end, function()
+		assert_is_nil(utils.resolve_revision_id("nope"))
+	end)
+end)
+
+run_test("write_revision_file: refuses to write to a hidden commit", function()
+	local jj_file = require("jj.file")
+	local calls = {}
+	with_execute(function(cmd)
+		table.insert(calls, cmd)
+		return "true\n", true
+	end, function()
+		jj_file.write_revision_file(0, "428616b9c0ffee", "src/file.py", false)
+		assert_equals(1, #calls, "only the hidden check runs")
+		assert_equals(true, vim.tbl_contains(calls[1], "hidden"), "the check asks for the hidden keyword")
+	end)
+end)
+
 -- Print summary
 print(string.format("\n=== Test Summary ==="))
 print(string.format("Passed: %d", tests_passed))

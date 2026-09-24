@@ -306,6 +306,16 @@ end
 --- @param rel_path string Repository-relative path of the file
 --- @param force boolean Whether to bypass the immutability check (`:w!`)
 local function write_revision_file(buf, change_id, rel_path, force)
+	-- A divergent revision is named by its commit ID, and a write rewrites that
+	-- commit. Writing through the stale ID again would revive the old commit.
+	if utils.is_commit_hidden(change_id) then
+		utils.notify(
+			string.format("Revision %s was rewritten; open the file again with :Jedit", change_id),
+			vim.log.levels.ERROR
+		)
+		return
+	end
+
 	if utils.is_change_immutable(change_id) then
 		if not force then
 			utils.notify("Cannot write to immutable revision: " .. change_id, vim.log.levels.ERROR)
@@ -442,26 +452,10 @@ function M.open_target(opts)
 		return
 	end
 
-	local cmd = {
-		"jj",
-		"log",
-		"--no-graph",
-		"-r",
-		revision,
-		"-T",
-		'change_id ++ "\n"',
-		"--quiet",
-	}
-	local raw_ids, ok = runner.execute(cmd, "jj: failed to resolve revision", nil, true)
-	if not ok or not raw_ids then
+	local change_id = utils.resolve_revision_id(revision, true)
+	if not change_id then
 		return
 	end
-	local ids = vim.split(vim.trim(raw_ids), "\n", { trimempty = true })
-	if #ids ~= 1 then
-		utils.notify(string.format("Revision '%s' is ambiguous", revision), vim.log.levels.ERROR)
-		return
-	end
-	local change_id = ids[1]
 
 	local lines, had_eol, ok_read, used_enc = get_file_content(change_id, path)
 	if not ok_read then
