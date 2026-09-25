@@ -1,6 +1,5 @@
 local utils = require("jj.utils")
 local buffer = require("jj.core.buffer")
-local runner = require("jj.core.runner")
 
 local diff = require("jj.diff")
 local file = require("jj.file")
@@ -10,26 +9,10 @@ local file = require("jj.file")
 --- @param path string The file path (absolute or repo-relative)
 --- @param enc? jj.file.enc Encoding settings for the file content
 local function open_revision(rev, path, enc)
-	local cmd = {
-		"jj",
-		"log",
-		"--no-graph",
-		"-r",
-		rev,
-		"-T",
-		'change_id ++ "\n"',
-		"--quiet",
-	}
-	local raw_ids, ok = runner.execute(cmd, "jj: failed to resolve revision")
-	if not ok or not raw_ids then
+	local change_id = utils.resolve_revision_id(rev)
+	if not change_id then
 		return
 	end
-	local ids = vim.split(vim.trim(raw_ids), "\n", { trimempty = true })
-	if #ids ~= 1 then
-		utils.notify(string.format("Revision '%s' is ambiguous", rev), vim.log.levels.ERROR)
-		return
-	end
-	local change_id = ids[1]
 
 	local rel_path, err = utils.normalize_relative_path(path)
 	if not rel_path then
