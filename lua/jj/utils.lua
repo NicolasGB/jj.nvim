@@ -509,7 +509,7 @@ function M.is_colocated()
 		return false
 	end
 
-	return vim.startswith(vim.trim(output), "Workspace is currently colocated with Git.")
+	return vim.trim(output):find("is currently colocated with Git.") ~= nil
 end
 
 --- Get all bookmarks in the repository, filters out deleted bookmarks
