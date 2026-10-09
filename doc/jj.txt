@@ -1,0 +1,135 @@
+*jj.txt*    A Jujutsu wrapper for vim
+
+Author: Nicolas GB <ngou0210@gmail.com>
+License: MIT License <https://github.com/NicolasGB/jj.nvim/blob/main/License>
+
+This plugin is only available if 'compatible' is not set.
+
+INTRODUCTION                                    *jj*
+
+Plugin that helps work with Jujutsu <https://www.jj-vcs.dev/latest/> repositories
+
+COMMANDS                                        *jj-commands*
+
+                                                *jj-:J*
+:J                      With no arguments, runs :J log
+
+                                                *:J*
+:J {args}               Runs one of the jj-nvim subcommands
+
+                                                *:J_describe*
+:J desc[ribe]           Set change descriptions with a Git-style commit message editor
+
+                                                *:J_status*
+:J st[atus]             Show repository status
+
+                                                *:J_log*
+:J log                  Display log history with configurable options and change the displayed revset from the log buffer
+
+                                                *:J_diff*
+:J diff                 Show changes with optional filtering by current file
+
+                                                *:J_new*
+:J new                  Create a new change with optional parent selection
+
+                                                *:J_edit*
+:J edit                 Edit a change
+
+                                                *:J_squash*
+:J squash               Squash the current diff to its parent or interactive squash mode from the log buffer
+
+                                                *:J_split*
+:J split                Split a change interactively in a floating terminal
+
+                                                *:J_resolve*
+:J resolve              Resolve conflicts interactively in a floating terminal or via external strategy
+
+                                                *:J_rebase*
+:J rebase               Rebase changes to a destination
+
+                                                *:J_duplicate*
+:J duplicate            Duplicate one or more changes to a destination revision
+
+                                                *:J_bookmark_create*
+:J bookmark create      Create bookmarks
+
+                                                *:J_bookmark_delete*
+:J bookmark delete      Delete bookmarks
+
+                                                *:J_bookmark_track*
+:J bookmark track       Track bookmarks
+
+                                                *:J_bookmark_forget*
+:J bookmark forget      Forget bookmarks
+
+                                                *:J_tag_set*
+:J tag set              Set tags
+
+                                                *:J_tag_delete*
+:J tag delete           Delete tags
+
+                                                *:J_tag_push*
+:J tag push             Push tags (Requires colocated repo)
+
+                                                *:J_undo*
+:J undo                 Undo the last operation
+
+                                                *:J_redo*
+:J redo                 Redo the last undone operation
+
+                                                *:J_open_pr*
+:J open_pr              Open a PR/MR on your remote (GitHub, GitLab, Gitea, Forgejo, etc.)
+
+                                                *:J_browse*
+:J browse               Open the current file on your remote at the current line (or selected range)
+
+                                                *:J_annotate*
+:J annotate             View file blame line history with change ID, author, and timestamp
+
+                                                *:J_annotate_line*
+:J annotate_line        View line history with change ID, author, and timestamp
+
+                                                *:J_commit*
+:J commit               Describe the current change and create a new one after
+
+                                                *:J_diff_history*
+:J diff_history         Open a history-aware diff between two revisions when supported by your diff backend
+
+                                                *:Jdiff*
+:Jdiff [revision]       Vertical split diff against a jj revision
+
+                                                *:Jhdiff*
+:Jhdiff [revision]      Horizontal split diff
+
+MAPS                                            *jj-maps*
+
+<SHIFT-K>               Show a tooltip with the revision's changed files.
+                        Press a second time to enter the tooltip buffer.
+
+<SHIFT-K>               Diff the file under cursor at that revision
+
+<CR>                    Edit the revision and open the file
+
+<SHIFT-CR>              Edit the revision (ignoring immutability) and open the file
+
+<SHIFT-D>               You can diff any change in your log history by pressing
+                        `<SHIFT-D>` on its line or on a summary file change. This opens the configured
+                        diff backend for the revision under the cursor.
+
+                        This integrates with your preferred diff plugin or uses your native jj diff config.
+                        See |jj-diff-module|
+
+DIFF MODULE                                    *jj-diff-module*
+
+The diff module provides a unified API for viewing diffs with pluggable backend support.
+
+The natively supported backends are:
+
+- Native (Diffs the current file in place and uses a floating buffer with your jj diff command when diffing changes)
+- CodeDiff <https://github.com/esmuellert/codediff.nvim>
+- Diffview <https://github.com/sindrets/diffview.nvim>
+
+
+
+
+ vim:tw=78:et:ft=help:norl:
