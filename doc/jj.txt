@@ -81,7 +81,7 @@ COMMANDS                                        *jj-commands*
 :J open_pr              Open a PR/MR on your remote (GitHub, GitLab, Gitea, Forgejo, etc.)
 
                                                 *:J_browse*
-:J browse               Open the current file on your remote at the current line (or selected range)
+:J browse [revision]    Open the current file on your remote at the current line (or selected range). Defaults to @
 
                                                 *:J_annotate*
 :J annotate             View file blame line history with change ID, author, and timestamp
@@ -96,13 +96,15 @@ COMMANDS                                        *jj-commands*
 :J diff_history         Open a history-aware diff between two revisions when supported by your diff backend
 
                                                 *:Jdiff*
-:Jdiff [revision]       Vertical split diff against a jj revision
+:Jdiff [revision]
+:Jvdiff [revision]      Vertical split diff against a jj revision. Defaults to @
 
                                                 *:Jhdiff*
 :Jhdiff [revision]      Horizontal split diff
 
-MAPS                                            *jj-maps*
+MAPS                                           *jj-maps*
 
+                                               *jj-log-maps*
 Log maps ~
 <SHIFT-K>               Show a tooltip with the revision's changed files.
                         Press a second time to enter the tooltip buffer.
@@ -160,6 +162,79 @@ is                      Enter interactive squash mode for the revision(s) under 
 
 <SHIFT-I> <SHIFT-S>     Interactively squash the revision under the cursor into its parent
 
+<CTRL-S>                Split the revision under cursor
+
+gr                      Resolve conflicts for the selected revision
+                        See |jj-resolve-module|
+
+r                       Enter |jj-rebase-mode| targeting the revision(s) under cursor
+                        See |jj-rebase-module|
+
+<CTRL-Y>                Enter |jj-duplicate-mode| targeting the revision(s) under cursor
+                        See |jj-diff-module|
+
+o                       Open a PR/MR from the revision under cursor
+
+<SHIFT-O>               Select a remote from all available bookmarks are open a PR/MR
+                        See |jj-pr-module|
+
+                                               *jj-squash-maps*
+Squash maps ~
+
+<CR>                    Squash into the revision under cursor
+
+<SHIFT-CR>              Squash into the revision under cursor ignoring immutability
+
+<CTRL-C>
+<ESC>                   Exit squash mode without making changes
+
+                                               *jj-rebase-mode*
+Rebase maps ~
+
+o
+<CR>                    Rebase onto the revision under cursor
+
+a                       Rebase after the revision under cursor
+
+b                       Rebase before the revision under cursor
+
+<SHIFT-O>
+<SHIFT-CR>              Rebase onto the revision under cursor ignoring immutability
+
+<SHIFT-A>               Rebase after the revision under cursor ignoring immutability
+
+<SHIFT-B>               Rebase before the revision under cursor ignoring immutability
+
+<CTRL-C>
+<ESC>                   Exit rebase mode without making changes
+
+                                               *jj-duplicate-mode*
+Duplicate maps ~
+
+o
+<CR>                    Duplicate onto the revision under cursor
+
+a                       Duplicate after the revision under cursor
+
+b                       Duplicate before the revision under cursor
+
+<SHIFT-O>
+<SHIFT-CR>              Duplicate onto the revision under cursor ignoring immutability
+
+<SHIFT-A>               Duplicate after the revision under cursor ignoring immutability
+
+<SHIFT-B>               Duplicate before the revision under cursor ignoring immutability
+
+<CTRL-C>
+<ESC>                   Exit duplicate mode without making changes
+
+                                               *jj-status-mode*
+Status maps ~
+
+<CR>                    Open the file under the cursor in the current window
+
+<SHIFT-X>               Restore the file(s) under the cursor
+
 
 DIFF MODULE                                    *jj-diff-module*
 
@@ -171,7 +246,58 @@ The natively supported backends are:
 - CodeDiff <https://github.com/esmuellert/codediff.nvim>
 - Diffview <https://github.com/sindrets/diffview.nvim>
 
+RESOLVE MODULE                                 *jj-resolve-module*
 
+How it integrates with the log buffer:
+
+- Uses `jj resolve --revision <revset>` for the revision under cursor
+- If `cmd.resolve_strategies` has more than one strategy, `vim.ui.select` prompts you to choose one
+- If a strategy is selected, its `args` and `external` options are passed to `cmd.resolve(...)`
+- On success, the log buffer is automatically reloaded so conflict state is refreshed
+- When using floating terminals, cancelled/failed resolve attempts restore the log view
+
+REBASE MODULE                                  *jj-rebase-module*
+
+Once in rebase mode, the interface highlights your selection and the current rebase destination:
+
+- Selected changes are highlighted in your configured `selected_hl` color (default: dark magenta)
+- The cursor position (potential rebase destination) is highlighted in your configured `targeted_hl` color (default: green)
+- Move the cursor to preview different rebase destinations with live highlighting
+
+DUPLICATE MODULE                               *jj-duplicate-module*
+
+Once in duplicate mode, the interface highlights your selection and the current duplicate destination:
+
+- Selected changes are highlighted in your configured `selected_hl` color (default: dark magenta)
+- The cursor position (target destination) is highlighted in your configured `targeted_hl` color (default: green)
+- Move the cursor to preview different duplicate destinations with live highlighting
+
+PR MODULE                                      *jj-pr-module*
+
+This is a jj.nvim exclusive feature - The ability to seamlessly bridge from your Neovim jj workflow directly
+to your remote platform's PR/MR interface.
+
+- Extracts the bookmark from the revision
+- Detects your git platform (GitHub, GitLab, Gitea, Forgejo, etc.)
+- Constructs the appropriate PR/MR URL
+- Handles both HTTPS and SSH remote URLs
+- Prompts you to select a remote if you have multiple
+
+BROWSE MODULE                                  *jj-browse-module*
+
+Open the current buffer's file in your browser on the hosted remote (GitHub/GitLab/Gitea/Forgejo, etc.) at
+the current cursor line or a visually selected range.
+
+- Takes the current buffer path and makes it repo-relative (must be inside a jj repo)
+- Collects git remotes; if there's more than one, prompts you to pick one
+- Normalizes the remote URL to an HTTPS base repo URL
+- Picks a ref that is expected to exist on the remote:
+  - With default `@`: walks back first-parent up to 20 parents to find a commit reachable from that remote's bookmarks; falls back to `trunk()` if needed
+  - With an explicit revset (e.g. `main`, `@-2`): uses that revset directly (no walkback)
+  - If there's a single unambiguous remote bookmark pointing at the chosen commit, uses that bookmark name; otherwise uses the commit SHA
+- Builds a provider-specific URL and adds a line anchor:
+  - GitHub-style: `#L<start>` or `#L<start>-L<end>`
+  - GitLab-style: `#L<start>` or `#L<start>-<end>`
 
 
  vim:tw=78:et:ft=help:norl:
