@@ -9,6 +9,7 @@ local utils = require("jj.utils")
 ---@field rev? string          -- revision to diff against (default: "@-")
 ---@field path? string         -- path to diff (default: current buffer path)
 ---@field backend? jj.diff.backend
+---@field origin_win? integer -- originating editor captured before closing a jj view; used by native backend
 ---@field layout? "vertical"|"horizontal" -- only used by native backend
 
 ---@class jj.diff.revision_opts
