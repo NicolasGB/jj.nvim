@@ -97,8 +97,9 @@ function M.handle_status_enter()
 	-- Go to the previous window (split above)
 	vim.cmd("wincmd p")
 
-	-- Open the file in that window, replacing current buffer
-	vim.cmd("edit " .. vim.fn.fnameescape(filepath))
+	-- Open the file in that window, or in a new split when it is pinned to its buffer (no previous
+	-- window, or the previous window is another jj buffer)
+	vim.cmd((vim.wo.winfixbuf and "split " or "edit ") .. vim.fn.fnameescape(filepath))
 end
 --- Handle undoing form the status buffer
 function M.handle_status_undo()
@@ -120,6 +121,10 @@ function M.handle_diff_file()
 
 	if not file_info then
 		return
+	end
+
+	if require("jj").config.terminal.window.type == "floating" then
+		terminal.close_floating_buffer()
 	end
 
 	diff.diff_current({ path = file_info.new_path })

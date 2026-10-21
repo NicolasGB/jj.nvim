@@ -70,6 +70,10 @@ function M.create(opts)
 		-- Use the buffer that tabnew created
 		buf = vim.api.nvim_get_current_buf()
 	elseif opts.split == "current" then
+		-- A jj buffer is pinned to its window, so open a split instead of replacing it
+		if vim.wo.winfixbuf then
+			vim.cmd("split")
+		end
 		win = vim.api.nvim_get_current_win()
 		buf = vim.api.nvim_create_buf(false, true)
 		vim.api.nvim_win_set_buf(win, buf)
