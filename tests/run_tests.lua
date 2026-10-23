@@ -1540,7 +1540,7 @@ vim.cmd("qa!")
 	end)
 end
 
-window_test("status opens workspace path despite destination local cwd", function()
+window_test("status opens cwd-relative path despite destination local cwd", function()
 	local root = vim.fn.tempname()
 	vim.fn.mkdir(root .. "/sub", "p")
 	vim.fn.writefile({ "workspace file" }, root .. "/file.txt")
@@ -1568,6 +1568,52 @@ window_test("status opens workspace path despite destination local cwd", functio
 	vim.fn.delete(root, "rf")
 	if not ok then error(err) end
 end)
+
+-- jj renders paths relative to its invocation directory, including when that
+-- directory is below the workspace root. Resolve before switching to the origin.
+for _, action in ipairs({ "open", "diff" }) do
+	for _, path in ipairs({ "lua/plugins/new file.lua", "../shared.lua" }) do
+		window_test("status " .. action .. " resolves subdirectory path " .. path, function()
+			local root = vim.fn.tempname()
+			vim.fn.mkdir(root .. "/nvim/lua/plugins", "p")
+			root = vim.uv.fs_realpath(root)
+			local expected = vim.fs.normalize(root .. "/nvim/" .. path)
+			vim.fn.writefile({ "correct file" }, expected)
+			local saved_root = utils.get_jj_root
+			local saved_jj = package.loaded.jj
+			local diff = require("jj.diff")
+			local saved_diff = diff.diff_current
+			local ok, err = pcall(function()
+				utils.get_jj_root = function() return root end
+				package.loaded.jj = { config = { terminal = { window = { type = "hsplit" } } } }
+				local origin = vim.api.nvim_get_current_win()
+				vim.cmd("lcd " .. vim.fn.fnameescape(root))
+				require("jj.core.buffer").create({
+					split = "horizontal", win_options = { winfixbuf = true },
+				})
+				vim.cmd("lcd " .. vim.fn.fnameescape(root .. "/nvim"))
+				vim.api.nvim_buf_set_lines(0, 0, -1, false, { "A " .. path })
+				if action == "open" then
+					require("jj.cmd.status").handle_status_enter()
+					assert_equals(origin, vim.api.nvim_get_current_win())
+					assert_equals(expected, vim.api.nvim_buf_get_name(0))
+					assert_equals("correct file", vim.api.nvim_buf_get_lines(0, 0, 1, false)[1])
+				else
+					local captured
+					diff.diff_current = function(opts) captured = opts end
+					require("jj.cmd.status").handle_diff_file()
+					assert_equals(expected, captured.path)
+					assert_equals(origin, captured.origin_win)
+				end
+			end)
+			utils.get_jj_root = saved_root
+			package.loaded.jj = saved_jj
+			diff.diff_current = saved_diff
+			vim.fn.delete(root, "rf")
+			if not ok then error(err) end
+		end)
+	end
+end
 
 -- Print summary
 print(string.format("\n=== Test Summary ==="))

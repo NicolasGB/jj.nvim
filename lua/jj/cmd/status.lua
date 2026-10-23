@@ -84,7 +84,7 @@ function M.handle_status_enter()
 		return
 	end
 
-	local filepath = utils.resolve_workspace_path(file_info.new_path)
+	local filepath = utils.resolve_cwd_path(file_info.new_path)
 	if not filepath then
 		return
 	end
@@ -124,7 +124,7 @@ function M.handle_diff_file()
 		return
 	end
 
-	local filepath = utils.resolve_workspace_path(file_info.new_path)
+	local filepath = utils.resolve_cwd_path(file_info.new_path)
 	if not filepath then
 		return
 	end

@@ -1175,7 +1175,7 @@ function M.handle_summary_edit(revset, ignore_immut)
 	end
 
 	-- Keep the absolute path and destination across closing views and asynchronous jj edit.
-	local absolute_path = utils.resolve_workspace_path(filepath.new_path)
+	local absolute_path = utils.resolve_cwd_path(filepath.new_path)
 	if not absolute_path then
 		return
 	end

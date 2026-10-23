@@ -92,18 +92,16 @@ function M.is_absolute_path(path)
 		or path:sub(1, 2) == "\\\\"
 end
 
---- Resolve a jj workspace-relative path before changing windows or directories.
+--- Resolve a jj display path relative to the current working directory.
+--- jj status and diff summaries display cwd-relative paths, not workspace-relative
+--- paths. Capture the absolute path before closing views or changing windows.
 --- @param path string
 --- @return string|nil
-function M.resolve_workspace_path(path)
+function M.resolve_cwd_path(path)
 	if M.is_absolute_path(path) then
 		return vim.fs.normalize(path)
 	end
-	local root = M.get_jj_root()
-	if not root then
-		return nil
-	end
-	return vim.fs.normalize(vim.fs.joinpath(root, path))
+	return vim.fs.normalize(vim.fn.fnamemodify(path, ":p"))
 end
 
 --- Get a list of files modified in the current jj repository.
