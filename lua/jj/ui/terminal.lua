@@ -350,6 +350,7 @@ end
 --- @param keymaps jj.core.buffer.keymap[]|nil Additional keymaps to set for this floating buffer
 --- @param float_opts? {title?: string, modifiable?: boolean, keep_modifiable?: boolean, on_exit?: fun(exit_code: integer), interactive?: boolean}
 function M.run_floating(cmd, keymaps, float_opts)
+	local origin = require("jj.core.window").get_origin()
 	local jj_cmd = require("jj.cmd")
 	keymaps = jj_cmd.merge_keymaps(keymaps or {}, jj_cmd.floating_keymaps())
 	float_opts = float_opts or {}
@@ -415,6 +416,7 @@ function M.run_floating(cmd, keymaps, float_opts)
 			state.floating_buf_cmd = nil
 		end,
 	})
+	require("jj.core.window").set_origin(win, origin)
 	state.floating_buf = buf
 
 	local jid
@@ -546,6 +548,7 @@ end
 --- @param keymaps jj.core.buffer.keymap[]|nil Additional keymaps to set for this command buffer
 --- @return integer|nil buf The buffer handle, or nil on failure
 function M.run(cmd, keymaps)
+	local origin = require("jj.core.window").get_origin()
 	if opts.window.type == "floating" then
 		local subcmd = (type(cmd) == "string" and vim.split(cmd, " ") or cmd)[2]
 		subcmd = subcmd:sub(1, 1):upper() .. subcmd:sub(2)
@@ -612,7 +615,8 @@ function M.run(cmd, keymaps)
 	})
 
 	local win = vim.api.nvim_get_current_win()
-	vim.wo[win].winfixbuf = true
+	require("jj.core.window").set_origin(win, origin)
+	buffer.pin(state.buf, win)
 
 	vim.bo[state.buf].bufhidden = "wipe"
 

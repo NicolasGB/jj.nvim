@@ -6,6 +6,7 @@ local runner = require("jj.core.runner")
 local parser = require("jj.core.parser")
 local terminal = require("jj.ui.terminal")
 local buffer = require("jj.core.buffer")
+local window = require("jj.core.window")
 local diff = require("jj.diff")
 
 local log_selected_hl_group = "JJLogSelectedHlGroup"
@@ -1173,6 +1174,13 @@ function M.handle_summary_edit(revset, ignore_immut)
 		return
 	end
 
+	-- Keep the absolute path and destination across closing views and asynchronous jj edit.
+	local absolute_path = utils.resolve_workspace_path(filepath.new_path)
+	if not absolute_path then
+		return
+	end
+	local origin = window.get_origin()
+
 	-- Close the tooltip first
 	if terminal.state.tooltip_buf and vim.api.nvim_buf_is_valid(terminal.state.tooltip_buf) then
 		terminal.close_tooltip()
@@ -1189,8 +1197,8 @@ function M.handle_summary_edit(revset, ignore_immut)
 	runner.execute_async(cmd, function()
 		utils.reload_changed_file_buffers()
 		utils.notify(string.format("Editing revset: `%s`", revset), vim.log.levels.INFO)
-		-- Open the file in the current window
-		vim.cmd("edit " .. vim.fn.fnameescape(filepath.new_path))
+		window.enter(absolute_path, origin)
+		vim.cmd("edit " .. vim.fn.fnameescape(absolute_path))
 	end, string.format("Error editing revset: `%s`", revset))
 end
 

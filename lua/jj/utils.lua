@@ -83,6 +83,29 @@ function M.get_jj_root()
 	return nil
 end
 
+--- Check for Unix absolute paths, Windows drive paths, or Windows UNC paths.
+--- @param path string
+--- @return boolean
+function M.is_absolute_path(path)
+	return path:sub(1, 1) == "/"
+		or path:match("^%a:[/\\]") ~= nil
+		or path:sub(1, 2) == "\\\\"
+end
+
+--- Resolve a jj workspace-relative path before changing windows or directories.
+--- @param path string
+--- @return string|nil
+function M.resolve_workspace_path(path)
+	if M.is_absolute_path(path) then
+		return vim.fs.normalize(path)
+	end
+	local root = M.get_jj_root()
+	if not root then
+		return nil
+	end
+	return vim.fs.normalize(vim.fs.joinpath(root, path))
+end
+
 --- Get a list of files modified in the current jj repository.
 --- @return string[] A list of modified file paths
 function M.get_modified_files()

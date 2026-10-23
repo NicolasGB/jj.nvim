@@ -72,13 +72,13 @@ diff.register_backend("native", {
 			return
 		end
 
-		-- Show the file when called from another buffer (like status). A jj buffer is pinned to its
-		-- window, so use the previous window or a new split instead of diffing the jj buffer itself
-		if opts.path and vim.fn.expand("%:p") ~= vim.fn.fnamemodify(opts.path, ":p") then
-			if vim.wo.winfixbuf then
-				vim.cmd("wincmd p")
+		-- Resolve relative API paths before routing can change the window-local cwd.
+		local explicit_path = opts.path and vim.fn.fnamemodify(opts.path, ":p")
+		if explicit_path then
+			require("jj.core.window").enter(explicit_path, opts.origin_win)
+			if vim.fn.expand("%:p") ~= explicit_path then
+				vim.cmd("edit " .. vim.fn.fnameescape(explicit_path))
 			end
-			vim.cmd((vim.wo.winfixbuf and "split " or "edit ") .. vim.fn.fnameescape(opts.path))
 		end
 
 		-- Save current state to restore after diff is closed
@@ -88,7 +88,7 @@ diff.register_backend("native", {
 		local buf_name = vim.api.nvim_buf_get_name(0)
 		local change_id, jj_path = utils.parse_jj_uri(buf_name)
 		local rev = opts.rev or (change_id and (change_id .. "-")) or "@-"
-		local path = opts.path or jj_path or buf_name
+		local path = explicit_path or jj_path or buf_name
 		local layout = opts.layout or "vertical"
 
 		-- Borrow the current buffer's encoding settings so the revision

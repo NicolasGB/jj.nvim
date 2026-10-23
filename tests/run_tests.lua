@@ -1053,6 +1053,522 @@ run_test("write_revision_file: refuses to write to a hidden commit", function()
 	end)
 end)
 
+-- Window routing uses real Neovim windows rather than navigation history.
+local window = require("jj.core.window")
+local function window_test(name, fn)
+	run_test("window routing: " .. name, function()
+		vim.cmd("tabnew")
+		local tab = vim.api.nvim_get_current_tabpage()
+		local ok, err = pcall(fn)
+		if vim.api.nvim_tabpage_is_valid(tab) then
+			vim.api.nvim_set_current_tabpage(tab)
+			vim.cmd("tabclose!")
+		end
+		if not ok then
+			error(err)
+		end
+	end)
+end
+
+window_test("origin accessors read, store and clear without changing focus", function()
+	local editor = vim.api.nvim_get_current_win()
+	assert_equals(editor, window.get_origin())
+	local _, view = require("jj.core.buffer").create_float({ enter = true })
+	assert_equals(editor, window.get_origin())
+	window.set_origin(view, nil)
+	assert_is_nil(window.get_origin())
+	window.set_origin(view, editor)
+	assert_equals(editor, window.get_origin())
+	assert_equals(view, vim.api.nvim_get_current_win())
+	window.set_origin(view, -1)
+	assert_equals(-1, window.get_origin(), "reader must not validate stored IDs")
+end)
+
+local function pinned_view(origin)
+	vim.cmd("vnew")
+	local win = vim.api.nvim_get_current_win()
+	vim.wo.winfixbuf = true
+	window.set_origin(vim.api.nvim_get_current_win(), origin)
+	return win
+end
+
+window_test("prefers an existing file window over the origin", function()
+	local origin = vim.api.nvim_get_current_win()
+	vim.cmd("vnew")
+	local target = vim.api.nvim_get_current_win()
+	local path = vim.fn.tempname()
+	vim.api.nvim_buf_set_name(0, path)
+	pinned_view(origin)
+	local count = #vim.api.nvim_tabpage_list_wins(0)
+	assert_equals(target, window.enter(path))
+	assert_equals(count, #vim.api.nvim_tabpage_list_wins(0))
+end)
+
+window_test("uses the origin even when another window was visited last", function()
+	local origin = vim.api.nvim_get_current_win()
+	vim.cmd("vnew")
+	local other = vim.api.nvim_get_current_win()
+	local view = pinned_view(origin)
+	vim.api.nvim_set_current_win(other)
+	vim.api.nvim_set_current_win(view)
+	assert_equals(origin, window.enter())
+end)
+
+window_test("falls back to another editor when origin was closed", function()
+	local origin = vim.api.nvim_get_current_win()
+	vim.cmd("vnew")
+	local other = vim.api.nvim_get_current_win()
+	pinned_view(origin)
+	vim.api.nvim_win_close(origin, true)
+	assert_equals(other, window.enter())
+end)
+
+window_test("skips pinned, diff, help and floating windows", function()
+	local editor = vim.api.nvim_get_current_win()
+	local pinned = pinned_view(editor)
+	vim.cmd("vnew")
+	local diff_win = vim.api.nvim_get_current_win()
+	vim.wo.diff = true
+	vim.cmd("vnew")
+	vim.bo.buftype = "help"
+	local float = vim.api.nvim_open_win(vim.api.nvim_create_buf(false, true), true, {
+		relative = "editor", width = 10, height = 3, row = 0, col = 0,
+	})
+	assert_equals(false, window.is_editor(pinned))
+	assert_equals(false, window.is_editor(diff_win))
+	assert_equals(false, window.is_editor(float))
+	assert_equals(editor, window.enter())
+end)
+
+window_test("creates exactly one split when no editor is usable", function()
+	vim.wo.winfixbuf = true
+	local count = #vim.api.nvim_tabpage_list_wins(0)
+	local target = window.enter()
+	assert_equals(count + 1, #vim.api.nvim_tabpage_list_wins(0))
+	assert_equals(true, window.is_editor(target))
+	assert_equals(target, window.enter())
+	assert_equals(count + 1, #vim.api.nvim_tabpage_list_wins(0))
+end)
+
+window_test("fallback from status creates a usable editor, not a status copy", function()
+	local origin = vim.api.nvim_get_current_win()
+	vim.cmd("vnew")
+	local status_win = vim.api.nvim_get_current_win()
+	local status_buf = vim.api.nvim_get_current_buf()
+	vim.api.nvim_open_term(status_buf, {})
+	vim.wo.winfixbuf = true
+	window.set_origin(vim.api.nvim_get_current_win(), origin)
+	vim.api.nvim_win_close(origin, true)
+
+	local count = #vim.api.nvim_tabpage_list_wins(0)
+	local target = window.enter("lua/jj/diff/native.lua")
+	assert_equals(true, window.is_editor(target), "fallback must be ready for another routing pass")
+	assert_equals(count + 1, #vim.api.nvim_tabpage_list_wins(0))
+	assert_equals(target, window.enter("lua/jj/diff/native.lua"))
+	assert_equals(count + 1, #vim.api.nvim_tabpage_list_wins(0), "native diff must not split again")
+	local status_copies = 0
+	for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+		if vim.api.nvim_win_get_buf(win) == status_buf then
+			status_copies = status_copies + 1
+		end
+	end
+	assert_equals(1, status_copies, "only the original status window should remain")
+	assert_equals(status_buf, vim.api.nvim_win_get_buf(status_win))
+end)
+
+window_test("nested views inherit the originating editor", function()
+	local origin = vim.api.nvim_get_current_win()
+	local buffer = require("jj.core.buffer")
+	local _, first = buffer.create({ split = "vertical", win_options = { winfixbuf = true } })
+	assert_equals(origin, vim.w[first].jj_origin_win)
+	local _, float = buffer.create_float({ enter = true, win_options = { winfixbuf = true } })
+	assert_equals(origin, vim.w[float].jj_origin_win)
+	local captured = window.get_origin()
+	vim.api.nvim_win_close(float, true)
+	assert_equals(origin, window.enter(nil, captured))
+end)
+
+window_test("tab views return to their originating editor tab", function()
+	local origin = vim.api.nvim_get_current_win()
+	local _, view = require("jj.core.buffer").create({
+		split = "tab",
+		win_options = { winfixbuf = true },
+	})
+	local view_tab = vim.api.nvim_get_current_tabpage()
+	local ok, err = pcall(function()
+		assert_equals(origin, vim.w[view].jj_origin_win)
+		assert_equals(origin, window.enter())
+	end)
+	if vim.api.nvim_tabpage_is_valid(view_tab) then
+		vim.api.nvim_set_current_tabpage(view_tab)
+		vim.cmd("tabclose!")
+	end
+	if not ok then
+		error(err)
+	end
+end)
+
+window_test("current-buffer creation reuses origin rather than splitting", function()
+	local origin = vim.api.nvim_get_current_win()
+	pinned_view(origin)
+	local count = #vim.api.nvim_tabpage_list_wins(0)
+	local _, target = require("jj.core.buffer").create({ split = "current" })
+	assert_equals(origin, target)
+	assert_equals(count, #vim.api.nvim_tabpage_list_wins(0))
+end)
+
+-- Delay jj edit completion to exercise window changes while the command runs.
+local function summary_edit_test(name, scenario)
+	window_test("log summary edit " .. name, function()
+		local runner = require("jj.core.runner")
+		local terminal = require("jj.ui.terminal")
+		local originals = {
+			execute_async = runner.execute_async,
+			is_change_immutable = utils.is_change_immutable,
+			reload_changed_file_buffers = utils.reload_changed_file_buffers,
+			notify = utils.notify,
+			close_tooltip = terminal.close_tooltip,
+			close_terminal_buffer = terminal.close_terminal_buffer,
+			tooltip_buf = terminal.state.tooltip_buf,
+		}
+		local ok, err = pcall(function()
+			local origin = vim.api.nvim_get_current_win()
+			vim.cmd("vnew")
+			local other = vim.api.nvim_get_current_win()
+			local _, log_win = require("jj.core.buffer").create({
+				split = "horizontal", win_options = { winfixbuf = true },
+			})
+			window.set_origin(log_win, origin)
+			local tooltip_buf, tooltip_win = require("jj.core.buffer").create_float({
+				enter = true, win_options = { winfixbuf = true },
+			})
+			terminal.state.tooltip_buf = tooltip_buf
+			local path = vim.fn.tempname() .. " summary file.txt"
+			vim.api.nvim_buf_set_lines(tooltip_buf, 0, -1, false, { "M " .. path })
+			local callback
+			local cmd
+			runner.execute_async = function(args, on_success)
+				cmd = args
+				callback = on_success
+			end
+			utils.is_change_immutable = function() return false end
+			utils.reload_changed_file_buffers = function() end
+			utils.notify = function() end
+			terminal.close_tooltip = function()
+				vim.api.nvim_win_close(tooltip_win, true)
+			end
+			terminal.close_terminal_buffer = function()
+				vim.api.nvim_win_close(log_win, true)
+			end
+			require("jj.cmd.log").handle_summary_edit("test-rev", false)
+			assert_table_equals({ "jj", "edit", "test-rev" }, cmd)
+			assert_equals("function", type(callback))
+			scenario(origin, other, path, callback)
+		end)
+		runner.execute_async = originals.execute_async
+		utils.is_change_immutable = originals.is_change_immutable
+		utils.reload_changed_file_buffers = originals.reload_changed_file_buffers
+		utils.notify = originals.notify
+		terminal.close_tooltip = originals.close_tooltip
+		terminal.close_terminal_buffer = originals.close_terminal_buffer
+		terminal.state.tooltip_buf = originals.tooltip_buf
+		if not ok then
+			error(err)
+		end
+	end)
+end
+
+summary_edit_test("returns to captured origin after switching windows", function(origin, other, path, complete)
+	vim.api.nvim_set_current_win(other)
+	local other_buf = vim.api.nvim_win_get_buf(other)
+	local count = #vim.api.nvim_tabpage_list_wins(0)
+	complete()
+	assert_equals(origin, vim.api.nvim_get_current_win())
+	assert_equals(path, vim.api.nvim_buf_get_name(0))
+	assert_equals(other_buf, vim.api.nvim_win_get_buf(other))
+	assert_equals(count, #vim.api.nvim_tabpage_list_wins(0))
+end)
+
+summary_edit_test("falls back safely when origin closes during jj edit", function(origin, other, path, complete)
+	vim.api.nvim_win_close(origin, true)
+	vim.api.nvim_set_current_win(other)
+	complete()
+	assert_equals(other, vim.api.nvim_get_current_win())
+	assert_equals(path, vim.api.nvim_buf_get_name(0))
+	assert_equals(1, #vim.api.nvim_tabpage_list_wins(0))
+end)
+
+summary_edit_test("prefers a window already displaying the target", function(origin, other, path, complete)
+	vim.api.nvim_set_current_win(other)
+	vim.cmd("edit " .. vim.fn.fnameescape(path))
+	vim.api.nvim_set_current_win(origin)
+	local origin_buf = vim.api.nvim_win_get_buf(origin)
+	complete()
+	assert_equals(other, vim.api.nvim_get_current_win())
+	assert_equals(origin_buf, vim.api.nvim_win_get_buf(origin))
+end)
+
+local function with_hidden(hidden, fn)
+	local saved = vim.o.hidden
+	vim.o.hidden = hidden
+	local ok, err = pcall(fn)
+	vim.o.hidden = saved
+	if not ok then
+		error(err)
+	end
+end
+
+window_test("current-buffer creation preserves a modified origin with nohidden", function()
+	with_hidden(false, function()
+		local origin = vim.api.nvim_get_current_win()
+		local source = vim.api.nvim_get_current_buf()
+		vim.api.nvim_buf_set_lines(source, 0, -1, false, { "unsaved changes" })
+		pinned_view(origin)
+		local count = #vim.api.nvim_tabpage_list_wins(0)
+		local _, target = require("jj.core.buffer").create({ split = "current" })
+		assert_equals(count + 1, #vim.api.nvim_tabpage_list_wins(0))
+		assert_equals(false, target == origin)
+		assert_equals(source, vim.api.nvim_win_get_buf(origin))
+		assert_equals(true, vim.bo[source].modified)
+		assert_table_equals({ "unsaved changes" }, vim.api.nvim_buf_get_lines(source, 0, -1, false))
+	end)
+end)
+
+window_test("current-buffer creation protects a modified current editor too", function()
+	with_hidden(false, function()
+		local origin = vim.api.nvim_get_current_win()
+		local source = vim.api.nvim_get_current_buf()
+		vim.api.nvim_buf_set_lines(source, 0, -1, false, { "unsaved" })
+		local _, target = require("jj.core.buffer").create({ split = "current" })
+		assert_equals(false, target == origin)
+		assert_equals(source, vim.api.nvim_win_get_buf(origin))
+		assert_equals(true, vim.bo[source].modified)
+	end)
+end)
+
+window_test("modified origin can be reused when hidden is enabled", function()
+	with_hidden(true, function()
+		local origin = vim.api.nvim_get_current_win()
+		local source = vim.api.nvim_get_current_buf()
+		vim.api.nvim_buf_set_lines(source, 0, -1, false, { "unsaved" })
+		pinned_view(origin)
+		local count = #vim.api.nvim_tabpage_list_wins(0)
+		local _, target = require("jj.core.buffer").create({ split = "current" })
+		assert_equals(origin, target)
+		assert_equals(count, #vim.api.nvim_tabpage_list_wins(0))
+		assert_equals(true, vim.bo[source].modified)
+	end)
+end)
+
+window_test("reuses a modified matching file even with nohidden", function()
+	with_hidden(false, function()
+		local origin = vim.api.nvim_get_current_win()
+		local path = vim.fn.tempname()
+		vim.api.nvim_buf_set_name(0, path)
+		vim.api.nvim_buf_set_lines(0, 0, -1, false, { "unsaved" })
+		pinned_view(origin)
+		local count = #vim.api.nvim_tabpage_list_wins(0)
+		assert_equals(origin, window.enter(path))
+		assert_equals(count, #vim.api.nvim_tabpage_list_wins(0))
+		assert_equals(true, vim.bo.modified)
+	end)
+end)
+
+window_test("uses another safe editor before splitting for a modified origin", function()
+	with_hidden(false, function()
+		local origin = vim.api.nvim_get_current_win()
+		vim.api.nvim_buf_set_lines(0, 0, -1, false, { "unsaved" })
+		vim.cmd("vnew")
+		local other = vim.api.nvim_get_current_win()
+		pinned_view(origin)
+		local count = #vim.api.nvim_tabpage_list_wins(0)
+		assert_equals(other, window.enter())
+		assert_equals(count, #vim.api.nvim_tabpage_list_wins(0))
+	end)
+end)
+
+-- Exercise real external backend adapters; stub only their dependencies and UI commands.
+for _, backend in ipairs({ "codediff", "diffview" }) do
+	window_test("status leaves no editor split when launching " .. backend, function()
+		local saved_jj = package.loaded.jj
+		local saved_dependency = utils.has_dependency
+		local saved_commit = utils.get_commit_id
+		local saved_normalize = utils.normalize_relative_path
+		local commands = backend == "codediff" and { "CodeDiff" } or { "DiffviewOpen", "DiffviewToggleFiles" }
+		local ok, err = pcall(function()
+			package.loaded.jj = {
+				config = { terminal = { window = { type = "hsplit" } }, diff = { backend = backend } },
+			}
+			utils.has_dependency = function() return true end
+			utils.get_commit_id = function() return "abc123" end
+			utils.normalize_relative_path = function(path) return path end
+			local launches = 0
+			vim.api.nvim_create_user_command(commands[1], function()
+				launches = launches + 1
+				vim.cmd("tabnew")
+			end, { nargs = "*" })
+			if commands[2] then
+				vim.api.nvim_create_user_command(commands[2], function() end, {})
+			end
+			require("jj.diff." .. backend)
+			local status_tab = vim.api.nvim_get_current_tabpage()
+			local status_win = vim.api.nvim_get_current_win()
+			vim.api.nvim_buf_set_lines(0, 0, -1, false, { "M lua/jj/core/window.lua" })
+			vim.wo.winfixbuf = true
+			require("jj.cmd.status").handle_diff_file()
+			assert_equals(1, launches)
+			-- CodeDiff runs through nvim_win_call(), which may restore the
+			-- caller's current tab after the command creates the diff tab.
+			local tabs = vim.api.nvim_list_tabpages()
+			local diff_tab = tabs[#tabs]
+			assert_equals(false, diff_tab == status_tab)
+			vim.api.nvim_set_current_tabpage(diff_tab)
+			vim.cmd("tabclose!")
+			assert_equals(false, vim.api.nvim_tabpage_is_valid(diff_tab))
+			assert_table_equals({ status_win }, vim.api.nvim_tabpage_list_wins(status_tab))
+		end)
+		for _, command in ipairs(commands) do
+			pcall(vim.api.nvim_del_user_command, command)
+		end
+		package.loaded.jj = saved_jj
+		utils.has_dependency = saved_dependency
+		utils.get_commit_id = saved_commit
+		utils.normalize_relative_path = saved_normalize
+		if not ok then
+			error(err)
+		end
+	end)
+end
+
+window_test("native diff uses the captured origin after floating status closes", function()
+	local terminal = require("jj.ui.terminal")
+	local file = require("jj.file")
+	local saved_jj = package.loaded.jj
+	local saved_close = terminal.close_floating_buffer
+	local saved_ensure = utils.ensure_jj
+	local saved_resolve = utils.resolve_revision_id
+	local saved_normalize = utils.normalize_relative_path
+	local saved_content = file.get_file_content
+	local ok, err = pcall(function()
+		package.loaded.jj = {
+			config = { terminal = { window = { type = "floating" } }, diff = { backend = "native" } },
+		}
+		utils.ensure_jj = function() return true end
+		utils.resolve_revision_id = function() return "native-routing-test" end
+		utils.normalize_relative_path = function(path) return path end
+		file.get_file_content = function(_, _, enc)
+			return { "old content" }, true, true, enc, false
+		end
+		require("jj.diff.native")
+		local origin = vim.api.nvim_get_current_win()
+		vim.cmd("vnew")
+		local other = vim.api.nvim_get_current_win()
+		local other_buf = vim.api.nvim_get_current_buf()
+		vim.api.nvim_set_current_win(origin)
+		local status_buf, status_win = require("jj.core.buffer").create_float({
+			enter = true, win_options = { winfixbuf = true },
+		})
+		vim.api.nvim_buf_set_lines(status_buf, 0, -1, false, { "M lua/jj/core/window.lua" })
+		terminal.close_floating_buffer = function()
+			vim.api.nvim_win_close(status_win, true)
+			vim.api.nvim_set_current_win(other)
+		end
+		require("jj.cmd.status").handle_diff_file()
+		assert_equals(true, vim.wo[origin].diff)
+		assert_equals(vim.fn.fnamemodify("lua/jj/core/window.lua", ":p"),
+			vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(origin)))
+		assert_equals(other_buf, vim.api.nvim_win_get_buf(other))
+		assert_equals(false, vim.wo[other].diff)
+		assert_equals(3, #vim.api.nvim_tabpage_list_wins(0), "two editor windows plus the revision side")
+		vim.api.nvim_win_close(vim.api.nvim_get_current_win(), true)
+		vim.wait(20)
+		assert_equals(false, vim.wo[origin].diff)
+	end)
+	package.loaded.jj = saved_jj
+	terminal.close_floating_buffer = saved_close
+	utils.ensure_jj = saved_ensure
+	utils.resolve_revision_id = saved_resolve
+	utils.normalize_relative_path = saved_normalize
+	file.get_file_content = saved_content
+	if not ok then
+		error(err)
+	end
+end)
+
+-- Run in a separate Neovim: this failure requires the jj view to be the
+-- last window in the entire editor, not just the last window in a test tab.
+for _, cleanup in ipairs({ "close", "delete", "wipe" }) do
+	run_test("pin cleanup: last status window is reusable after " .. cleanup, function()
+		local script = vim.fn.tempname() .. ".lua"
+		local source = [[
+package.path = package.path .. ";lua/?.lua;lua/?/init.lua"
+local buffer = require("jj.core.buffer")
+local terminal = require("jj.ui.terminal")
+local origin = vim.api.nvim_get_current_win()
+local first = vim.api.nvim_get_current_buf()
+vim.api.nvim_buf_set_name(first, vim.fn.tempname())
+local second = vim.api.nvim_create_buf(true, false)
+vim.api.nvim_buf_set_name(second, vim.fn.tempname())
+local status, win = buffer.create({
+	split = "horizontal",
+	win_options = { winfixbuf = true },
+})
+vim.api.nvim_open_term(status, {})
+assert(vim.wo[win].winfixbuf, "status should remain pinned while displayed")
+vim.api.nvim_win_close(origin, true)
+assert(#vim.api.nvim_list_wins() == 1)
+local cleanup = ]] .. string.format("%q", cleanup) .. [[
+if cleanup == "close" then
+	terminal.state.buf = status
+	terminal.close_terminal_buffer()
+elseif cleanup == "delete" then
+	vim.api.nvim_buf_delete(status, { force = true })
+else
+	vim.cmd("bwipeout! " .. status)
+end
+assert(#vim.api.nvim_list_wins() == 1)
+assert(not vim.wo.winfixbuf, "jj pin leaked onto the replacement buffer")
+local target = vim.api.nvim_get_current_buf() == first and second or first
+vim.api.nvim_set_current_buf(target)
+assert(vim.api.nvim_get_current_buf() == target, "normal buffer switching should work")
+vim.cmd("qa!")
+]]
+		vim.fn.writefile(vim.split(source, "\n", { plain = true }), script)
+		local result = vim.system({ vim.v.progpath, "--headless", "-u", "NONE", "-l", script }, { text = true }):wait()
+		vim.fn.delete(script)
+		assert_equals(0, result.code, result.stderr)
+	end)
+end
+
+window_test("status opens workspace path despite destination local cwd", function()
+	local root = vim.fn.tempname()
+	vim.fn.mkdir(root .. "/sub", "p")
+	vim.fn.writefile({ "workspace file" }, root .. "/file.txt")
+	vim.fn.writefile({ "wrong file" }, root .. "/sub/file.txt")
+	local saved_root = utils.get_jj_root
+	local saved_jj = package.loaded.jj
+	local ok, err = pcall(function()
+		utils.get_jj_root = function() return root end
+		package.loaded.jj = { config = { terminal = { window = { type = "hsplit" } } } }
+		local origin = vim.api.nvim_get_current_win()
+		vim.cmd("lcd " .. vim.fn.fnameescape(root .. "/sub"))
+		local _, status = require("jj.core.buffer").create({
+			split = "horizontal", win_options = { winfixbuf = true },
+		})
+		vim.cmd("lcd " .. vim.fn.fnameescape(root))
+		vim.api.nvim_buf_set_lines(0, 0, -1, false, { "M file.txt" })
+		require("jj.cmd.status").handle_status_enter()
+		assert_equals(origin, vim.api.nvim_get_current_win())
+		assert_equals(root .. "/file.txt", vim.api.nvim_buf_get_name(0))
+		assert_equals("workspace file", vim.api.nvim_buf_get_lines(0, 0, 1, false)[1])
+		assert_equals(true, vim.api.nvim_win_is_valid(status))
+	end)
+	utils.get_jj_root = saved_root
+	package.loaded.jj = saved_jj
+	vim.fn.delete(root, "rf")
+	if not ok then error(err) end
+end)
+
 -- Print summary
 print(string.format("\n=== Test Summary ==="))
 print(string.format("Passed: %d", tests_passed))

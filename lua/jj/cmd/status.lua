@@ -6,6 +6,7 @@ local runner = require("jj.core.runner")
 local parser = require("jj.core.parser")
 local terminal = require("jj.ui.terminal")
 local jj_args = require("jj.core.args")
+local window = require("jj.core.window")
 
 --- Handle restoring a file from the jj status buffer
 --- Supports both renamed and non-renamed files
@@ -83,23 +84,23 @@ function M.handle_status_enter()
 		return
 	end
 
+	local filepath = utils.resolve_workspace_path(file_info.new_path)
+	if not filepath then
+		return
+	end
+	local origin = window.get_origin()
 	if require("jj").config.terminal.window.type == "floating" then
 		terminal.close_floating_buffer()
 	end
 
-	local filepath = file_info.new_path
 	local stat = vim.uv.fs_stat(filepath)
 	if not stat then
 		utils.notify("File not found: " .. filepath, vim.log.levels.ERROR)
 		return
 	end
 
-	-- Go to the previous window (split above)
-	vim.cmd("wincmd p")
-
-	-- Open the file in that window, or in a new split when it is pinned to its buffer (no previous
-	-- window, or the previous window is another jj buffer)
-	vim.cmd((vim.wo.winfixbuf and "split " or "edit ") .. vim.fn.fnameescape(filepath))
+	window.enter(filepath, origin)
+	vim.cmd("edit " .. vim.fn.fnameescape(filepath))
 end
 --- Handle undoing form the status buffer
 function M.handle_status_undo()
@@ -123,11 +124,16 @@ function M.handle_diff_file()
 		return
 	end
 
+	local filepath = utils.resolve_workspace_path(file_info.new_path)
+	if not filepath then
+		return
+	end
+	local origin = window.get_origin()
 	if require("jj").config.terminal.window.type == "floating" then
 		terminal.close_floating_buffer()
 	end
 
-	diff.diff_current({ path = file_info.new_path })
+	diff.diff_current({ path = filepath, origin_win = origin })
 end
 
 --- Resolve status keymaps from config

@@ -41,6 +41,24 @@ local M = {}
 --- @field win_options? table Window-specific options to set
 --- @field zindex? number Stacking order (default: 50)
 
+--- Pin a jj window only for the lifetime of its buffer.
+--- Deleting the last visible jj buffer may reuse its window for a normal file.
+--- @param buf integer
+--- @param win integer
+function M.pin(buf, win)
+	local previous = vim.wo[win].winfixbuf
+	vim.wo[win].winfixbuf = true
+	vim.api.nvim_create_autocmd({ "BufDelete", "BufWipeout" }, {
+		buffer = buf,
+		once = true,
+		callback = function()
+			if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf then
+				vim.wo[win].winfixbuf = previous
+			end
+		end,
+	})
+end
+
 --- Create and configure a new buffer
 --- @param opts jj.core.buffer.opts Buffer configuration options
 --- @return number buf Buffer handle
@@ -48,6 +66,8 @@ local M = {}
 function M.create(opts)
 	opts = opts or {}
 
+	local window = require("jj.core.window")
+	local origin = window.get_origin()
 	local win = nil
 
 	-- Handle window/split creation
@@ -70,10 +90,7 @@ function M.create(opts)
 		-- Use the buffer that tabnew created
 		buf = vim.api.nvim_get_current_buf()
 	elseif opts.split == "current" then
-		-- A jj buffer is pinned to its window, so open a split instead of replacing it
-		if vim.wo.winfixbuf then
-			vim.cmd("split")
-		end
+		window.enter(nil, origin)
 		win = vim.api.nvim_get_current_win()
 		buf = vim.api.nvim_create_buf(false, true)
 		vim.api.nvim_win_set_buf(win, buf)
@@ -90,6 +107,8 @@ function M.create(opts)
 		buf = vim.api.nvim_create_buf(false, true)
 		vim.api.nvim_win_set_buf(win, buf)
 	end
+
+	window.set_origin(win, origin)
 
 	-- Set buffer name if provided (only if it doesn't already exist)
 	if opts.name then
@@ -121,7 +140,11 @@ function M.create(opts)
 	-- Set window options
 	if opts.win_options then
 		for option, value in pairs(opts.win_options) do
-			vim.wo[win][option] = value
+			if option == "winfixbuf" and value then
+				M.pin(buf, win)
+			else
+				vim.wo[win][option] = value
+			end
 		end
 	end
 
@@ -145,6 +168,8 @@ end
 --- @return number win Window handle
 function M.create_float(opts)
 	opts = opts or {}
+	local window = require("jj.core.window")
+	local origin = window.get_origin()
 
 	-- Default config
 	local width = opts.width or math.floor(vim.o.columns * 0.8)
@@ -174,6 +199,7 @@ function M.create_float(opts)
 
 	-- Create floating window
 	local win = vim.api.nvim_open_win(buf, opts.enter or false, win_config)
+	window.set_origin(win, origin)
 
 	-- Set buffer options
 	if opts.buftype then
@@ -194,7 +220,11 @@ function M.create_float(opts)
 	-- Set window options
 	if opts.win_options then
 		for option, value in pairs(opts.win_options) do
-			vim.wo[win][option] = value
+			if option == "winfixbuf" and value then
+				M.pin(buf, win)
+			else
+				vim.wo[win][option] = value
+			end
 		end
 	end
 
