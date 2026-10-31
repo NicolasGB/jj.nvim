@@ -625,17 +625,29 @@ function M.handle_log_fetch()
 	end
 
 	if #remotes > 1 then
-		-- Prompt to select a remote
+		-- Prompt to select a remote, or fetch from all remotes
+		local all_remotes = { name = "[All]" }
+		table.insert(remotes, all_remotes)
 		vim.ui.select(remotes, {
 			prompt = "Select remote to fetch from: ",
 			format_item = function(item)
+				if item == all_remotes then
+					return item.name
+				end
 				return string.format("%s (%s)", item.name, item.url)
 			end,
 		}, function(choice)
 			if choice then
-				local cmd = { "jj", "git", "fetch", "--remote", choice.name }
+				local cmd = { "jj", "git", "fetch" }
+				local target = choice.name
+				if choice == all_remotes then
+					table.insert(cmd, "--all-remotes")
+					target = "all remotes"
+				else
+					vim.list_extend(cmd, { "--remote", choice.name })
+				end
 				runner.execute_async(cmd, function()
-					utils.notify(string.format("Fetching from %s...", choice), vim.log.levels.INFO)
+					utils.notify(string.format("Successfully fetched from %s", target), vim.log.levels.INFO)
 					M.log({})
 				end, "Error fetching from remote")
 			end

@@ -1615,6 +1615,91 @@ for _, action in ipairs({ "open", "diff" }) do
 	end
 end
 
+-- Exercise both fetch entry points without contacting real remotes.
+for _, entry in ipairs({
+	{ module = "jj.cmd", method = "fetch" },
+	{ module = "jj.cmd.log", method = "handle_log_fetch" },
+}) do
+	for _, scenario in ipairs({ "all", "remote", "cancel", "single", "empty", "closed" }) do
+		run_test(entry.module .. " fetch " .. scenario, function()
+			local cmd_module = require(entry.module)
+			local runner = require("jj.core.runner")
+			local terminal = require("jj.ui.terminal")
+			local saved = {
+				ensure_jj = utils.ensure_jj,
+				get_remotes = utils.get_remotes,
+				notify = utils.notify,
+				select = vim.ui.select,
+				execute_async = runner.execute_async,
+				is_log_buffer_open = terminal.is_log_buffer_open,
+				log = cmd_module.log,
+			}
+			local ok, err = pcall(function()
+				local remotes = {
+					{ name = "origin", url = "https://example.com/origin" },
+					{ name = "upstream", url = "https://example.com/upstream" },
+				}
+				if scenario == "single" then
+					remotes = { remotes[1] }
+				elseif scenario == "empty" then
+					remotes = {}
+				end
+				local executed, refreshed, selected = nil, false, false
+				local notifications = {}
+				utils.ensure_jj = function() return true end
+				utils.get_remotes = function() return remotes end
+				utils.notify = function(message) table.insert(notifications, message) end
+				terminal.is_log_buffer_open = function() return scenario ~= "closed" end
+				cmd_module.log = function() refreshed = true end
+				runner.execute_async = function(cmd, callback)
+					executed = cmd
+					callback()
+				end
+				vim.ui.select = function(items, opts, callback)
+					selected = true
+					assert_equals(3, #items)
+					assert_equals("origin (https://example.com/origin)", opts.format_item(items[1]))
+					assert_equals("[All]", opts.format_item(items[3]))
+					if scenario == "cancel" then
+						callback(nil)
+					elseif scenario == "remote" then
+						callback(items[2])
+					else
+						callback(items[3])
+					end
+				end
+				cmd_module[entry.method]()
+				if scenario == "empty" or scenario == "cancel" then
+					assert_is_nil(executed)
+					assert_equals(false, refreshed)
+					assert_equals(scenario == "cancel", selected)
+				else
+					local expected = { "jj", "git", "fetch" }
+					if scenario == "remote" then
+						vim.list_extend(expected, { "--remote", "upstream" })
+					elseif scenario ~= "single" then
+						table.insert(expected, "--all-remotes")
+					end
+					assert_table_equals(expected, executed)
+					assert_equals(entry.module == "jj.cmd.log" or scenario ~= "closed", refreshed)
+					if scenario ~= "single" then
+						local target = scenario == "remote" and "upstream" or "all remotes"
+						assert_equals("Successfully fetched from " .. target, notifications[#notifications])
+					end
+				end
+			end)
+			utils.ensure_jj = saved.ensure_jj
+			utils.get_remotes = saved.get_remotes
+			utils.notify = saved.notify
+			vim.ui.select = saved.select
+			runner.execute_async = saved.execute_async
+			terminal.is_log_buffer_open = saved.is_log_buffer_open
+			cmd_module.log = saved.log
+			if not ok then error(err) end
+		end)
+	end
+end
+
 -- Print summary
 print(string.format("\n=== Test Summary ==="))
 print(string.format("Passed: %d", tests_passed))
