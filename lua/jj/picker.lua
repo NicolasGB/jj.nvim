@@ -19,6 +19,7 @@ local jj_args = require("jj.core.args")
 --- @class jj.picker.log_line
 --- @field text string The text to display in the picker
 --- @field rev string The revision of the log entry
+--- @field bookmarks? string Comma-separated local bookmark names on the revision (log picker only)
 --- @field author string The author of the log entry
 --- @field time string The time of the log entry
 --- @field description string The description of the log entry
@@ -240,6 +241,108 @@ function M.file_history()
 
 	if M.config.snacks then
 		require("jj.picker.snacks").file_log_history(M.config, log_lines)
+	else
+		vim.ui.select(log_lines, {
+			prompt = "Select revision to edit",
+			format_item = function(item)
+				return item.text or string.format("%s %s %s", item.rev or "", item.author or "", item.description or "")
+			end,
+		}, function(item)
+			if not item or not item.rev then
+				return
+			end
+
+			local _, ok = runner.execute(
+				{ "jj", "edit", item.rev, "--ignore-immutable" },
+				string.format("could not edit revision '%s'", item.rev)
+			)
+
+			if ok then
+				utils.reload_changed_file_buffers()
+				utils.notify(string.format("Editing revision `%s`", item.rev), vim.log.levels.INFO)
+			end
+		end)
+	end
+end
+
+--- Parse the repository log into picker log lines.
+---
+--- Unlike `log_history`, this is not scoped to a single file: it lists the
+--- revisions of the whole repository. When no `revset` is given, jj's
+--- configured default revset is used (same as running `jj log`).
+---@param revset? string Optional revset to limit the log (e.g. "all()")
+---@return jj.picker.log_line[]|nil A list of log lines or nil if not in a jj repo
+local function get_log(revset)
+	local cmd = {
+		"jj",
+		"log",
+		"--no-pager",
+		"--no-graph",
+		"-T",
+		[[change_id.shortest() ++ "\t" ++ local_bookmarks.map(|b| b.name()).join(",") ++ "\t" ++ coalesce(author.name(), "(no author)") ++ "\t" ++ committer.timestamp() ++ "\t" ++ coalesce(description.first_line(), "(no description)") ++ "\n"]],
+	}
+	if revset and revset ~= "" then
+		table.insert(cmd, "-r")
+		table.insert(cmd, revset)
+	end
+
+	local output, ok = runner.execute(cmd)
+	if not ok then
+		return
+	end
+
+	if type(output) ~= "string" then
+		return utils.notify("Could not get log output", vim.log.levels.ERROR)
+	end
+
+	local log_lines = {}
+	local lines = vim.split(output, "\n", { trimempty = true })
+
+	for _, line in ipairs(lines) do
+		local parts = vim.split(line, "\t", { plain = true })
+		if #parts >= 5 then
+			local rev = parts[1]
+			local bookmarks = parts[2]
+			local author = parts[3]
+			local time_part = parts[4]
+			local description = table.concat(vim.list_slice(parts, 5), "\t")
+			local short_time = time_part:match("^%d%d%d%d%-%d%d%-%d%d") or time_part
+
+			table.insert(log_lines, {
+				rev = rev,
+				bookmarks = bookmarks,
+				author = author,
+				time = time_part,
+				description = description,
+				text = string.format("%s  %s  %s  %s  %s", rev, bookmarks, author, short_time, description),
+				preview_cmd = { "jj", "--no-pager", "show", "-r", rev, "--stat", "--git" },
+				confirm_action = "edit_revision",
+			})
+		end
+	end
+
+	return log_lines
+end
+
+--- Displays the repository log in the configured picker.
+---
+--- Selecting a revision edits it with `jj edit <rev> --ignore-immutable`.
+---@param opts? { revset?: string } Optional revset to limit the log (e.g. "all()")
+function M.log(opts)
+	opts = opts or {}
+
+	-- Ensure jj is installed
+	if not utils.ensure_jj() then
+		return
+	end
+
+	local log_lines = get_log(opts.revset)
+	if not log_lines or #log_lines == 0 then
+		return utils.notify("`Picker`: No revisions found", vim.log.levels.INFO)
+	end
+
+	if M.config.snacks then
+		require("jj.picker.snacks").log(M.config, log_lines)
 	else
 		vim.ui.select(log_lines, {
 			prompt = "Select revision to edit",
