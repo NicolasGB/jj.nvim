@@ -1394,6 +1394,7 @@ for _, backend in ipairs({ "codediff", "diffview" }) do
 		local saved_dependency = utils.has_dependency
 		local saved_commit = utils.get_commit_id
 		local saved_normalize = utils.normalize_relative_path
+		local saved_diffview = package.loaded.diffview
 		local commands = backend == "codediff" and { "CodeDiff" } or { "DiffviewOpen", "DiffviewToggleFiles" }
 		local ok, err = pcall(function()
 			package.loaded.jj = {
@@ -1409,6 +1410,9 @@ for _, backend in ipairs({ "codediff", "diffview" }) do
 			end, { nargs = "*" })
 			if commands[2] then
 				vim.api.nvim_create_user_command(commands[2], function() end, {})
+			end
+			if backend == "diffview" then
+				package.loaded.diffview = { open = function() vim.cmd("DiffviewOpen") end }
 			end
 			require("jj.diff." .. backend)
 			local status_tab = vim.api.nvim_get_current_tabpage()
@@ -1434,6 +1438,7 @@ for _, backend in ipairs({ "codediff", "diffview" }) do
 		utils.has_dependency = saved_dependency
 		utils.get_commit_id = saved_commit
 		utils.normalize_relative_path = saved_normalize
+		package.loaded.diffview = saved_diffview
 		if not ok then
 			error(err)
 		end
@@ -1699,6 +1704,8 @@ for _, entry in ipairs({
 		end)
 	end
 end
+
+require("tests.cwd")(run_test, assert_equals)
 
 -- Print summary
 print(string.format("\n=== Test Summary ==="))

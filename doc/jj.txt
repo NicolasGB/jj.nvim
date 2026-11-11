@@ -9,6 +9,33 @@ INTRODUCTION                                    *jj*
 
 Plugin that helps work with Jujutsu <https://www.jj-vcs.dev/latest/> repositories
 
+LOG WORKING DIRECTORY                           *jj-log-cwd*
+
+The Lua log API accepts an optional cwd alongside existing log options: >lua
+    require("jj.cmd").log({ cwd = "/path/to/project/subrepo", revisions = "all()" })
+<
+For an outer project and an independent repository cloned into subrepo/: >lua
+    -- Invoking window/tab cwd: /path/to/project
+    require("jj.cmd").log({ limit = 50 })          -- outer repository
+    require("jj.cmd").log({ cwd = "subrepo" }) -- inner repository
+<
+Absolute and relative directories, including spaces, are supported. Relative
+paths resolve against the effective Neovim working directory at invocation.
+Omitting cwd captures the invoking window/tab directory. Neovim's directory is
+never changed by this feature.
+
+Log actions, delayed prompts, editor saves, file buffers, terminal operations,
+and diffs retain the captured directory. Refreshes retain the log's options and
+revset. A fresh log() without cwd captures its own invoking directory instead of
+inheriting the previous log's repository. Invalid directories report an error.
+The existing shared log window/state model is unchanged.
+
+The status, describe, split, resolve, file read/open, and diff option tables also
+accept cwd. get_jj_root(cwd) resolves the workspace root with jj root; the command
+working directory remains distinct from that root. Diffview uses its Lua argv
+API with -C; CodeDiff requires support for --repo. Leading global :J flags such
+as :J -R path log are not interpreted as interactive log options.
+
 COMMANDS                                        *jj-commands*
 
                                                 *jj-:J*

@@ -58,7 +58,10 @@ end
 
 --- Check if we're in a jj repository
 --- @return boolean True if in jj repo, false otherwise
-function M.is_jj_repo()
+--- @param cwd? string Command working directory
+function M.is_jj_repo(cwd)
+	cwd = require("jj.core.context").cwd(cwd)
+	local runner = runner.with_cwd(cwd)
 	if not M.ensure_jj() then
 		return false
 	end
@@ -70,7 +73,10 @@ end
 
 --- Get jj repository root path
 --- @return string|nil The repository root path, or nil if not in a repo
-function M.get_jj_root()
+--- @param cwd? string Command working directory
+function M.get_jj_root(cwd)
+	cwd = require("jj.core.context").cwd(cwd)
+	local runner = runner.with_cwd(cwd)
 	if not M.ensure_jj() then
 		return nil
 	end
@@ -87,9 +93,7 @@ end
 --- @param path string
 --- @return boolean
 function M.is_absolute_path(path)
-	return path:sub(1, 1) == "/"
-		or path:match("^%a:[/\\]") ~= nil
-		or path:sub(1, 2) == "\\\\"
+	return path:sub(1, 1) == "/" or path:match("^%a:[/\\]") ~= nil or path:sub(1, 2) == "\\\\"
 end
 
 --- Resolve a jj display path relative to the current working directory.
@@ -97,11 +101,11 @@ end
 --- paths. Capture the absolute path before closing views or changing windows.
 --- @param path string
 --- @return string|nil
-function M.resolve_cwd_path(path)
+function M.resolve_cwd_path(path, cwd)
 	if M.is_absolute_path(path) then
 		return vim.fs.normalize(path)
 	end
-	return vim.fs.normalize(vim.fn.fnamemodify(path, ":p"))
+	return vim.fs.normalize(vim.fs.joinpath(cwd or vim.fn.getcwd(), path))
 end
 
 --- Get a list of files modified in the current jj repository.
@@ -170,14 +174,34 @@ function M.is_file(path)
 	return st ~= nil and st.type == "file"
 end
 
---- Parse a jj:// virtual buffer URI.
+--- Name a revision file with its command directory as well as its relative path.
+--- Encode both components so spaces, percent signs, and ../ paths stay literal.
+--- @param change_id string
+--- @param path string Command-directory-relative file path
+--- @param cwd string Absolute command directory
+--- @return string
+function M.jj_uri(change_id, path, cwd)
+	return string.format("jj://%s/cwd=%s/%s", change_id, M.url_encode(cwd), M.url_encode(path))
+end
+
+--- Parse a jj:// virtual buffer URI, including legacy directory-less names.
 --- Returns nil, nil if the name is not a jj:// URI or has an invalid format.
 --- @param name string
 --- @return string|nil change_id
---- @return string|nil path
+--- @return string|nil path Command-directory-relative file path
+--- @return string|nil cwd Absolute command directory, absent for legacy URIs
 function M.parse_jj_uri(name)
-	if not vim.startswith(name, "jj://") then
-		return nil, nil
+	local change_id, cwd, path = name:match("^jj://([^/]+)/cwd=([^/]+)/(.+)$")
+	if change_id then
+		local function decode(value)
+			return (value:gsub("%%(%x%x)", function(hex)
+				return string.char(tonumber(hex, 16))
+			end))
+		end
+		cwd = decode(cwd)
+		if M.is_absolute_path(cwd) then
+			return change_id, decode(path), cwd
+		end
 	end
 	return name:match("^jj://([^/]+)/(.+)$")
 end
@@ -192,7 +216,7 @@ end
 --- @param path string|nil Path provided by the user (`%`, absolute, or relative)
 --- @return string|nil normalized_path Cwd-relative normalized path
 --- @return string|nil err Error message when normalization fails
-function M.normalize_relative_path(path)
+function M.normalize_relative_path(path, cwd)
 	path = vim.trim(path or "")
 	if path == "" then
 		return nil, "Path is empty"
@@ -213,14 +237,22 @@ function M.normalize_relative_path(path)
 
 	local is_absolute = vim.startswith(path, "/") or path:match("^%a:/") ~= nil
 	if is_absolute then
-		local cwd = vim.uv.cwd()
+		local cwd = cwd or vim.fn.getcwd()
 		if not cwd or cwd == "" then
 			return nil, "Could not determine current working directory"
 		end
 		cwd = vim.fs.normalize(cwd)
 		local rel = M.relpath(cwd, path)
 		if not rel then
-			return nil, "Path is outside current working directory"
+			-- A cwd below the workspace may display ../ paths. Keep commands in
+			-- that directory while allowing files elsewhere in the same workspace.
+			local root = M.get_jj_root(cwd)
+			local root_path = root and M.relpath(root, path)
+			local cwd_path = root and M.relpath(root, cwd)
+			if not root_path or not cwd_path then
+				return nil, "Path is outside the jj workspace"
+			end
+			rel = string.rep("../", #vim.split(cwd_path, "/", { trimempty = true })) .. root_path
 		end
 		path = rel
 	end
@@ -362,7 +394,10 @@ end
 
 --- Get all bookmarks in the repository, filters out deleted bookmarks
 --- @return string[] List of bookmarks, or empty list if none found
-function M.get_all_bookmarks()
+--- @param cwd? string Command working directory
+function M.get_all_bookmarks(cwd)
+	cwd = require("jj.core.context").cwd(cwd)
+	local runner = runner.with_cwd(cwd)
 	-- Use a custom template to output just the bookmark names, one per line
 	-- This is more reliable than parsing the default output format
 	local cmd = {
@@ -396,7 +431,10 @@ end
 
 --- Get all bookmarks in the repository, including deleted ones
 --- @return {name: string, is_deleted: boolean}[] bookmarks List of bookmarks
-function M.get_all_bookmarks_with_status()
+--- @param cwd? string Command working directory
+function M.get_all_bookmarks_with_status(cwd)
+	cwd = require("jj.core.context").cwd(cwd)
+	local runner = runner.with_cwd(cwd)
 	local cmd = {
 		"jj",
 		"bookmark",
@@ -458,7 +496,10 @@ end
 --- Get unique base bookmark names and statuses for a given revset
 --- @param revset string
 --- @return {name: string, is_deleted: boolean}[]|nil ret List of bookmark objects, or nil on failure
-function M.get_bookmarks_for_rev(revset)
+--- @param cwd? string Command working directory
+function M.get_bookmarks_for_rev(revset, cwd)
+	cwd = require("jj.core.context").cwd(cwd)
+	local runner = runner.with_cwd(cwd)
 	-- Retrieve name and deleted status
 	local cmd = {
 		"jj",
@@ -571,7 +612,10 @@ end
 
 --- Get git remotes for the current jj repository
 --- @return {name: string, url: string}[]|nil A list of remotes with name and URL
-function M.get_remotes()
+--- @param cwd? string Command working directory
+function M.get_remotes(cwd)
+	cwd = require("jj.core.context").cwd(cwd)
+	local runner = runner.with_cwd(cwd)
 	local remote_list, remote_success =
 		runner.execute({ "jj", "git", "remote", "list" }, "Failed to get git remote", nil, true)
 
@@ -593,9 +637,12 @@ end
 
 --- Open a PR/MR on the remote for a given bookmark
 --- @param bookmark string The bookmark to create a PR for
-function M.open_pr_for_bookmark(bookmark)
+--- @param cwd? string Command working directory
+function M.open_pr_for_bookmark(bookmark, cwd)
+	cwd = require("jj.core.context").cwd(cwd)
+	local runner = runner.with_cwd(cwd)
 	-- Get all git remotes
-	local remotes = M.get_remotes()
+	local remotes = M.get_remotes(cwd)
 
 	if not remotes or #remotes == 0 then
 		M.notify("No git remotes found", vim.log.levels.ERROR)
@@ -654,7 +701,10 @@ end
 --- @param revset string The revset to resolve
 --- @param silent? boolean Do not notify when `jj` fails (an ambiguous revset is still reported)
 --- @return string|nil id The resolved ID, or nil if the revset is not a single revision
-function M.resolve_revision_id(revset, silent)
+--- @param cwd? string Command working directory
+function M.resolve_revision_id(revset, silent, cwd)
+	cwd = require("jj.core.context").cwd(cwd)
+	local runner = runner.with_cwd(cwd)
 	local cmd = {
 		"jj",
 		"log",
@@ -681,7 +731,10 @@ end
 --- rewritten since it was resolved.
 --- @param revset string The revset to check
 --- @return boolean True if the commit is hidden, false otherwise
-function M.is_commit_hidden(revset)
+--- @param cwd? string Command working directory
+function M.is_commit_hidden(revset, cwd)
+	cwd = require("jj.core.context").cwd(cwd)
+	local runner = runner.with_cwd(cwd)
 	local cmd = {
 		"jj",
 		"log",
@@ -704,7 +757,10 @@ end
 --- Check if a given revset represents an immutable change
 --- @param revset string The revset to check
 --- @return boolean True if the change is immutable, false otherwise
-function M.is_change_immutable(revset)
+--- @param cwd? string Command working directory
+function M.is_change_immutable(revset, cwd)
+	cwd = require("jj.core.context").cwd(cwd)
+	local runner = runner.with_cwd(cwd)
 	local cmd = {
 		"jj",
 		"log",
@@ -727,7 +783,10 @@ end
 --- Check if a given revset is empty
 --- @param revset string The revset to check
 --- @return boolean True if the revset is empty, false otherwise
-function M.is_change_empty(revset)
+--- @param cwd? string Command working directory
+function M.is_change_empty(revset, cwd)
+	cwd = require("jj.core.context").cwd(cwd)
+	local runner = runner.with_cwd(cwd)
 	local cmd = {
 		"jj",
 		"log",
@@ -750,7 +809,10 @@ end
 --- Check if a given revset has conflicts
 --- @param revset string The revset to check
 --- @return boolean True if the revset has conflicts, false otherwise
-function M.is_change_conflicted(revset)
+--- @param cwd? string Command working directory
+function M.is_change_conflicted(revset, cwd)
+	cwd = require("jj.core.context").cwd(cwd)
+	local runner = runner.with_cwd(cwd)
 	local cmd = {
 		"jj",
 		"log",
@@ -774,7 +836,10 @@ end
 --- Build describe text for a given revision
 --- @param revset? string The revision to describe (default: @)
 --- @return string[]|nil
-function M.get_describe_text(revset)
+--- @param cwd? string Command working directory
+function M.get_describe_text(revset, cwd)
+	cwd = require("jj.core.context").cwd(cwd)
+	local runner = runner.with_cwd(cwd)
 	if not revset or revset == "" then
 		revset = "@"
 	end
@@ -834,7 +899,10 @@ end
 --- Get the commit id from a given revision. Returns nil and notifies an error if multiple commit_ids are found for a single revset
 --- @param revset string The revset to extract the commit id from
 --- @return string|nil
-function M.get_commit_id(revset)
+--- @param cwd? string Command working directory
+function M.get_commit_id(revset, cwd)
+	cwd = require("jj.core.context").cwd(cwd)
+	local runner = runner.with_cwd(cwd)
 	local cmd = {
 		"jj",
 		"log",
@@ -869,7 +937,10 @@ end
 ---
 --- Get the commit id of the current revision
 --- @return string|nil
-function M.get_current_commit_id()
+--- @param cwd? string Command working directory
+function M.get_current_commit_id(cwd)
+	cwd = require("jj.core.context").cwd(cwd)
+	local runner = runner.with_cwd(cwd)
 	local cmd = {
 		"jj",
 		"log",
@@ -903,7 +974,10 @@ end
 --- @param remote_name string Remote name (e.g. "origin")
 --- @param max_walkback? integer Maximum number of parents to traverse (default: 20)
 --- @return string|nil commit_id
-function M.get_pushed_commit_id(start_revset, remote_name, max_walkback)
+--- @param cwd? string Command working directory
+function M.get_pushed_commit_id(start_revset, remote_name, max_walkback, cwd)
+	cwd = require("jj.core.context").cwd(cwd)
+	local runner = runner.with_cwd(cwd)
 	max_walkback = max_walkback or 20
 	start_revset = (start_revset and start_revset ~= "") and start_revset or "@"
 	remote_name = (remote_name and remote_name ~= "") and remote_name or "origin"
@@ -937,7 +1011,7 @@ function M.get_pushed_commit_id(start_revset, remote_name, max_walkback)
 		current = current .. "-"
 	end
 
-	return M.get_commit_id("trunk()")
+	return M.get_commit_id("trunk()", cwd)
 end
 
 --- Return a remote bookmark name pointing at `revset` on `remote_name`.
@@ -949,7 +1023,10 @@ end
 --- @param revset string
 --- @param remote_name string
 --- @return string|nil bookmark_name
-function M.get_unique_remote_bookmark_name(revset, remote_name)
+--- @param cwd? string Command working directory
+function M.get_unique_remote_bookmark_name(revset, remote_name, cwd)
+	cwd = require("jj.core.context").cwd(cwd)
+	local runner = runner.with_cwd(cwd)
 	revset = (revset and revset ~= "") and revset or "@"
 	remote_name = (remote_name and remote_name ~= "") and remote_name or "origin"
 

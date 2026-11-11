@@ -5,6 +5,7 @@ local runner = require("jj.core.runner")
 local buffer = require("jj.core.buffer")
 local parser = require("jj.core.parser")
 local jj_args = require("jj.core.args")
+local context = require("jj.core.context")
 
 --TODO: Maybe if annotating on the file is slow we could cache the annotations.
 
@@ -13,10 +14,11 @@ local last_tooltip_buf = nil
 
 --- Resolve current buffer into an annotate target.
 --- Supports normal file buffers and jj:// virtual buffers.
+--- @param cwd string Captured command directory
 --- @return string|nil path Repository-relative or absolute path for `jj file annotate`
 --- @return string|nil rev Optional revision for virtual buffers
 --- @return string|nil err Error message when target cannot be resolved
-local function get_annotate_target()
+local function get_annotate_target(cwd)
 	local filename = vim.api.nvim_buf_get_name(0)
 	if filename == "" then
 		return nil, nil, "Could not extract file from buffer"
@@ -30,7 +32,7 @@ local function get_annotate_target()
 		return nil, nil, "Invalid jj:// buffer name"
 	end
 
-	local normalized, err = utils.normalize_relative_path(filename)
+	local normalized, err = utils.normalize_relative_path(filename, cwd)
 	if not normalized then
 		return nil, nil, err or "Could not normalize file path"
 	end
@@ -163,6 +165,8 @@ local function align_annotations(lines)
 end
 
 local function handle_enter()
+	local ctx = context.from_buffer()
+	local runner = runner.with_cwd(ctx.cwd)
 	-- Parse the current line to extract the revset
 	local line = vim.api.nvim_get_current_line()
 	local parts = parser.parse_annotation_line(line)
@@ -196,6 +200,7 @@ local function handle_enter()
 		bufhidden = "wipe",
 	})
 
+	context.attach(buf, ctx)
 	-- Set the lines
 	local lines = vim.split(output, "\n", { trimempty = true })
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -217,6 +222,8 @@ end
 
 --- Annotates the current file
 function M.file()
+	local ctx = context.from_buffer()
+	local runner = runner.with_cwd(ctx.cwd)
 	if not utils.ensure_jj() then
 		return
 	end
@@ -224,7 +231,7 @@ function M.file()
 	local template =
 		'join(" | ", commit.change_id().short(6), commit.author().name(), commit.author().timestamp().format("%Y-%m-%d %H:%M:%S %Z")) ++ "\n"'
 
-	local filename, revision, err = get_annotate_target()
+	local filename, revision, err = get_annotate_target(ctx.cwd)
 	if not filename then
 		utils.notify(err or "Could not extract file from buffer", vim.log.levels.ERROR)
 		return
@@ -268,6 +275,7 @@ function M.file()
 		},
 	})
 
+	context.attach(buf, ctx)
 	-- Set local variables to the buffer
 	vim.b[buf].jj_annotation_file = filename
 
@@ -341,23 +349,29 @@ end
 
 --- Annotates the current line
 function M.line()
+	local ctx = context.from_buffer()
+	local runner = runner.with_cwd(ctx.cwd)
 	if not utils.ensure_jj() then
 		return
 	end
 
-	-- If tooltip exists and is valid, just focus it
+	local source_buf = vim.api.nvim_get_current_buf()
+	-- Reuse the tooltip only for its source. A different repository or file
+	-- must query its own annotations rather than focus the previous result.
 	if last_tooltip_buf and vim.api.nvim_buf_is_valid(last_tooltip_buf) then
+		local same_source = source_buf == last_tooltip_buf or vim.b[last_tooltip_buf].jj_annotation_source == source_buf
 		local win = vim.fn.bufwinid(last_tooltip_buf)
-		if win ~= -1 then
+		if same_source and context.from_buffer(last_tooltip_buf).cwd == ctx.cwd and win ~= -1 then
 			vim.api.nvim_set_current_win(win)
 			return
 		end
+		buffer.close(last_tooltip_buf, true)
 	end
 
 	local template =
 		'join(" | ", commit.change_id().short(6), commit.author().name(), commit.author().timestamp().format("%Y-%m-%d %H:%M:%S %Z")) ++ "\n"'
 
-	local filename, revision, err = get_annotate_target()
+	local filename, revision, err = get_annotate_target(ctx.cwd)
 	if not filename then
 		utils.notify(err or "Could not extract file from buffer", vim.log.levels.ERROR)
 		return
@@ -407,6 +421,8 @@ function M.line()
 		text = text,
 	})
 
+	context.attach(buf, ctx)
+	vim.b[buf].jj_annotation_source = source_buf
 	setup_blame_highlighting(buf, { text })
 
 	-- Store the buffer to enter it if re-executed

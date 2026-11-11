@@ -39,6 +39,7 @@ end
 --- Split natively
 ---@param opts? jj.cmd.split.opts
 function M.split(opts)
+	local ctx = require("jj.core.context").capture(opts)
 	if not utils.ensure_jj() then
 		return
 	end
@@ -46,7 +47,7 @@ function M.split(opts)
 	opts = opts or {} --[[@as jj.cmd.split.opts]]
 
 	-- If it's empty do nothing
-	if utils.is_change_empty(opts.rev or "@") then
+	if utils.is_change_empty(opts.rev or "@", ctx.cwd) then
 		utils.notify(string.format("The change `%s` is empty, nothing to split.", opts.rev or "@"), vim.log.levels.INFO)
 		return
 	end
@@ -55,6 +56,7 @@ function M.split(opts)
 	---@param cmd string[]
 	local function run_split(cmd)
 		terminal.run_floating(cmd, nil, {
+			cwd = ctx.cwd,
 			title = " JJ Split ",
 			modifiable = true,
 			keep_modifiable = true,
@@ -64,7 +66,7 @@ function M.split(opts)
 	end
 
 	-- If the change is immutable warn the user and prompt him
-	if utils.is_change_immutable(opts.rev or "@") then
+	if utils.is_change_immutable(opts.rev or "@", ctx.cwd) then
 		vim.ui.select(
 			{ "Yes", "No" },
 			{ prompt = string.format("The change `%s` is IMMUTABLE, do you still want to split it?", opts.rev or "@") },

@@ -1,5 +1,6 @@
 --- @class jj.file
 local M = {}
+local context = require("jj.core.context")
 
 local runner = require("jj.core.runner")
 local buffer = require("jj.core.buffer")
@@ -8,10 +9,12 @@ local parser = require("jj.core.parser")
 local jj_args = require("jj.core.args")
 
 --- @class jj.file.read_target_opts
+--- @field cwd? string
 --- @field rev? string Revision to read the file from
 --- @field path? string Path to the file (`%`, absolute, or repository-relative)
 
 --- @class jj.file.open_target_opts
+--- @field cwd? string
 --- @field rev? string Revision to open the file from
 --- @field path? string Path to the file (`%`, absolute, or repository-relative)
 --- @field split? "horizontal"|"vertical"|"tab"|"current" Open in split direction (default: "current")
@@ -220,6 +223,7 @@ M._encode = encode
 --- Returns lines with blank lines preserved; trailing empty line removed.
 --- @param rev string The revision (change ID or other revset)
 --- @param path string Cwd-relative path
+--- @param cwd? string Command working directory
 --- @param enc? jj.file.enc Encoding to interpret the content with
 ---				(default: auto-detected from content)
 --- @return string[] lines
@@ -228,7 +232,8 @@ M._encode = encode
 --- @return jj.file.enc used_enc The encoding used to decode the content
 --- @return boolean absent True when the path does not exist in `rev` (e.g. a
 ---				file added since `rev`).
-local function get_file_content(rev, path, enc)
+local function get_file_content(rev, path, enc, cwd)
+	local runner = runner.with_cwd(context.cwd(cwd))
 	local cmd = {
 		"jj",
 		"file",
@@ -258,9 +263,11 @@ M.get_file_content = get_file_content
 --- Reads a target file revision into the current buffer (undoable).
 --- @param opts? jj.file.read_target_opts
 function M.read_target(opts)
+	local ctx = opts and opts.cwd and context.capture(opts) or context.from_buffer()
+	local runner = runner.with_cwd(ctx.cwd)
 	local revision = opts and opts.rev or "@"
 	local raw_path = opts and opts.path or "%"
-	local path, normalize_err = utils.normalize_relative_path(raw_path)
+	local path, normalize_err = utils.normalize_relative_path(raw_path, ctx.cwd)
 	if not path then
 		utils.notify(normalize_err or "Could not normalize path", vim.log.levels.ERROR)
 		return
@@ -306,9 +313,11 @@ end
 --- @param rel_path string Repository-relative path of the file
 --- @param force boolean Whether to bypass the immutability check (`:w!`)
 local function write_revision_file(buf, change_id, rel_path, force)
+	local ctx = context.from_buffer(buf)
+	local runner = runner.with_cwd(ctx.cwd)
 	-- A divergent revision is named by its commit ID, and a write rewrites that
 	-- commit. Writing through the stale ID again would revive the old commit.
-	if utils.is_commit_hidden(change_id) then
+	if utils.is_commit_hidden(change_id, ctx.cwd) then
 		utils.notify(
 			string.format("Revision %s was rewritten; open the file again with :Jedit", change_id),
 			vim.log.levels.ERROR
@@ -316,7 +325,7 @@ local function write_revision_file(buf, change_id, rel_path, force)
 		return
 	end
 
-	if utils.is_change_immutable(change_id) then
+	if utils.is_change_immutable(change_id, ctx.cwd) then
 		if not force then
 			utils.notify("Cannot write to immutable revision: " .. change_id, vim.log.levels.ERROR)
 			return
@@ -344,7 +353,15 @@ local function write_revision_file(buf, change_id, rel_path, force)
 	-- so the parent directory for rel_path already exists there.
 	local prog_config = 'merge-tools.jj-nvim-write.program="cp"'
 	-- json_encode produces valid TOML inline arrays.
-	local args_config = "merge-tools.jj-nvim-write.edit-args=" .. vim.fn.json_encode({ tmp, "$right/" .. rel_path })
+	local root = utils.get_jj_root(ctx.cwd)
+	local workspace_path = root and utils.relpath(root, utils.resolve_cwd_path(rel_path, ctx.cwd))
+	if not workspace_path then
+		os.remove(tmp)
+		utils.notify("File is outside the jj workspace: " .. rel_path, vim.log.levels.ERROR)
+		return
+	end
+	local args_config = "merge-tools.jj-nvim-write.edit-args="
+		.. vim.fn.json_encode({ tmp, "$right/" .. workspace_path })
 
 	local cmd = {
 		"jj",
@@ -417,7 +434,8 @@ end
 --- @param buf number
 --- @param change_id string
 --- @param path string
-local function setup_revision_buffer(buf, change_id, path)
+local function setup_revision_buffer(buf, change_id, path, ctx)
+	context.attach(buf, ctx)
 	-- Not `acwrite`: quickfix and pickers only ever reuse a window showing a
 	-- buffer with an empty 'buftype', and split or hijack another window
 	-- otherwise. `BufWriteCmd` intercepts writes either way.
@@ -444,36 +462,37 @@ end
 --- Opens a target file revision in a new buffer.
 --- @param opts jj.file.open_target_opts
 function M.open_target(opts)
+	local ctx = opts.cwd and context.capture(opts) or context.from_buffer()
 	local revision = opts.rev or "@"
 	local raw_path = opts.path or "%"
-	local path, normalize_err = utils.normalize_relative_path(raw_path)
+	local path, normalize_err = utils.normalize_relative_path(raw_path, ctx.cwd)
 	if not path then
 		utils.notify(normalize_err or "Could not normalize path", vim.log.levels.ERROR)
 		return
 	end
 
-	local change_id = utils.resolve_revision_id(revision, true)
+	local change_id = utils.resolve_revision_id(revision, true, ctx.cwd)
 	if not change_id then
 		return
 	end
 
-	local lines, had_eol, ok_read, used_enc = get_file_content(change_id, path)
+	local lines, had_eol, ok_read, used_enc = get_file_content(change_id, path, nil, ctx.cwd)
 	if not ok_read then
 		utils.notify(string.format("Could not read `%s` from `%s`", path, change_id), vim.log.levels.ERROR)
 		return
 	end
 	local buf, _ = buffer.create({
-		name = string.format("jj://%s/%s", change_id, path),
+		name = utils.jj_uri(change_id, path, ctx.cwd),
 		split = opts.split or "current",
 		modifiable = true,
 		bufhidden = "wipe",
 	})
-	setup_revision_buffer(buf, change_id, path)
+	setup_revision_buffer(buf, change_id, path, ctx)
 	M.set_buf_encoding(buf, used_enc)
 	fill_revision_buffer(buf, lines)
 	vim.bo[buf].eol = had_eol
 	vim.bo[buf].modified = false
-	vim.bo[buf].modifiable = not utils.is_change_immutable(change_id)
+	vim.bo[buf].modifiable = not utils.is_change_immutable(change_id, ctx.cwd)
 end
 
 --- Complete `<rev>:<file>` arguments for file commands.
@@ -518,25 +537,26 @@ function M.register_command()
 		pattern = "jj://*",
 		nested = true,
 		callback = function()
+			local ctx = context.from_buffer()
 			local name = vim.api.nvim_buf_get_name(0)
 			local change_id, path = utils.parse_jj_uri(name)
 			if not change_id or not path then
 				return
 			end
 			-- Keep reloads of an added-file diff buffer empty rather than erroring.
-			local lines, had_eol, ok_read, used_enc, absent = get_file_content(change_id, path)
+			local lines, had_eol, ok_read, used_enc, absent = get_file_content(change_id, path, nil, ctx.cwd)
 			if not ok_read and not absent then
 				utils.notify(string.format("Could not read `%s` from `%s`", path, change_id), vim.log.levels.ERROR)
 				return
 			end
 			local buf = vim.api.nvim_get_current_buf()
-			setup_revision_buffer(buf, change_id, path)
+			setup_revision_buffer(buf, change_id, path, ctx)
 			M.set_buf_encoding(buf, used_enc)
 			vim.bo[buf].modifiable = true
 			fill_revision_buffer(buf, lines)
 			vim.bo[buf].eol = had_eol
 			vim.bo[buf].modified = false
-			vim.bo[buf].modifiable = not utils.is_change_immutable(change_id)
+			vim.bo[buf].modifiable = not utils.is_change_immutable(change_id, ctx.cwd)
 			vim.api.nvim_exec_autocmds("BufReadPost", { buffer = buf })
 		end,
 	})

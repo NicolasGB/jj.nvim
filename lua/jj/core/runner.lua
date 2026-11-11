@@ -15,8 +15,9 @@ end
 ---@param silent boolean|nil
 --- @return string|nil output The command output, or nil if failed
 --- @return boolean success Whether the command succeeded
-function M.execute(argv, error_prefix, input, silent)
-	local result = vim.system(argv, { stdin = input, text = true }):wait()
+--- @param opts? {cwd?: string}
+function M.execute(argv, error_prefix, input, silent, opts)
+	local result = vim.system(argv, { stdin = input, text = true, cwd = opts and opts.cwd }):wait()
 
 	if result.code ~= 0 then
 		local msg = result.stderr ~= "" and result.stderr or result.stdout or ""
@@ -33,10 +34,11 @@ end
 --- @param input string|nil Optional input to pass to stdin
 --- @param silent boolean|nil Optional to silent the notification
 --- @param on_error function|nil Callback on error, receives the error message
-function M.execute_async(argv, on_success, error_prefix, input, silent, on_error)
+--- @param opts? {cwd?: string}
+function M.execute_async(argv, on_success, error_prefix, input, silent, on_error, opts)
 	vim.system(
 		argv,
-		{ stdin = input, text = true },
+		{ stdin = input, text = true, cwd = opts and opts.cwd },
 		vim.schedule_wrap(function(res)
 			if res.code == 0 then
 				if on_success then
@@ -61,8 +63,9 @@ end
 --- @return string|nil output Raw stdout bytes, or nil if failed
 --- @return boolean success Whether the command succeeded
 --- @return string stderr The command's stderr (empty on success)
-function M.execute_raw(argv, error_prefix, silent)
-	local result = vim.system(argv, { text = false }):wait()
+--- @param opts? {cwd?: string}
+function M.execute_raw(argv, error_prefix, silent, opts)
+	local result = vim.system(argv, { text = false, cwd = opts and opts.cwd }):wait()
 	if result.code ~= 0 then
 		local msg = result.stderr ~= "" and result.stderr or result.stdout or ""
 		error_notify(msg, error_prefix, silent)
@@ -78,10 +81,11 @@ end
 --- @param error_prefix string|nil Optional error message prefix
 --- @param silent boolean|nil Optional to silent the notification
 --- @param on_error function|nil Callback on error, receives the error message
-function M.execute_raw_async(argv, on_success, error_prefix, silent, on_error)
+--- @param opts? {cwd?: string}
+function M.execute_raw_async(argv, on_success, error_prefix, silent, on_error, opts)
 	vim.system(
 		argv,
-		{ text = false },
+		{ text = false, cwd = opts and opts.cwd },
 		vim.schedule_wrap(function(res)
 			if res.code == 0 then
 				if on_success then
@@ -96,6 +100,21 @@ function M.execute_raw_async(argv, on_success, error_prefix, silent, on_error)
 			end
 		end)
 	)
+end
+
+--- Bind an explicit directory without changing argv or shared runner state.
+--- @param cwd? string
+function M.with_cwd(cwd)
+	local bound = {}
+	local arities = { execute = 4, execute_async = 6, execute_raw = 3, execute_raw_async = 5 }
+	for name, arity in pairs(arities) do
+		bound[name] = function(...)
+			local args = { ... }
+			args[arity + 1] = vim.tbl_extend("force", args[arity + 1] or {}, { cwd = cwd })
+			return M[name](unpack(args, 1, arity + 1))
+		end
+	end
+	return bound
 end
 
 return M

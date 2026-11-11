@@ -375,6 +375,9 @@ Open the current buffer's file in your browser on the hosted remote (GitHub/GitL
   - GitLab-style: `#L<start>` or `#L<start>-<end>`
 
 In Visual mode, select lines and run `:Jbrowse` to open a range.
+Historical buffers use their captured directory to resolve paths, workspace roots,
+remotes, and revisions. A pending remote selection retains that directory even if
+you switch buffers or change Neovim's working directory.
 
 ### Open or restore changed files
 
@@ -541,10 +544,17 @@ Target format is `<rev>:<path>`:
 - `<path>` can be `%` (current buffer file), repo-relative, or absolute
 - If no argument is passed, defaults to `@:%`
 
-The open commands (`:Jedit`, `:Jtabedit`, `:Jsplit`, `:Jvsplit`) create a `jj://<change_id>/<path>`
-buffer. The revision expression is resolved to a stable change ID so the buffer name is unaffected
-by bookmark movement. Mutable revisions are editable — `:w` writes the buffer back into the
-revision via `jj diffedit`. Immutable revisions show an error on write.
+The open commands (`:Jedit`, `:Jtabedit`, `:Jsplit`, `:Jvsplit`) create a
+`jj://<change_id>/cwd=<encoded-directory>/<encoded-path>` buffer. The directory and
+cwd-relative path are percent-encoded so historical files with the same relative
+name in different directories or repositories remain distinct. The URI also
+retains the directory when a wiped buffer is reopened. Legacy
+`jj://<change_id>/<path>` names are still supported.
+
+The revision expression is resolved to a stable change ID so the buffer name is
+unaffected by bookmark movement. Mutable revisions are editable — `:w` writes the
+buffer back into the revision via `jj diffedit`. Immutable revisions show an error
+on write.
 
 ## Default Config
 
@@ -885,6 +895,7 @@ The `log` function accepts an options table:
 ```lua
 local cmd = require("jj.cmd")
 cmd.log({
+  cwd = "/path/to/project",           -- Optional command directory; defaults to invoking window/tab
   summary = false,                     -- Show summary of changes (default: false)
   reversed = false,                    -- Reverse the log order (default: false)
   no_graph = false,                    -- Hide the graph (default: false)
@@ -899,6 +910,38 @@ cmd.log({ revisions = "main::@" })
 cmd.log({ summary = true, limit = 100 })
 cmd.log({ raw_flags = { "-r", "main::@", "--summary", "--no-graph" } })
 ```
+
+`cwd` accepts absolute or relative directory paths, including paths with spaces.
+Relative paths resolve against the effective working directory of the invoking
+Neovim window/tab. When omitted, that directory is captured for this invocation.
+The plugin does not change Neovim's working directory.
+
+For two independent jj repositories, with one cloned inside the other:
+
+```lua
+-- Neovim's working directory is /path/to/project.
+local cmd = require("jj.cmd")
+cmd.log({ revisions = "all()", limit = 50 })          -- outer repository
+cmd.log({ cwd = "subrepo", revisions = "all()" }) -- independent nested repository
+-- Equivalent absolute path:
+cmd.log({ cwd = "/path/to/project/subrepo" })
+```
+
+The opened log keeps its captured directory through actions, prompts, description
+editor saves, file buffers, diffs, and refreshes, even if Neovim's directory
+changes later. Refreshes retain the original log options, including its revset.
+A fresh `cmd.log()` captures its own invoking directory; it does not reuse the
+previous log's repository. Missing paths, files used as directories, and
+directories outside a jj repository produce an error without replacing the log.
+
+The `status`, `describe`, `split`, and `resolve` option tables, file read/open
+APIs, and diff option tables also accept `cwd`. `get_jj_root(cwd)` asks `jj root`
+for the workspace root while commands continue to run in the selected directory.
+Diffview receives that directory via its Lua API's `-C` argument; CodeDiff uses
+its `--repo` option (requires a CodeDiff version supporting that option).
+The plugin retains its existing shared log window/state model. Arbitrary leading
+`:J` global flags such as `:J -R path log` are not interpreted as interactive log
+options; use the Lua `cwd` API to select a repository for log actions.
 
 > [!IMPORTANT]
 > Breaking change: `cmd.log` now expects `raw_flags` as a `string[]` argv list.
@@ -1231,6 +1274,9 @@ The file annotation displays a vertical split showing:
 Press `<CR>` on any annotation line to view the diff for that change.
 
 The line annotation displays a floating tooltip with the current line's annotation and the commit description.
+Both annotation views use the source buffer's captured directory, including for
+historical files opened from another repository. The annotation's `<CR>` diff
+action retains that context after Neovim's working directory changes.
 
 Example keymaps:
 

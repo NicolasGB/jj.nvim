@@ -8,6 +8,8 @@ local runner = require("jj.core.runner")
 --- Resolve conflicts in the current change.
 --- @param opts? jj.cmd.resolve.opts
 function M.resolve(opts)
+	local ctx = require("jj.core.context").capture(opts)
+	local runner = runner.with_cwd(ctx.cwd)
 	opts = vim.tbl_deep_extend("force", {}, opts or {}) --[[@as jj.cmd.resolve.opts]]
 	local rev = opts.rev or "@"
 	local filesets = opts.filesets or {}
@@ -53,6 +55,7 @@ function M.resolve(opts)
 	else
 		-- Otherwise, run in a floating terminal
 		terminal.run_floating(cmd, nil, {
+			cwd = ctx.cwd,
 			title = " JJ Resolve ",
 			modifiable = true,
 			keep_modifiable = true,

@@ -109,41 +109,46 @@ end
 --- Givewn two changes, show their diff using codediff
 --- @param left string
 --- @param right string
-local function diff_two_changes(left, right)
-	local commit_id_left = utils.get_commit_id(left)
+local function code_diff(cwd, args)
+	vim.list_extend(args, { "--repo", cwd })
+	vim.api.nvim_cmd({ cmd = "CodeDiff", args = args }, {})
+end
+
+local function diff_two_changes(left, right, opts)
+	local commit_id_left = utils.get_commit_id(left, opts.cwd)
 	if commit_id_left == nil then
 		return
 	end
 
-	local commit_id_right = utils.get_commit_id(right)
+	local commit_id_right = utils.get_commit_id(right, opts.cwd)
 	if commit_id_right == nil then
 		return
 	end
 
 	--- Omit the commit id when left is the current revision,
 	--- allowing codediff to use the actual file instead of a virtual buffer.
-	local commit_id_current = utils.get_current_commit_id()
+	local commit_id_current = utils.get_current_commit_id(opts.cwd)
 	if commit_id_current == commit_id_left then
-		vim.cmd(string.format("CodeDiff %s", commit_id_right))
+		code_diff(opts.cwd, { commit_id_right })
 		return
 	end
 
-	vim.cmd(string.format("CodeDiff %s %s", commit_id_right, commit_id_left))
+	code_diff(opts.cwd, { commit_id_right, commit_id_left })
 end
 
-local function diff_two_changes_with_history(left, right)
-	local commit_id_left = utils.get_commit_id(left)
+local function diff_two_changes_with_history(left, right, opts)
+	local commit_id_left = utils.get_commit_id(left, opts.cwd)
 	if commit_id_left == nil then
 		return
 	end
 
-	local commit_id_right = utils.get_commit_id(right)
+	local commit_id_right = utils.get_commit_id(right, opts.cwd)
 	if commit_id_right == nil then
 		return
 	end
 
 	-- test
-	vim.cmd(string.format("CodeDiff history %s..%s", commit_id_right, commit_id_left))
+	code_diff(opts.cwd, { "history", commit_id_right .. ".." .. commit_id_left })
 end
 
 -----------------------------------------------------------------------
@@ -165,20 +170,20 @@ diff.register_backend("codediff", {
 		-- of a short-lived window containing the requested working-copy file so a
 		-- caller such as the jj status buffer does not need to become that file.
 		if opts.path then
-			local path, path_err = utils.normalize_relative_path(opts.path)
+			local path, path_err = utils.normalize_relative_path(opts.path, opts.cwd)
 			if not path then
 				utils.notify(path_err or "Could not resolve file path for CodeDiff", vim.log.levels.ERROR)
 				return
 			end
 
-			local current_file = vim.fs.normalize(vim.fn.fnamemodify(path, ":p"))
+			local current_file = utils.resolve_cwd_path(path, opts.cwd)
 			local stat = vim.uv.fs_stat(current_file)
 			if not stat or stat.type ~= "file" then
 				utils.notify("File not found: " .. path, vim.log.levels.ERROR)
 				return
 			end
 
-			local commit_id = utils.get_commit_id(revset)
+			local commit_id = utils.get_commit_id(revset, opts.cwd)
 			if not commit_id then
 				return
 			end
@@ -201,7 +206,10 @@ diff.register_backend("codediff", {
 					focusable = false,
 				})
 				if not ok_win then
-					utils.notify(tostring(win_or_err or "Could not create CodeDiff launcher window"), vim.log.levels.ERROR)
+					utils.notify(
+						tostring(win_or_err or "Could not create CodeDiff launcher window"),
+						vim.log.levels.ERROR
+					)
 					return
 				end
 				launcher_win = win_or_err
@@ -209,7 +217,7 @@ diff.register_backend("codediff", {
 			end
 
 			local ok_cmd, err = pcall(vim.api.nvim_win_call, launcher_win, function()
-				vim.cmd(string.format("CodeDiff file %s", commit_id))
+				code_diff(opts.cwd, { "file", commit_id })
 			end)
 			if owns_launcher_win and vim.api.nvim_win_is_valid(launcher_win) then
 				vim.api.nvim_win_close(launcher_win, true)
@@ -234,9 +242,12 @@ diff.register_backend("codediff", {
 			local enc = file.get_buf_encoding(0)
 			-- A file added since `revset` has no content there; show it as empty
 			-- so it diffs as fully added rather than aborting the diff.
-			local base_lines, base_had_eol, ok_read, _, absent = file.get_file_content(revset, path, enc)
+			local base_lines, base_had_eol, ok_read, _, absent = file.get_file_content(revset, path, enc, opts.cwd)
 			if not ok_read and not absent then
-				utils.notify(string.format("Could not read `%s` from `%s` for CodeDiff", path, revset), vim.log.levels.ERROR)
+				utils.notify(
+					string.format("Could not read `%s` from `%s` for CodeDiff", path, revset),
+					vim.log.levels.ERROR
+				)
 				return
 			end
 			local cur_lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
@@ -263,9 +274,7 @@ diff.register_backend("codediff", {
 			table.insert(pending_launches, artifacts)
 
 			local ok_cmd, err = pcall(function()
-				vim.cmd(
-					string.format("CodeDiff file %s %s", vim.fn.fnameescape(base_file), vim.fn.fnameescape(cur_file))
-				)
+				vim.api.nvim_cmd({ cmd = "CodeDiff", args = { "file", base_file, cur_file } }, {})
 			end)
 
 			if not ok_cmd then
@@ -288,12 +297,12 @@ diff.register_backend("codediff", {
 			return
 		end
 
-		local commit_id = utils.get_commit_id(revset)
+		local commit_id = utils.get_commit_id(revset, opts.cwd)
 		if not commit_id then
 			return
 		end
 
-		vim.cmd(string.format("CodeDiff file %s", commit_id))
+		code_diff(opts.cwd, { "file", commit_id })
 	end,
 
 	show_revision = function(opts)
@@ -304,7 +313,7 @@ diff.register_backend("codediff", {
 		-- When comparing a revision we always compare it to it's parent to get the diff
 		local right = string.format("%s-", opts.rev)
 
-		diff_two_changes(opts.rev, right)
+		diff_two_changes(opts.rev, right, opts)
 	end,
 
 	diff_revisions = function(opts)
@@ -312,7 +321,7 @@ diff.register_backend("codediff", {
 			return
 		end
 
-		diff_two_changes(opts.left, opts.right)
+		diff_two_changes(opts.left, opts.right, opts)
 	end,
 
 	diff_history_revisions = function(opts)
@@ -320,6 +329,6 @@ diff.register_backend("codediff", {
 			return
 		end
 
-		diff_two_changes_with_history(opts.left, opts.right)
+		diff_two_changes_with_history(opts.left, opts.right, opts)
 	end,
 })
