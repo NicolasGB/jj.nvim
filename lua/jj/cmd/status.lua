@@ -7,10 +7,13 @@ local parser = require("jj.core.parser")
 local terminal = require("jj.ui.terminal")
 local jj_args = require("jj.core.args")
 local window = require("jj.core.window")
+local context = require("jj.core.context")
 
 --- Handle restoring a file from the jj status buffer
 --- Supports both renamed and non-renamed files
 function M.handle_status_restore()
+	local ctx = context.from_buffer()
+	local runner = runner.with_cwd(ctx.cwd)
 	local lines = utils.get_visual_selection(terminal.state.buf)
 	if not lines then
 		lines = { vim.api.nvim_get_current_line() }
@@ -71,20 +74,21 @@ function M.handle_status_restore()
 				end
 			end
 			utils.notify(notif_msg, vim.log.levels.INFO)
-			M.status() -- Refresh the status buffer after restoring files
+			M.status({ cwd = ctx.cwd }) -- Refresh the status buffer after restoring files
 		end
 	end)
 end
 
 --- Handle opening a file from the jj status buffer
 function M.handle_status_enter()
+	local ctx = context.from_buffer()
 	local file_info = parser.parse_file_info_from_status_line(vim.api.nvim_get_current_line())
 
 	if not file_info then
 		return
 	end
 
-	local filepath = utils.resolve_cwd_path(file_info.new_path)
+	local filepath = utils.resolve_cwd_path(file_info.new_path, ctx.cwd)
 	if not filepath then
 		return
 	end
@@ -101,21 +105,25 @@ function M.handle_status_enter()
 
 	window.enter(filepath, origin)
 	vim.cmd("edit " .. vim.fn.fnameescape(filepath))
+	context.attach(vim.api.nvim_get_current_buf(), ctx)
 end
 --- Handle undoing form the status buffer
 function M.handle_status_undo()
-	require("jj.cmd").undo()
-	M.status()
+	local ctx = context.from_buffer()
+	require("jj.cmd").undo({ cwd = ctx.cwd })
+	M.status({ cwd = ctx.cwd })
 end
 
 --- Handle undoing form the status buffer
 function M.handle_status_redo()
-	require("jj.cmd").redo()
-	M.status()
+	local ctx = context.from_buffer()
+	require("jj.cmd").redo({ cwd = ctx.cwd })
+	M.status({ cwd = ctx.cwd })
 end
 
 --- Handle diffing the file under the cursor
 function M.handle_diff_file()
+	local ctx = context.from_buffer()
 	local diff = require("jj.diff")
 
 	local file_info = parser.parse_file_info_from_status_line(vim.api.nvim_get_current_line())
@@ -124,7 +132,7 @@ function M.handle_diff_file()
 		return
 	end
 
-	local filepath = utils.resolve_cwd_path(file_info.new_path)
+	local filepath = utils.resolve_cwd_path(file_info.new_path, ctx.cwd)
 	if not filepath then
 		return
 	end
@@ -133,7 +141,7 @@ function M.handle_diff_file()
 		terminal.close_floating_buffer()
 	end
 
-	diff.diff_current({ path = filepath, origin_win = origin })
+	diff.diff_current({ cwd = ctx.cwd, path = filepath, origin_win = origin })
 end
 
 --- Resolve status keymaps from config
@@ -177,6 +185,8 @@ end
 --- Jujutsu status
 --- @param opts? table Options for the status command
 function M.status(opts)
+	local ctx = context.capture(opts)
+	local runner = runner.with_cwd(ctx.cwd)
 	if not utils.ensure_jj() then
 		return
 	end
@@ -190,7 +200,7 @@ function M.status(opts)
 		end
 	else
 		-- Default behavior: show in buffer
-		terminal.run(cmd, M.status_keymaps())
+		terminal.run(cmd, M.status_keymaps(), { cwd = ctx.cwd })
 	end
 end
 

@@ -1,92 +1,50 @@
 local utils = require("jj.utils")
-
----@type jj.diff
 local diff = require("jj.diff")
 
------------------------------------------------------------------------
--- Diffvew Backend
------------------------------------------------------------------------
-
---- Givewn two changes, show their diff using diffview.nvim
---- @param left string
---- @param right string
-local function diff_two_changes(left, right)
-	-- Extract the commit id from opts.rev
-	local commit_id_left = utils.get_commit_id(left)
-	if commit_id_left == nil then
+-- Diffview's Lua entry points accept argv and -C{path}. Keeping the directory
+-- and file filter as individual arguments also preserves spaces in paths.
+local function open(opts, left, right, history)
+	if not utils.has_dependency("diffview") then
 		return
 	end
-	local commit_id_right = utils.get_commit_id(right)
-	if commit_id_right == nil then
+	local left_id = utils.get_commit_id(left, opts.cwd)
+	local right_id = right and utils.get_commit_id(right, opts.cwd)
+	if not left_id or (right and not right_id) then
 		return
 	end
-
-	vim.cmd(string.format("DiffviewOpen %s..%s", commit_id_right, commit_id_left))
+	local range = right_id and (right_id .. ".." .. left_id) or left_id
+	local args = { "-C" .. opts.cwd, history and ("--range=" .. range) or range }
+	if opts.path then
+		vim.list_extend(args, { "--", utils.resolve_cwd_path(opts.path, opts.cwd) })
+	end
+	if history then
+		require("diffview").file_history(nil, args)
+	else
+		require("diffview").open(args)
+	end
+	return true
 end
 
-local function diff_two_changes_with_history(left, right)
-	local commit_id_left = utils.get_commit_id(left)
-	if commit_id_left == nil then
-		return
-	end
-
-	local commit_id_right = utils.get_commit_id(right)
-	if commit_id_right == nil then
-		return
-	end
-
-	-- test
-	vim.cmd(string.format("DiffviewFileHistory --range=%s..%s", commit_id_right, commit_id_left))
-end
-
--- Register the diffview backend
 diff.register_backend("diffview", {
 	diff_current = function(opts)
-		if not utils.has_dependency("diffview") then
-			return
-		end
-
-		local buf_name = vim.api.nvim_buf_get_name(0)
-		local change_id, jj_path = utils.parse_jj_uri(buf_name)
-		local revset = opts.rev or (change_id and (change_id .. "-")) or "@-"
-
-		local commit_id = utils.get_commit_id(revset)
-		if not commit_id then
-			return
-		end
-
-		local raw_path = opts.path or jj_path or "%"
-		local path, err = utils.normalize_relative_path(raw_path)
+		local change_id, jj_path = utils.parse_jj_uri(vim.api.nvim_buf_get_name(0))
+		local rev = opts.rev or (change_id and (change_id .. "-")) or "@-"
+		local path, err = utils.normalize_relative_path(opts.path or jj_path or "%", opts.cwd)
 		if not path then
 			utils.notify(err or "Could not resolve file path for Diffview", vim.log.levels.ERROR)
 			return
 		end
-
-		vim.cmd(string.format("DiffviewOpen %s -- %s", commit_id, vim.fn.fnameescape(path)))
-		vim.cmd("DiffviewToggleFiles")
+		if open(vim.tbl_extend("force", opts, { path = path }), rev) then
+			vim.cmd("DiffviewToggleFiles")
+		end
 	end,
 	show_revision = function(opts)
-		if not utils.has_dependency("diffview") then
-			return
-		end
-
-		-- When comparing a revision we always compare it to it's parent to get the diff
-		local right = string.format("%s-", opts.rev)
-
-		diff_two_changes(opts.rev, right)
+		open(opts, opts.rev, opts.rev .. "-")
 	end,
 	diff_revisions = function(opts)
-		if not utils.has_dependency("diffview") then
-			return
-		end
-
-		diff_two_changes(opts.left, opts.right)
+		open(opts, opts.left, opts.right)
 	end,
 	diff_history_revisions = function(opts)
-		if not utils.has_dependency("diffview") then
-			return
-		end
-
-		diff_two_changes_with_history(opts.left, opts.right)
+		open(opts, opts.left, opts.right, true)
 	end,
 })

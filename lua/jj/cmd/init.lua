@@ -6,6 +6,7 @@ local runner = require("jj.core.runner")
 local terminal = require("jj.ui.terminal")
 local editor = require("jj.ui.editor")
 local parser = require("jj.core.parser")
+local context = require("jj.core.context")
 
 local log_module = require("jj.cmd.log")
 local describe_module = require("jj.cmd.describe")
@@ -114,6 +115,7 @@ local resolve_module = require("jj.cmd.resolve")
 --- @field floating? jj.cmd.floating.keymaps Keymaps for the floating buffer
 
 ---@class jj.cmd.split.opts
+---@field cwd? string
 ---@field rev? string Revision to split
 ---@field message? string Commit message for the new revision
 ---@field filesets? string[] Filesets to include in the split
@@ -127,6 +129,7 @@ local resolve_module = require("jj.cmd.resolve")
 --- @field external? boolean Run externally instead of floating terminal
 
 ---@class jj.cmd.resolve.opts
+---@field cwd? string
 ---@field rev string|nil The revision to resolve, defaults to "@"
 ---@field filesets string[]|nil The filesets to resolve, defaults to all filesets
 ---@field external boolean|nil Whether to use external merge tool, if this boolean is set the command will not be ran in a floating terminal inside neovim (defaults: false)
@@ -682,7 +685,9 @@ function M.bookmark_forget()
 end
 
 -- Jujutsu undo
-function M.undo()
+function M.undo(opts)
+	local ctx = opts and (opts.context or context.capture(opts)) or context.from_buffer()
+	local runner = runner.with_cwd(ctx.cwd)
 	if not utils.ensure_jj() then
 		return
 	end
@@ -691,13 +696,15 @@ function M.undo()
 	runner.execute_async(cmd, function()
 		utils.notify("Command `undo` was succesful.", vim.log.levels.INFO)
 		if terminal.is_log_buffer_open() then
-			M.log({})
+			M.log(vim.tbl_extend("force", ctx.log_opts or {}, { cwd = ctx.cwd }))
 		end
 	end, "Failed to undo")
 end
 
 -- Jujutsu redo
-function M.redo()
+function M.redo(opts)
+	local ctx = opts and (opts.context or context.capture(opts)) or context.from_buffer()
+	local runner = runner.with_cwd(ctx.cwd)
 	if not utils.ensure_jj() then
 		return
 	end
@@ -706,7 +713,7 @@ function M.redo()
 	runner.execute_async(cmd, function()
 		utils.notify("Command `redo` was succesful.", vim.log.levels.INFO)
 		if terminal.is_log_buffer_open() then
-			M.log({})
+			M.log(vim.tbl_extend("force", ctx.log_opts or {}, { cwd = ctx.cwd }))
 		end
 	end, "Failed to redo")
 end
@@ -1020,7 +1027,9 @@ end
 
 --- Jujutsu tag set
 --- @param rev string|nil
-function M.tag_set(rev)
+function M.tag_set(rev, opts)
+	local ctx = opts and (opts.context or context.capture(opts)) or context.from_buffer()
+	local runner = runner.with_cwd(ctx.cwd)
 	if not utils.ensure_jj() then
 		return
 	end
@@ -1030,7 +1039,7 @@ function M.tag_set(rev)
 	-- If the revision is not provided, ask the user for it,
 	if not rev then
 		if not should_refresh then
-			M.log({})
+			M.log(vim.tbl_extend("force", ctx.log_opts or {}, { cwd = ctx.cwd }))
 		end
 
 		vim.ui.input({ prompt = "Revision to tag: " }, function(input)
@@ -1051,7 +1060,7 @@ function M.tag_set(rev)
 				utils.notify(string.format("Tag `%s` set on `%s`.", input, rev), vim.log.levels.INFO)
 				if should_refresh then
 					vim.schedule(function()
-						M.log()
+						M.log(vim.tbl_extend("force", ctx.log_opts or {}, { cwd = ctx.cwd }))
 					end)
 				end
 			end, "Failed to set tag")

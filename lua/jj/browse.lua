@@ -2,6 +2,7 @@
 local M = {}
 
 local utils = require("jj.utils")
+local context = require("jj.core.context")
 
 --- Build a line anchor for a hosted-file URL.
 --- GitHub uses `#L<start>-L<end>` for ranges; GitLab uses `#L<start>-<end>`.
@@ -57,6 +58,7 @@ end
 --- Open current file on remote at current line / selected range
 --- @param opts? {line1?: number, line2?: number, range?: number, args?: string, fargs?: string[]}
 function M.browse(opts)
+	local ctx = context.from_buffer()
 	if not utils.ensure_jj() then
 		return
 	end
@@ -68,8 +70,7 @@ function M.browse(opts)
 
 	local abs_path
 	if jj_path then
-		local cwd = vim.uv.cwd()
-		abs_path = cwd and vim.fs.joinpath(cwd, jj_path) or jj_path
+		abs_path = utils.resolve_cwd_path(jj_path, ctx.cwd)
 	else
 		abs_path = buf_name
 		if not utils.is_file(abs_path) then
@@ -78,7 +79,7 @@ function M.browse(opts)
 		end
 	end
 
-	local root = utils.get_jj_root()
+	local root = utils.get_jj_root(ctx.cwd)
 	if not root then
 		utils.notify("Not in a jj repository", vim.log.levels.ERROR)
 		return
@@ -108,7 +109,7 @@ function M.browse(opts)
 		end
 	end
 
-	local remotes = utils.get_remotes()
+	local remotes = utils.get_remotes(ctx.cwd)
 	if remotes == nil then
 		utils.notify("Failed to get git remotes", vim.log.levels.ERROR)
 		return
@@ -131,7 +132,7 @@ function M.browse(opts)
 			max_walkback = 0
 		end
 
-		local commit_id = utils.get_pushed_commit_id(revset, remote.name, max_walkback)
+		local commit_id = utils.get_pushed_commit_id(revset, remote.name, max_walkback, ctx.cwd)
 		if not commit_id then
 			utils.notify(
 				string.format("Could not determine a remote reachable commit for %s", revset),
@@ -142,7 +143,7 @@ function M.browse(opts)
 
 		-- Prefer a single remote bookmark name (more readable). If there are multiple,
 		-- stick to commit SHA to avoid ambiguity.
-		local ref = utils.get_unique_remote_bookmark_name(commit_id, remote.name) or commit_id
+		local ref = utils.get_unique_remote_bookmark_name(commit_id, remote.name, ctx.cwd) or commit_id
 
 		local url = build_browse_url(base_repo_url, host, ref, repo_rel, line1, line2)
 		utils.open_url(url)

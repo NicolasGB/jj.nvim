@@ -8,6 +8,7 @@ local terminal = require("jj.ui.terminal")
 local buffer = require("jj.core.buffer")
 local window = require("jj.core.window")
 local diff = require("jj.diff")
+local context = require("jj.core.context")
 
 local log_selected_hl_group = "JJLogSelectedHlGroup"
 local log_selected_ns_id = vim.api.nvim_create_namespace(log_selected_hl_group)
@@ -16,6 +17,7 @@ local log_special_mode_target_ns_id = vim.api.nvim_create_namespace(log_special_
 local special_mode_autocmd_id = nil
 
 --- @class jj.cmd.log_opts
+--- @field cwd? string Command directory; relative to the invoking window/tab
 --- @field summary? boolean
 --- @field reversed? boolean
 --- @field no_graph? boolean
@@ -400,9 +402,29 @@ end
 --- Jujutsu log
 --- @param opts? jj.cmd.log_opts Optional command options
 function M.log(opts)
+	local ok, ctx = pcall(context.capture, opts)
+	if not ok then
+		utils.notify(tostring(ctx), vim.log.levels.ERROR)
+		return
+	end
+	local stat = vim.uv.fs_stat(ctx.cwd)
+	if not stat then
+		utils.notify("Directory does not exist: " .. ctx.cwd, vim.log.levels.ERROR)
+		return
+	elseif stat.type ~= "directory" then
+		utils.notify("Not a directory: " .. ctx.cwd, vim.log.levels.ERROR)
+		return
+	end
 	if not utils.ensure_jj() then
 		return
 	end
+
+	if not utils.get_jj_root(ctx.cwd) then
+		utils.notify("Not a jj repository: " .. ctx.cwd, vim.log.levels.ERROR)
+		return
+	end
+	ctx.log_opts = vim.deepcopy(opts or {})
+	ctx.log_opts.cwd = ctx.cwd
 
 	-- If a log was already being displayed before this command we will want to maintain the cursor position
 	if terminal.is_log_buffer_open() then
@@ -412,7 +434,8 @@ function M.log(opts)
 		vim.api.nvim_buf_clear_namespace(terminal.state.buf, log_special_mode_target_ns_id, 0, -1)
 	end
 
-	terminal.run(M.build_log_cmd(opts), M.log_keymaps())
+	local buf = terminal.run(M.build_log_cmd(opts), M.log_keymaps(), { cwd = ctx.cwd, context = ctx })
+	context.attach(buf, ctx)
 end
 
 ---
@@ -426,6 +449,8 @@ end
 --- @param flag? 'after' Position relative to the current revision; nil to branch off.
 --- @param ignore_immut? boolean Pass --ignore-immutable to jj when true.
 function M.handle_log_new(flag, ignore_immut)
+	local ctx = context.from_buffer()
+	local runner = runner.with_cwd(ctx.cwd)
 	local revsets = extract_revsets_from_terminal_buffer()
 	if not revsets then
 		return
@@ -475,12 +500,13 @@ function M.handle_log_new(flag, ignore_immut)
 	runner.execute_async(cmd, function()
 		utils.notify(string.format(cfg.ok, revsets), vim.log.levels.INFO)
 		-- Refresh the log buffer after creating the change.
-		M.log()
+		context.refresh(ctx)
 	end, string.format(cfg.err, revsets))
 end
 
 --- Handle diffing a log line
 function M.handle_log_diff()
+	local ctx = context.from_buffer()
 	local revsets = extract_revsets_from_terminal_buffer()
 	if not revsets then
 		utils.notify("No valid revision found in the log line", vim.log.levels.ERROR)
@@ -493,16 +519,17 @@ function M.handle_log_diff()
 	local is_multiple = revsets:find(" ") ~= nil
 
 	if not is_multiple then
-		diff.show_revision({ rev = revsets })
+		diff.show_revision({ cwd = ctx.cwd, rev = revsets })
 	else
 		-- Get the first and the last revset to diff
 		local list = vim.split(revsets, "%s+", { trimempty = true })
-		diff.diff_revisions({ left = list[1], right = list[#list] })
+		diff.diff_revisions({ cwd = ctx.cwd, left = list[1], right = list[#list] })
 	end
 end
 
 --- Handle log history
 function M.handle_log_history()
+	local ctx = context.from_buffer()
 	local revsets = extract_revsets_from_terminal_buffer()
 	if not revsets then
 		utils.notify("No valid revision found in the log line", vim.log.levels.ERROR)
@@ -517,19 +544,20 @@ function M.handle_log_history()
 	if is_multiple then
 		-- Get the first and the last revset to diff
 		local list = vim.split(revsets, "%s+", { trimempty = true })
-		diff.diff_history_revisions({ left = list[1], right = list[#list] })
+		diff.diff_history_revisions({ cwd = ctx.cwd, left = list[1], right = list[#list] })
 	end
 end
 
 --- Handle describing a log line
 function M.handle_log_describe()
+	local ctx = context.from_buffer()
 	-- Store the cursor pos for when we exit the describe
 	terminal.store_cursor_position()
 	local revset = get_revset()
 	if revset then
-		require("jj.cmd").describe(nil, revset, nil, function()
+		require("jj.cmd").describe(nil, revset, { cwd = ctx.cwd }, function()
 			-- Execute log
-			M.log()
+			context.refresh(ctx)
 			-- Restore previous cursor pos
 			terminal.restore_cursor_position()
 		end)
@@ -545,6 +573,8 @@ end
 --- @param ignore_immut? boolean Pass --ignore-immutable to jj edit when true.
 --- @param close_on_exit? boolean Close the log buffer after editing when true.
 function M.handle_log_edit(ignore_immut, close_on_exit)
+	local ctx = context.from_buffer()
+	local runner = runner.with_cwd(ctx.cwd)
 	local revset = get_revset()
 	if not revset or revset == "" then
 		return
@@ -569,7 +599,7 @@ function M.handle_log_edit(ignore_immut, close_on_exit)
 			utils.notify(string.format("Editing change: `%s`", revset), vim.log.levels.INFO)
 			terminal.close_terminal_buffer()
 		else
-			M.log({})
+			context.refresh(ctx)
 		end
 	end, "Error editing change")
 end
@@ -580,6 +610,8 @@ end
 --- On success, notifies and refreshes the log buffer.
 --- @param ignore_immut? boolean Pass --ignore-immutable to jj abandon when true.
 function M.handle_log_abandon(ignore_immut)
+	local ctx = context.from_buffer()
+	local runner = runner.with_cwd(ctx.cwd)
 	local revsets = extract_revsets_from_terminal_buffer()
 	if not revsets then
 		return
@@ -610,7 +642,7 @@ function M.handle_log_abandon(ignore_immut)
 					text = "Abandoned changes: `%s`"
 				end
 				utils.notify(string.format(text, revsets), vim.log.levels.INFO)
-				M.log({})
+				context.refresh(ctx)
 			end, "Error abandoning change")
 		end
 	)
@@ -618,7 +650,9 @@ end
 
 --- Handle fetching from `jj log` buffer.
 function M.handle_log_fetch()
-	local remotes = utils.get_remotes()
+	local ctx = context.from_buffer()
+	local runner = runner.with_cwd(ctx.cwd)
+	local remotes = utils.get_remotes(ctx.cwd)
 	if not remotes or #remotes == 0 then
 		utils.notify("No git remotes found to fetch from", vim.log.levels.ERROR)
 		return
@@ -648,7 +682,7 @@ function M.handle_log_fetch()
 				end
 				runner.execute_async(cmd, function()
 					utils.notify(string.format("Successfully fetched from %s", target), vim.log.levels.INFO)
-					M.log({})
+					context.refresh(ctx)
 				end, "Error fetching from remote")
 			end
 		end)
@@ -658,7 +692,7 @@ function M.handle_log_fetch()
 		utils.notify("Fetching from remote...", vim.log.levels.INFO)
 		runner.execute_async(cmd, function()
 			utils.notify("Successfully fetched from remote", vim.log.levels.INFO)
-			M.log({})
+			context.refresh(ctx)
 		end, "Error fetching from remote")
 	end
 end
@@ -666,7 +700,9 @@ end
 --- Handle pushing from `jj log` buffer.
 --- Ask the user which local bookmark to push.
 function M.handle_log_push_from_all()
-	local bookmarks = utils.get_all_bookmarks_with_status()
+	local ctx = context.from_buffer()
+	local runner = runner.with_cwd(ctx.cwd)
+	local bookmarks = utils.get_all_bookmarks_with_status(ctx.cwd)
 	local cmd = { "jj", "git", "push" }
 	if not bookmarks or #bookmarks == 0 then
 		utils.notify("No bookmarks found to push", vim.log.levels.ERROR)
@@ -692,7 +728,7 @@ function M.handle_log_push_from_all()
 					utils.notify("Nothing changed.", vim.log.levels.INFO)
 				else
 					utils.notify(string.format("Successfully pushed bookmark `%s`", choice.name), vim.log.levels.INFO)
-					M.log({})
+					context.refresh(ctx)
 				end
 			end, string.format("Error pushing bookmark `%s`", choice.name))
 		else
@@ -703,12 +739,14 @@ end
 
 --- Handle log pushing bookmark from current line in `jj log` buffer.
 function M.handle_log_push_bookmark()
+	local ctx = context.from_buffer()
+	local runner = runner.with_cwd(ctx.cwd)
 	local revset = get_revset()
 	if not revset or revset == "" then
 		return
 	end
 
-	local bookmarks = utils.get_bookmarks_for_rev(revset)
+	local bookmarks = utils.get_bookmarks_for_rev(revset, ctx.cwd)
 	if not bookmarks or #bookmarks == 0 then
 		utils.notify("No bookmark found for revision", vim.log.levels.ERROR)
 		return
@@ -722,7 +760,7 @@ function M.handle_log_push_bookmark()
 				utils.notify("Nothing changed.", vim.log.levels.INFO)
 			else
 				utils.notify(string.format("Successfully pushed bookmark for `%s`", revset), vim.log.levels.INFO)
-				M.log({})
+				context.refresh(ctx)
 			end
 		end, string.format("Error pushing bookmark for `%s`", revset))
 	end
@@ -767,6 +805,7 @@ end
 --- Handle seting a tag from `jj log` buffer for the revision under cursor
 --- @param revset? string Revset to set the tag on, if not provided it will do nothing.
 function M.handle_log_tag_set(revset)
+	local ctx = context.from_buffer()
 	if not revset or revset == "" then
 		revset = revset or get_revset()
 		if not revset or revset == "" then
@@ -774,14 +813,15 @@ function M.handle_log_tag_set(revset)
 		end
 	end
 
-	require("jj.cmd").tag_set(revset)
+	require("jj.cmd").tag_set(revset, { cwd = ctx.cwd, context = ctx })
 end
 
 --- Handle log change revset
 function M.handle_log_change_revset()
+	local ctx = context.from_buffer()
 	vim.ui.input({ prompt = "Enter new revset: " }, function(input)
 		if input and input ~= "" then
-			M.log({ revisions = input })
+			context.refresh(ctx, { revisions = input, raw_flags = false })
 		end
 	end)
 end
@@ -789,9 +829,10 @@ end
 --- Handle opening a PR/MR from `jj log` buffer for the revision under cursor
 --- @param list_bookmarks? boolean If true, prompt to select from all bookmarks instead of using current revision
 function M.handle_log_open_pr(list_bookmarks)
+	local ctx = context.from_buffer()
 	if list_bookmarks then
 		-- Get all bookmarks
-		local bookmarks = utils.get_all_bookmarks()
+		local bookmarks = utils.get_all_bookmarks(ctx.cwd)
 
 		if #bookmarks == 0 then
 			utils.notify("No bookmarks found", vim.log.levels.ERROR)
@@ -803,7 +844,7 @@ function M.handle_log_open_pr(list_bookmarks)
 			prompt = "Select bookmark to open PR for: ",
 		}, function(choice)
 			if choice then
-				utils.open_pr_for_bookmark(choice)
+				utils.open_pr_for_bookmark(choice, ctx.cwd)
 			end
 		end)
 		-- Return early
@@ -817,7 +858,7 @@ function M.handle_log_open_pr(list_bookmarks)
 	end
 
 	-- Get the bookmark for this revision
-	local bookmarks = utils.get_bookmarks_for_rev(revset)
+	local bookmarks = utils.get_bookmarks_for_rev(revset, ctx.cwd)
 	if not bookmarks or #bookmarks == 0 then
 		utils.notify("[OPEN PR] No bookmark found for revision", vim.log.levels.ERROR)
 		return
@@ -834,22 +875,24 @@ function M.handle_log_open_pr(list_bookmarks)
 			end,
 		}, function(choice)
 			if choice then
-				utils.open_pr_for_bookmark(choice.name)
+				utils.open_pr_for_bookmark(choice.name, ctx.cwd)
 			end
 		end)
 	else
 		-- Open the PR using the utility function
-		utils.open_pr_for_bookmark(bookmarks[1].name)
+		utils.open_pr_for_bookmark(bookmarks[1].name, ctx.cwd)
 	end
 end
 
 function M.handle_log_bookmark_del()
+	local ctx = context.from_buffer()
+	local runner = runner.with_cwd(ctx.cwd)
 	local revset = get_revset()
 	if not revset or revset == "" then
 		return
 	end
 
-	local curr_bookmarks = utils.get_bookmarks_for_rev(revset)
+	local curr_bookmarks = utils.get_bookmarks_for_rev(revset, ctx.cwd)
 	if not curr_bookmarks or #curr_bookmarks == 0 then
 		utils.notify("No bookmark found for revision", vim.log.levels.ERROR)
 		return
@@ -864,7 +907,7 @@ function M.handle_log_bookmark_del()
 		local b_str = table.concat(b_names, " ")
 		runner.execute_async(cmd, function()
 			utils.notify(string.format("Deleted bookmark `%s`", b_str), vim.log.levels.INFO)
-			M.log({})
+			context.refresh(ctx)
 		end, string.format("Error deleting bookmark `%s`", b_str))
 	end
 
@@ -899,13 +942,15 @@ end
 
 -- Create or move bookmark at revision under cursor in `jj log` buffer
 function M.handle_log_bookmark()
+	local ctx = context.from_buffer()
+	local runner = runner.with_cwd(ctx.cwd)
 	local revset = get_revset()
 	if not revset or revset == "" then
 		return
 	end
 
 	-- Get all bookmarks
-	local bookmarks = utils.get_all_bookmarks()
+	local bookmarks = utils.get_all_bookmarks(ctx.cwd)
 	table.insert(bookmarks, 1, "[Create new]")
 	-- Prompt to select or create a bookmark
 	vim.ui.select(bookmarks, {
@@ -923,7 +968,7 @@ function M.handle_log_bookmark()
 								string.format("Created bookmark `%s` at `%s`", input, revset),
 								vim.log.levels.INFO
 							)
-							M.log({})
+							context.refresh(ctx)
 						end, "Error creating bookmark")
 					end
 				end)
@@ -932,7 +977,7 @@ function M.handle_log_bookmark()
 				local cmd = { "jj", "bookmark", "move", choice, "--to", revset, "-B" }
 				runner.execute_async(cmd, function()
 					utils.notify(string.format("Moved bookmark `%s` to `%s`", choice, revset), vim.log.levels.INFO)
-					M.log({})
+					context.refresh(ctx)
 				end, "Error moving bookmark")
 			end
 		end
@@ -1005,6 +1050,8 @@ end
 --- Quick squash the bookmark under the cursor into its parent
 --- @param interactive boolean|nil If true, will add the --interactive flag to the jj squash command
 function M.handle_log_quick_squash(interactive)
+	local ctx = context.from_buffer()
+	local runner = runner.with_cwd(ctx.cwd)
 	local revset = get_revset()
 	if not revset or revset == "" then
 		return
@@ -1016,6 +1063,8 @@ function M.handle_log_quick_squash(interactive)
 		table.insert(cmd, "--interactive")
 
 		terminal.run_floating(cmd, nil, {
+			cwd = ctx.cwd,
+			context = ctx,
 			title = "Squash Interactive",
 			modifiable = true,
 			keep_modifiable = true,
@@ -1026,7 +1075,7 @@ function M.handle_log_quick_squash(interactive)
 						string.format("Successfully squashed `%s` into it's parent", revset),
 						vim.log.levels.INFO
 					)
-					M.log({})
+					context.refresh(ctx)
 				else
 					utils.notify(
 						string.format("Cancelled squashing `%s` into it's parent", revset),
@@ -1035,7 +1084,7 @@ function M.handle_log_quick_squash(interactive)
 					-- Since we previously replaced the floating with the squash we actually want to re run the log cmd
 					if require("jj").config.terminal.window.type == "floating" then
 						vim.schedule(function()
-							M.log({})
+							context.refresh(ctx)
 						end)
 					end
 				end
@@ -1052,7 +1101,7 @@ function M.handle_log_quick_squash(interactive)
 						string.format("Successfully squashed `%s` into it's parent", revset),
 						vim.log.levels.INFO
 					)
-					M.log({})
+					context.refresh(ctx)
 				end, string.format("Error squashing `%s` into it's parent", revset))
 			end
 		)
@@ -1061,25 +1110,27 @@ end
 
 --- Handle log split
 function M.handle_log_split()
+	local ctx = context.from_buffer()
 	local revset = get_revset()
 	if not revset or revset == "" then
 		return
 	end
 
 	require("jj.cmd").split({
+		cwd = ctx.cwd,
 		rev = revset,
 		on_exit = function(exit_code)
 			if exit_code == 0 then
 				utils.notify(string.format("Successfully split `%s`", revset), vim.log.levels.INFO)
 				vim.schedule(function()
-					M.log({})
+					context.refresh(ctx)
 				end)
 			else
 				utils.notify(string.format("Cancelled splitting `%s`", revset), vim.log.levels.WARN)
 				-- Since we previously replaced the floating with the split we actually want to re run the log cmd
 				if require("jj").config.terminal.window.type == "floating" then
 					vim.schedule(function()
-						M.log({})
+						context.refresh(ctx)
 					end)
 				end
 			end
@@ -1089,12 +1140,13 @@ end
 
 --- Handle log resolve conflict
 function M.handle_log_resolve()
+	local ctx = context.from_buffer()
 	local revset = get_revset()
 	if not revset or revset == "" then
 		return
 	end
 
-	if not utils.is_change_conflicted(revset) then
+	if not utils.is_change_conflicted(revset, ctx.cwd) then
 		utils.notify(string.format("Revision `%s` has no conflicts to resolve", revset), vim.log.levels.INFO)
 		return
 	end
@@ -1103,13 +1155,13 @@ function M.handle_log_resolve()
 		if exit_code == 0 then
 			utils.notify(string.format("Successfully resolved `%s`", revset), vim.log.levels.INFO)
 			vim.schedule(function()
-				M.log({})
+				context.refresh(ctx)
 			end)
 		else
 			-- Since we previously replaced the floating with the resolve we actually want to re run the log cmd
 			if require("jj").config.terminal.window.type == "floating" then
 				vim.schedule(function()
-					M.log({})
+					context.refresh(ctx)
 				end)
 			end
 		end
@@ -1125,6 +1177,7 @@ function M.handle_log_resolve()
 		}, function(choice)
 			if choice then
 				require("jj.cmd").resolve({
+					cwd = ctx.cwd,
 					rev = revset,
 					args = choice.args,
 					external = choice.external,
@@ -1134,10 +1187,16 @@ function M.handle_log_resolve()
 		end)
 	elseif strategies and #strategies == 1 then
 		local choice = strategies[1]
-		require("jj.cmd").resolve({ rev = revset, args = choice.args, external = choice.external, on_exit = exit_func })
+		require("jj.cmd").resolve({
+			cwd = ctx.cwd,
+			rev = revset,
+			args = choice.args,
+			external = choice.external,
+			on_exit = exit_func,
+		})
 	else
 		-- Simply resolve with the default
-		require("jj.cmd").resolve({ rev = revset, on_exit = exit_func })
+		require("jj.cmd").resolve({ cwd = ctx.cwd, rev = revset, on_exit = exit_func })
 	end
 end
 
@@ -1146,6 +1205,7 @@ end
 --- Opens a floating diff, and returns focus to tooltip when closed
 --- @param revset string The revision being viewed
 function M.handle_summary_diff(revset)
+	local ctx = context.from_buffer()
 	local line = vim.api.nvim_get_current_line()
 	local filepath = parser.parse_file_info_from_status_line(line)
 	if not filepath then
@@ -1159,10 +1219,7 @@ function M.handle_summary_diff(revset)
 	end
 
 	-- Use the diff module to show what changed in this revision for this file
-	diff.show_revision({
-		rev = revset,
-		path = filepath.new_path,
-	})
+	diff.show_revision({ cwd = ctx.cwd, rev = revset, path = filepath.new_path })
 end
 
 --- Handle edit action in summary tooltip (opens file after jj edit)
@@ -1170,8 +1227,10 @@ end
 --- @param revset string The revision to edit
 --- @param ignore_immut boolean Whether to ignore immutability
 function M.handle_summary_edit(revset, ignore_immut)
+	local ctx = context.from_buffer()
+	local runner = runner.with_cwd(ctx.cwd)
 	-- Before anything check if the revset is immutable and the ignore_immut flag is set
-	if utils.is_change_immutable(revset) and not ignore_immut then
+	if utils.is_change_immutable(revset, ctx.cwd) and not ignore_immut then
 		utils.notify(
 			string.format("The change `%s` is immutable, use the `edit_immutable` shortcut.", revset),
 			vim.log.levels.WARN
@@ -1187,7 +1246,7 @@ function M.handle_summary_edit(revset, ignore_immut)
 	end
 
 	-- Keep the absolute path and destination across closing views and asynchronous jj edit.
-	local absolute_path = utils.resolve_cwd_path(filepath.new_path)
+	local absolute_path = utils.resolve_cwd_path(filepath.new_path, ctx.cwd)
 	if not absolute_path then
 		return
 	end
@@ -1211,6 +1270,7 @@ function M.handle_summary_edit(revset, ignore_immut)
 		utils.notify(string.format("Editing revset: `%s`", revset), vim.log.levels.INFO)
 		window.enter(absolute_path, origin)
 		vim.cmd("edit " .. vim.fn.fnameescape(absolute_path))
+		context.attach(vim.api.nvim_get_current_buf(), ctx)
 	end, string.format("Error editing revset: `%s`", revset))
 end
 
@@ -1218,6 +1278,7 @@ end
 --- Closes tooltip, edits the revision, and opens the file
 --- @param revset string The revision to edit
 function M.handle_summary_file_edit(revset)
+	local ctx = context.from_buffer()
 	local line = vim.api.nvim_get_current_line()
 	local filepath = parser.parse_file_info_from_status_line(line)
 	if not filepath then
@@ -1230,7 +1291,7 @@ function M.handle_summary_file_edit(revset)
 		terminal.close_tooltip()
 	end
 
-	require("jj.file").open_target({ path = filepath.new_path, rev = revset, split = "tab" })
+	require("jj.file").open_target({ cwd = ctx.cwd, path = filepath.new_path, rev = revset, split = "tab" })
 end
 
 --- Get keymaps for summary tooltip
@@ -1293,6 +1354,8 @@ end
 --- Handle showing summary tooltip for revision under cursor
 --- First K shows tooltip without entering, second K enters the tooltip
 function M.handle_log_summary()
+	local ctx = context.from_buffer()
+	local runner = runner.with_cwd(ctx.cwd)
 	-- If tooltip exists and is valid, enter it on second K
 	if terminal.state.tooltip_buf and vim.api.nvim_buf_is_valid(terminal.state.tooltip_buf) then
 		local revset = vim.b[terminal.state.tooltip_buf].jj_summary_revset
@@ -1329,6 +1392,8 @@ function M.handle_log_summary()
 	local height = #lines
 
 	local buf, _ = terminal.run_tooltip(cmd, {
+		cwd = ctx.cwd,
+		context = ctx,
 		title = string.format(" Summary: %s ", revset),
 		enter = false,
 		width = width,
@@ -1767,6 +1832,8 @@ end
 --- @param mode "onto" | "after" | "before" Rebase mode
 --- @param ignore_immut boolean? Whether or not to ignore immutability
 function M.handle_rebase_execute(mode, ignore_immut)
+	local ctx = context.from_buffer()
+	local runner = runner.with_cwd(ctx.cwd)
 	-- Get all revsets in the format "xx xy xz"
 	local revsets = vim.b.jj_rebase_revsets
 	local destination_revset = get_revset()
@@ -1805,7 +1872,7 @@ function M.handle_rebase_execute(mode, ignore_immut)
 
 		M.exit_special_mode("Rebase")
 		-- Refresh log
-		M.log({})
+		context.refresh(ctx)
 	end, "Error during rebase.")
 end
 
@@ -1814,6 +1881,8 @@ end
 --- @param ignore_immut boolean? Whether or not to ignore immutability
 --- @param interactive boolean|nil  If true, will add the --interactive flag to the jj squash command
 function M.handle_squash_execute(mode, ignore_immut, interactive)
+	local ctx = context.from_buffer()
+	local runner = runner.with_cwd(ctx.cwd)
 	-- Get all revsets in the format "xx xy xz"
 	local revsets = vim.b.jj_squash_revsets
 	local destination_revset = get_revset()
@@ -1839,6 +1908,8 @@ function M.handle_squash_execute(mode, ignore_immut, interactive)
 		-- If interactive is true, run the command in a floating terminal with --interactive flag
 		table.insert(cmd, "--interactive")
 		terminal.run_floating(cmd, nil, {
+			cwd = ctx.cwd,
+			context = ctx,
 			title = " JJ Squash ",
 			modifiable = true,
 			keep_modifiable = true,
@@ -1855,7 +1926,7 @@ function M.handle_squash_execute(mode, ignore_immut, interactive)
 					M.exit_special_mode("Squash")
 					vim.schedule(function()
 						-- Refresh log
-						M.log({})
+						context.refresh(ctx)
 					end)
 				else
 					utils.notify(
@@ -1867,7 +1938,7 @@ function M.handle_squash_execute(mode, ignore_immut, interactive)
 					-- Since we previously replaced the floating with the squash we actually want to re run the log cmd
 					if require("jj").config.terminal.window.type == "floating" then
 						vim.schedule(function()
-							M.log({})
+							context.refresh(ctx)
 						end)
 					end
 				end
@@ -1889,7 +1960,7 @@ function M.handle_squash_execute(mode, ignore_immut, interactive)
 
 			M.exit_special_mode("Squash")
 			-- Refresh log
-			M.log({})
+			context.refresh(ctx)
 		end, "Error during squashing.")
 	end
 end
@@ -1898,6 +1969,8 @@ end
 --- @param mode "onto" | "after" | "before" Rebase mode
 --- @param ignore_immut boolean? Whether or not to ignore immutability
 function M.handle_duplicate_execute(mode, ignore_immut)
+	local ctx = context.from_buffer()
+	local runner = runner.with_cwd(ctx.cwd)
 	-- Get all revsets in the format "xx xy xz"
 	local revsets = vim.b.jj_duplicate_revsets
 	local destination_revset = get_revset()
@@ -1929,7 +2002,7 @@ function M.handle_duplicate_execute(mode, ignore_immut)
 
 		M.exit_special_mode("Duplicate")
 		-- Refresh log
-		M.log({})
+		context.refresh(ctx)
 	end, "Error during duplication.")
 end
 

@@ -6,6 +6,7 @@ local utils = require("jj.utils")
 ---@alias jj.diff.backend "native"|"diffview"|"codediff"|string
 
 ---@class jj.diff.current_opts
+---@field cwd? string Command working directory
 ---@field rev? string          -- revision to diff against (default: "@-")
 ---@field path? string         -- path to diff (default: current buffer path)
 ---@field backend? jj.diff.backend
@@ -13,12 +14,14 @@ local utils = require("jj.utils")
 ---@field layout? "vertical"|"horizontal" -- only used by native backend
 
 ---@class jj.diff.revision_opts
+---@field cwd? string Command working directory
 ---@field rev string           -- revision to show
 ---@field path? string         -- optional single-file filter
 ---@field backend? jj.diff.backend
 ---@field display? "floating"|"tab"|"split" -- hint to backend
 
 ---@class jj.diff.revisions_opts
+---@field cwd? string Command working directory
 ---@field left string          -- left/base revision
 ---@field right string         -- right/target revision
 ---@field path? string         -- optional single-file filter
@@ -36,6 +39,7 @@ local utils = require("jj.utils")
 ---@field backends? table<string, table>
 
 ---@class jj.diff.diff_opts
+---@field cwd? string Command working directory
 ---@field rev string the revision to diff against
 
 ---@type jj.diff.config
@@ -101,7 +105,9 @@ end
 ---@param kind "current"|"revision"|"revisions"|"history"
 ---@param opts table
 function M.open(kind, opts)
-	opts = opts or {}
+	opts = vim.tbl_extend("force", {}, opts or {})
+	local context = require("jj.core.context")
+	opts.cwd = opts.cwd and context.cwd(opts.cwd) or context.from_buffer().cwd
 	local backend = get_backend(opts.backend)
 
 	if kind == "current" then
@@ -160,13 +166,13 @@ end
 -- Open a vertical diff split for a specific revision of the current file
 --- @param opts? jj.diff.diff_opts Any passed arguments
 function M.open_vdiff(opts)
-	M.diff_current(vim.tbl_extend("force", { layout = "vertical" }, { rev = opts and opts.rev }))
+	M.diff_current(vim.tbl_extend("force", { layout = "vertical" }, opts or {}))
 end
 
 -- Open a horizontal diff split for a specific revision of the current file
 --- @param opts? jj.diff.diff_opts Any passed arguments
 function M.open_hdiff(opts)
-	M.diff_current(vim.tbl_extend("force", { layout = "horizontal" }, { rev = opts and opts.rev }))
+	M.diff_current(vim.tbl_extend("force", { layout = "horizontal" }, opts or {}))
 end
 
 -- Register the different diff commands

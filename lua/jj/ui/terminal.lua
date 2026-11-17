@@ -348,12 +348,13 @@ end
 --- Run the command in a floating window
 --- @param cmd string[] The command to run in the floating window
 --- @param keymaps jj.core.buffer.keymap[]|nil Additional keymaps to set for this floating buffer
---- @param float_opts? {title?: string, modifiable?: boolean, keep_modifiable?: boolean, on_exit?: fun(exit_code: integer), interactive?: boolean}
+--- @param float_opts? {cwd?: string, context?: table, title?: string, modifiable?: boolean, keep_modifiable?: boolean, on_exit?: fun(exit_code: integer), interactive?: boolean}
 function M.run_floating(cmd, keymaps, float_opts)
 	local origin = require("jj.core.window").get_origin()
 	local jj_cmd = require("jj.cmd")
 	keymaps = jj_cmd.merge_keymaps(keymaps or {}, jj_cmd.floating_keymaps())
 	float_opts = float_opts or {}
+	local ctx = float_opts.context or require("jj.core.context").capture(float_opts)
 
 	-- Clean up previous state if invalid
 	if state.floating_buf and not vim.api.nvim_buf_is_valid(state.floating_buf) then
@@ -418,6 +419,7 @@ function M.run_floating(cmd, keymaps, float_opts)
 	})
 	require("jj.core.window").set_origin(win, origin)
 	state.floating_buf = buf
+	require("jj.core.context").attach(buf, ctx)
 
 	local jid
 	local chan
@@ -426,7 +428,7 @@ function M.run_floating(cmd, keymaps, float_opts)
 		vim.api.nvim_win_set_buf(win, state.floating_buf)
 		jid = vim.fn.jobstart(cmd, {
 			term = true,
-			cwd = vim.fn.getcwd(),
+			cwd = ctx.cwd,
 			env = {
 				TERM = "xterm-256color",
 				PAGER = "cat",
@@ -435,15 +437,16 @@ function M.run_floating(cmd, keymaps, float_opts)
 			},
 			on_exit = function(_, exit_code)
 				vim.schedule(function()
+					-- Finish this terminal before callbacks can open another log.
+					if state.floating_buf == buf and vim.api.nvim_buf_is_valid(buf) then
+						local parts = type(cmd) == "string" and vim.split(cmd, "%s+") or cmd
+						state.floating_buf_cmd = parts[2] or nil
+						M.close_floating_buffer()
+						vim.cmd("stopinsert")
+					end
 					if float_opts.on_exit then
 						float_opts.on_exit(exit_code)
 					end
-					local parts = type(cmd) == "string" and vim.split(cmd, "%s+") or cmd
-					state.floating_buf_cmd = parts[2] or nil
-					if state.floating_buf and vim.api.nvim_buf_is_valid(state.floating_buf) then
-						M.close_floating_buffer()
-					end
-					vim.cmd("stopinsert")
 				end)
 			end,
 		})
@@ -466,6 +469,7 @@ function M.run_floating(cmd, keymaps, float_opts)
 		vim.api.nvim_win_set_cursor(win, { 1, 0 })
 
 		jid = vim.fn.jobstart(cmd, {
+			cwd = ctx.cwd,
 			pty = true,
 			width = vim.api.nvim_win_get_width(win),
 			height = vim.api.nvim_win_get_height(win),
@@ -477,7 +481,7 @@ function M.run_floating(cmd, keymaps, float_opts)
 				DFT_BACKGROUND = "light",
 			},
 			on_stdout = function(_, data)
-				if not state.floating_buf or not vim.api.nvim_buf_is_valid(state.floating_buf) then
+				if state.floating_buf ~= buf or not vim.api.nvim_buf_is_valid(buf) then
 					return
 				end
 				local output = table.concat(data, "\n")
@@ -488,7 +492,7 @@ function M.run_floating(cmd, keymaps, float_opts)
 					float_opts.on_exit(exit_code)
 				end
 				vim.schedule(function()
-					if not state.floating_buf or not vim.api.nvim_buf_is_valid(state.floating_buf) then
+					if state.floating_buf ~= buf or not vim.api.nvim_buf_is_valid(buf) then
 						return
 					end
 					-- Store the subcommand on successful exit
@@ -546,8 +550,11 @@ end
 --- If a previous command already existed it smartly reuses the buffer cleaning the previous output
 --- @param cmd string[] The command to run in the terminal buffer
 --- @param keymaps jj.core.buffer.keymap[]|nil Additional keymaps to set for this command buffer
+--- @param run_opts? {cwd?: string, context?: table}
 --- @return integer|nil buf The buffer handle, or nil on failure
-function M.run(cmd, keymaps)
+function M.run(cmd, keymaps, run_opts)
+	run_opts = run_opts or {}
+	local ctx = run_opts.context or require("jj.core.context").capture(run_opts)
 	local origin = require("jj.core.window").get_origin()
 	if opts.window.type == "floating" then
 		local subcmd = (type(cmd) == "string" and vim.split(cmd, " ") or cmd)[2]
@@ -555,6 +562,7 @@ function M.run(cmd, keymaps)
 
 		M.run_floating(cmd, keymaps, {
 			title = " JJ " .. subcmd .. " ",
+			context = ctx,
 		})
 		state.buf = state.floating_buf
 
@@ -614,6 +622,8 @@ function M.run(cmd, keymaps)
 		end,
 	})
 
+	require("jj.core.context").attach(state.buf, ctx)
+	local buf = state.buf
 	local win = vim.api.nvim_get_current_win()
 	require("jj.core.window").set_origin(win, origin)
 	buffer.pin(state.buf, win)
@@ -636,6 +646,7 @@ function M.run(cmd, keymaps)
 	end
 
 	local jid = vim.fn.jobstart(cmd, {
+		cwd = ctx.cwd,
 		pty = true,
 		width = vim.api.nvim_win_get_width(win),
 		height = vim.api.nvim_win_get_height(win),
@@ -647,7 +658,7 @@ function M.run(cmd, keymaps)
 			DFT_BACKGROUND = "light",
 		},
 		on_stdout = function(_, data)
-			if not state.buf or not vim.api.nvim_buf_is_valid(state.buf) or not state.chan then
+			if state.buf ~= buf or not vim.api.nvim_buf_is_valid(buf) or not state.chan then
 				return
 			end
 			local output = table.concat(data, "\n")
@@ -656,7 +667,7 @@ function M.run(cmd, keymaps)
 		on_exit = function(_, exit_code)
 			vim.schedule(function()
 				-- Check buffer still exists (it might have been closed)
-				if not state.buf or not vim.api.nvim_buf_is_valid(state.buf) then
+				if state.buf ~= buf or not vim.api.nvim_buf_is_valid(buf) then
 					return
 				end
 				-- Store the subcommand on successful exit
@@ -740,6 +751,8 @@ function M.replace_terminal_keymaps(keymaps)
 end
 
 --- @class jj.ui.terminal.tooltip_opts
+--- @field cwd? string
+--- @field context? table
 --- @field title? string Tooltip title
 --- @field enter? boolean Whether to enter the tooltip window (default: false)
 --- @field keymaps? jj.core.buffer.keymap[] Keymaps to set on the tooltip buffer
@@ -754,6 +767,7 @@ end
 --- @return number|nil win Window handle, or nil on failure
 function M.run_tooltip(cmd, tool_opts)
 	tool_opts = tool_opts or {}
+	local ctx = tool_opts.context or require("jj.core.context").capture(tool_opts)
 
 	-- Clean up previous state if invalid
 	if state.tooltip_buf and not vim.api.nvim_buf_is_valid(state.tooltip_buf) then
@@ -816,6 +830,7 @@ function M.run_tooltip(cmd, tool_opts)
 		},
 	})
 
+	local buf = state.tooltip_buf
 	state.tooltip_chan = vim.api.nvim_open_term(state.tooltip_buf, {})
 	if not state.tooltip_chan or state.tooltip_chan <= 0 then
 		vim.notify("Failed to create terminal channel", vim.log.levels.ERROR)
@@ -824,7 +839,9 @@ function M.run_tooltip(cmd, tool_opts)
 	end
 	apply_scrollback(state.tooltip_buf)
 
+	require("jj.core.context").attach(state.tooltip_buf, ctx)
 	state.tooltip_job_id = vim.fn.jobstart(cmd, {
+		cwd = ctx.cwd,
 		pty = true,
 		width = vim.api.nvim_win_get_width(state.tooltip_win),
 		height = vim.api.nvim_win_get_height(state.tooltip_win),
@@ -835,7 +852,7 @@ function M.run_tooltip(cmd, tool_opts)
 			COLORTERM = "truecolor",
 		},
 		on_stdout = function(_, data)
-			if not state.tooltip_buf or not vim.api.nvim_buf_is_valid(state.tooltip_buf) then
+			if state.tooltip_buf ~= buf or not vim.api.nvim_buf_is_valid(buf) then
 				return
 			end
 			local output = table.concat(data, "\n")
@@ -843,7 +860,7 @@ function M.run_tooltip(cmd, tool_opts)
 		end,
 		on_exit = function()
 			vim.schedule(function()
-				if state.tooltip_buf and vim.api.nvim_buf_is_valid(state.tooltip_buf) then
+				if state.tooltip_buf == buf and vim.api.nvim_buf_is_valid(buf) then
 					buffer.set_modifiable(state.tooltip_buf, false)
 					buffer.stop_insert(state.tooltip_buf)
 				end

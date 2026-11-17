@@ -7,6 +7,7 @@ local terminal = require("jj.ui.terminal")
 local editor = require("jj.ui.editor")
 
 --- @class jj.cmd.describe_opts
+--- @field cwd? string
 --- @field with_status boolean: Whether or not `jj st` should be displayed in a buffer while describing the commit
 --- @field type? "buffer"|"input" Editor mode for describe command: "buffer" (Git-style editor) or "input" (simple input prompt)
 --- @type jj.cmd.describe_opts
@@ -18,7 +19,8 @@ local default_describe_opts = {
 --- @param description string The description text
 --- @param revset? string The revision to describe
 --- @param sync? boolean Whether to execute command synchronously
-local function execute_describe(description, revset, sync)
+local function execute_describe(description, revset, sync, cwd)
+	local runner = runner.with_cwd(cwd)
 	local cmd = {
 		"jj",
 		"describe",
@@ -61,6 +63,7 @@ end
 --- @param opts? jj.cmd.describe_opts Optional command options
 --- @param on_close function|nil Optional callback when editor is closed
 function M.describe(description, revset, opts, on_close)
+	local ctx = require("jj.core.context").capture(opts)
 	if not utils.ensure_jj() then
 		return
 	end
@@ -68,7 +71,7 @@ function M.describe(description, revset, opts, on_close)
 	-- Check if a description was provided otherwise require for input
 	if description then
 		-- Description provided directly
-		execute_describe(description, revset, false)
+		execute_describe(description, revset, false, ctx.cwd)
 		return
 	end
 
@@ -82,7 +85,7 @@ function M.describe(description, revset, opts, on_close)
 	-- Use buffer editor mode (defaults to "buffer" if not configured)
 	local editor_mode = merged_opts.type or cmd.config.describe.editor.type or "buffer"
 	if editor_mode == "buffer" then
-		local text = utils.get_describe_text(revset)
+		local text = utils.get_describe_text(revset, ctx.cwd)
 		if not text then
 			return
 		end
@@ -95,7 +98,7 @@ function M.describe(description, revset, opts, on_close)
 			if not trimmed_description then
 				trimmed_description = ""
 			end
-			execute_describe(trimmed_description, revset, true)
+			execute_describe(trimmed_description, revset, true, ctx.cwd)
 			-- Once editing is done, reopen the log if we came from there
 		end, function()
 			-- If an on close callback is provided, call it
@@ -109,7 +112,7 @@ function M.describe(description, revset, opts, on_close)
 		-- Use input mode
 		if merged_opts.with_status then
 			-- Show the status in a terminal buffer
-			cmd.status()
+			cmd.status({ cwd = ctx.cwd })
 		end
 
 		vim.ui.input({
@@ -118,7 +121,7 @@ function M.describe(description, revset, opts, on_close)
 		}, function(input)
 			-- If the user inputed something, execute the describe command
 			if input then
-				execute_describe(input, revset, true)
+				execute_describe(input, revset, true, ctx.cwd)
 			end
 			-- Close the current terminal when finished
 			terminal.close_terminal_buffer()

@@ -8,13 +8,13 @@ local file = require("jj.file")
 --- @param rev string The revision
 --- @param path string The file path (absolute or repo-relative)
 --- @param enc? jj.file.enc Encoding settings for the file content
-local function open_revision(rev, path, enc)
-	local change_id = utils.resolve_revision_id(rev)
+local function open_revision(rev, path, enc, cwd)
+	local change_id = utils.resolve_revision_id(rev, nil, cwd)
 	if not change_id then
 		return
 	end
 
-	local rel_path, err = utils.normalize_relative_path(path)
+	local rel_path, err = utils.normalize_relative_path(path, cwd)
 	if not rel_path then
 		utils.notify(err or "Could not resolve path", vim.log.levels.ERROR)
 		return
@@ -22,15 +22,16 @@ local function open_revision(rev, path, enc)
 
 	-- A file added since `rev` has no content there; show it as empty so it
 	-- diffs as fully added rather than aborting the diff.
-	local lines, had_eol, ok_read, used_enc, absent = file.get_file_content(change_id, rel_path, enc)
+	local lines, had_eol, ok_read, used_enc, absent = file.get_file_content(change_id, rel_path, enc, cwd)
 	if not ok_read and not absent then
 		utils.notify(string.format("Could not read `%s` from `%s`", rel_path, change_id), vim.log.levels.ERROR)
 		return
 	end
 
 	local buf = vim.api.nvim_create_buf(false, true)
+	require("jj.core.context").attach(buf, { cwd = cwd })
 
-	local buf_name = string.format("jj://%s/%s", change_id, rel_path)
+	local buf_name = utils.jj_uri(change_id, rel_path, cwd)
 	file.set_buf_encoding(buf, used_enc)
 	vim.api.nvim_buf_set_name(buf, buf_name)
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -73,7 +74,7 @@ diff.register_backend("native", {
 		end
 
 		-- Resolve relative API paths before routing can change the window-local cwd.
-		local explicit_path = opts.path and vim.fn.fnamemodify(opts.path, ":p")
+		local explicit_path = opts.path and utils.resolve_cwd_path(opts.path, opts.cwd)
 		if explicit_path then
 			require("jj.core.window").enter(explicit_path, opts.origin_win)
 			if vim.fn.expand("%:p") ~= explicit_path then
@@ -83,6 +84,7 @@ diff.register_backend("native", {
 
 		-- Save current state to restore after diff is closed
 		local prev_buf = vim.api.nvim_get_current_buf()
+		require("jj.core.context").attach(prev_buf, { cwd = opts.cwd })
 		local prev_cur_pos = buffer.get_cursor(prev_buf) or { 1, 0 }
 
 		local buf_name = vim.api.nvim_buf_get_name(0)
@@ -106,7 +108,7 @@ diff.register_backend("native", {
 		-- Set up diff: current buffer on right, revision on left
 		vim.cmd.diffthis()
 		split_fun({ mods = { split = "aboveleft" } })
-		open_revision(rev, path, enc)
+		open_revision(rev, path, enc, opts.cwd)
 		vim.cmd.diffthis()
 
 		local rev_buf = vim.api.nvim_get_current_buf()
@@ -147,13 +149,19 @@ diff.register_backend("native", {
 		local terminal = require("jj.ui.terminal")
 
 		local cmd = { "jj", "show", "-r", opts.rev, "--quiet", "--no-pager" }
-		terminal.run_floating(cmd)
+		if opts.path then
+			vim.list_extend(cmd, { "--", require("jj.core.args").fileset(opts.path) })
+		end
+		terminal.run_floating(cmd, nil, { cwd = opts.cwd })
 	end,
 	diff_revisions = function(opts)
 		local terminal = require("jj.ui.terminal")
 
 		local cmd = { "jj", "diff", "-f", opts.left, "-t", opts.right, "--quiet", "--no-pager" }
-		terminal.run_floating(cmd)
+		if opts.path then
+			vim.list_extend(cmd, { "--", require("jj.core.args").fileset(opts.path) })
+		end
+		terminal.run_floating(cmd, nil, { cwd = opts.cwd })
 	end,
 	diff_history_revisions = function(_)
 		utils.notify(
