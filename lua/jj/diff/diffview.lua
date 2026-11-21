@@ -80,13 +80,15 @@ diff.register_backend("diffview", {
 			return
 		end
 
-		diff_two_changes(opts.left, opts.right)
+		-- `diff_two_changes` takes the target first.
+		diff_two_changes(opts.right, opts.left)
 	end,
 	diff_history_revisions = function(opts)
 		if not utils.has_dependency("diffview") then
 			return
 		end
 
-		diff_two_changes_with_history(opts.left, opts.right)
+		-- `diff_two_changes_with_history` takes the target first.
+		diff_two_changes_with_history(opts.right, opts.left)
 	end,
 })

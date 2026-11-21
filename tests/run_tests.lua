@@ -1521,6 +1521,188 @@ run_test(":J diff with a range opens the diff without a notification", function(
 	end
 end)
 
+-- `left` is the base and `right` is the target in every backend and for every caller.
+-- Run the real backends; capture only the commands that they would hand to jj or a plugin.
+do
+	local terminal = require("jj.ui.terminal")
+	local diff = require("jj.diff")
+	local ui_commands = { "DiffviewOpen", "DiffviewFileHistory", "CodeDiff" }
+
+	local function with_backend(backend, callback)
+		local saved_jj = package.loaded.jj
+		local saved_dependency = utils.has_dependency
+		local saved_commit = utils.get_commit_id
+		local saved_current = utils.get_current_commit_id
+		local saved_ensure = utils.ensure_jj
+		local saved_notify = utils.notify
+		local saved_floating = terminal.run_floating
+		local commands = {}
+		package.loaded.jj = { config = { diff = { backend = backend } } }
+		utils.has_dependency = function() return true end
+		utils.ensure_jj = function() return true end
+		utils.get_commit_id = function(rev) return rev end
+		utils.get_current_commit_id = function() return "working-copy" end
+		utils.notify = function() end
+		terminal.run_floating = function(cmd) table.insert(commands, table.concat(cmd, " ")) end
+		for _, name in ipairs(ui_commands) do
+			vim.api.nvim_create_user_command(name, function(command)
+				table.insert(commands, name .. " " .. command.args)
+			end, { nargs = "*" })
+		end
+		require("jj.diff." .. backend)
+		local ok, err = pcall(callback, commands)
+		for _, name in ipairs(ui_commands) do
+			vim.api.nvim_del_user_command(name)
+		end
+		package.loaded.jj = saved_jj
+		utils.has_dependency = saved_dependency
+		utils.get_commit_id = saved_commit
+		utils.get_current_commit_id = saved_current
+		utils.ensure_jj = saved_ensure
+		utils.notify = saved_notify
+		terminal.run_floating = saved_floating
+		if not ok then
+			error(err)
+		end
+	end
+
+	-- Show a log of three revisions and select all of its lines.
+	local function with_selected_log(log_opts, reversed, callback)
+		local log = require("jj.cmd.log")
+		local saved_buf = terminal.state.buf
+		local saved_run = terminal.run
+		local saved_open = terminal.is_log_buffer_open
+		local saved_mode = vim.fn.mode
+		local saved_line = vim.fn.line
+		local buf = vim.api.nvim_create_buf(false, true)
+		local lines = { "@ target newest", "○ middle", "○ base oldest" }
+		if reversed then
+			lines = { "○ base oldest", "○ middle", "@ target newest" }
+		end
+		terminal.run = function()
+			vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+			terminal.state.buf = buf
+			return buf
+		end
+		terminal.is_log_buffer_open = function() return false end
+		vim.fn.mode = function() return "V" end
+		vim.fn.line = function(mark) return mark == "v" and 1 or #lines end
+		local ok, err = pcall(function()
+			log.log(log_opts)
+			callback(log)
+		end)
+		terminal.state.buf = saved_buf
+		terminal.run = saved_run
+		terminal.is_log_buffer_open = saved_open
+		vim.fn.mode = saved_mode
+		vim.fn.line = saved_line
+		vim.api.nvim_buf_delete(buf, { force = true })
+		if not ok then
+			error(err)
+		end
+	end
+
+	local expected = {
+		native = { diff = "jj diff -f base -t target --quiet --no-pager", show = "jj show -r target --quiet --no-pager" },
+		diffview = {
+			diff = "DiffviewOpen base..target",
+			show = "DiffviewOpen target-..target",
+			history = "DiffviewFileHistory --range=base..target",
+		},
+		codediff = {
+			diff = "CodeDiff base target",
+			show = "CodeDiff target- target",
+			history = "CodeDiff history base..target",
+		},
+	}
+	local logs = {
+		{ name = "a newest-first log", opts = {}, reversed = false },
+		{ name = "a log with the reversed option", opts = { reversed = true }, reversed = true },
+		{ name = "a log with a raw --reversed flag", opts = { raw_flags = { "--reversed" } }, reversed = true },
+		{ name = "a log of a fileset named --reversed", opts = { raw_flags = { "--", "--reversed" } }, reversed = false },
+	}
+
+	for _, backend in ipairs({ "native", "diffview", "codediff" }) do
+		run_test(backend .. ": diff_revisions diffs from left to right", function()
+			with_backend(backend, function(commands)
+				diff.diff_revisions({ left = "base", right = "target" })
+				assert_table_equals({ expected[backend].diff }, commands)
+			end)
+		end)
+
+		run_test(backend .. ": :J diff base..target diffs from base to target", function()
+			with_backend(backend, function(commands)
+				require("jj.cmd").j({ "diff", "base..target" })
+				assert_table_equals({ expected[backend].diff }, commands)
+			end)
+		end)
+
+		run_test(backend .. ": show_revision still diffs a revision against its parent", function()
+			with_backend(backend, function(commands)
+				diff.show_revision({ rev = "target" })
+				assert_table_equals({ expected[backend].show }, commands)
+			end)
+		end)
+
+		for _, case in ipairs(logs) do
+			run_test(backend .. ": a selection in " .. case.name .. " diffs from oldest to newest", function()
+				with_backend(backend, function(commands)
+					with_selected_log(case.opts, case.reversed, function(log)
+						log.handle_log_diff()
+						assert_table_equals({ expected[backend].diff }, commands)
+					end)
+				end)
+			end)
+		end
+	end
+
+	for _, backend in ipairs({ "diffview", "codediff" }) do
+		run_test(backend .. ": diff_history_revisions shows the history from left to right", function()
+			with_backend(backend, function(commands)
+				diff.diff_history_revisions({ left = "base", right = "target" })
+				assert_table_equals({ expected[backend].history }, commands)
+			end)
+		end)
+
+		run_test(backend .. ": :J diff_history base..target shows the history from base to target", function()
+			with_backend(backend, function(commands)
+				require("jj.cmd").j({ "diff_history", "base..target" })
+				assert_table_equals({ expected[backend].history }, commands)
+			end)
+		end)
+
+		for _, case in ipairs(logs) do
+			run_test(backend .. ": a selection in " .. case.name .. " shows the history from oldest to newest", function()
+				with_backend(backend, function(commands)
+					with_selected_log(case.opts, case.reversed, function(log)
+						log.handle_log_history()
+						assert_table_equals({ expected[backend].history }, commands)
+					end)
+				end)
+			end)
+		end
+	end
+
+	run_test("codediff: a target that is the working copy diffs against the files on disk", function()
+		with_backend("codediff", function(commands)
+			utils.get_current_commit_id = function() return "target" end
+			diff.diff_revisions({ left = "base", right = "target" })
+			assert_table_equals({ "CodeDiff base" }, commands)
+		end)
+	end)
+
+	run_test("a newest-first log that replaces a reversed log in the same buffer diffs from oldest to newest", function()
+		with_backend("native", function(commands)
+			with_selected_log({ reversed = true }, true, function(log)
+				log.log({})
+				vim.api.nvim_buf_set_lines(terminal.state.buf, 0, -1, false, { "@ target newest", "○ middle", "○ base oldest" })
+				log.handle_log_diff()
+				assert_table_equals({ expected.native.diff }, commands)
+			end)
+		end)
+	end)
+end
+
 -- Run in a separate Neovim: this failure requires the jj view to be the
 -- last window in the entire editor, not just the last window in a test tab.
 for _, cleanup in ipairs({ "close", "delete", "wipe" }) do
