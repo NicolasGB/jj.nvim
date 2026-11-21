@@ -312,7 +312,8 @@ diff.register_backend("codediff", {
 			return
 		end
 
-		diff_two_changes(opts.left, opts.right)
+		-- `diff_two_changes` takes the target first.
+		diff_two_changes(opts.right, opts.left)
 	end,
 
 	diff_history_revisions = function(opts)
@@ -320,6 +321,7 @@ diff.register_backend("codediff", {
 			return
 		end
 
-		diff_two_changes_with_history(opts.left, opts.right)
+		-- `diff_two_changes_with_history` takes the target first.
+		diff_two_changes_with_history(opts.right, opts.left)
 	end,
 })

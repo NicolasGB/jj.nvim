@@ -397,6 +397,22 @@ function M.build_log_cmd(opts)
 	return jj_cmd
 end
 
+--- Check if a log command lists the oldest revision first.
+--- @param cmd string[] The command, as `build_log_cmd` returns it
+--- @return boolean
+local function is_reversed(cmd)
+	for _, arg in ipairs(cmd) do
+		-- Everything after `--` is a fileset, even one named `--reversed`.
+		if arg == "--" then
+			return false
+		end
+		if arg == "--reversed" then
+			return true
+		end
+	end
+	return false
+end
+
 --- Jujutsu log
 --- @param opts? jj.cmd.log_opts Optional command options
 function M.log(opts)
@@ -412,7 +428,12 @@ function M.log(opts)
 		vim.api.nvim_buf_clear_namespace(terminal.state.buf, log_special_mode_target_ns_id, 0, -1)
 	end
 
-	terminal.run(M.build_log_cmd(opts), M.log_keymaps())
+	local cmd = M.build_log_cmd(opts)
+	local buf = terminal.run(cmd, M.log_keymaps())
+	if buf then
+		-- The order of a selection depends on the order this buffer lists revisions in.
+		vim.b[buf].jj_log_reversed = is_reversed(cmd)
+	end
 end
 
 ---
@@ -479,6 +500,19 @@ function M.handle_log_new(flag, ignore_immut)
 	end, string.format(cfg.err, revsets))
 end
 
+--- Get the two ends of a selection of several revisions in the log buffer.
+--- The older end is the base (`left`) and the newer end is the target (`right`).
+--- @param revsets string Space separated revsets, in the order the log shows them
+--- @return jj.diff.revisions_opts
+local function selected_range(revsets)
+	local list = vim.split(revsets, "%s+", { trimempty = true })
+	-- A log lists the newest revision first unless it ran with `--reversed`.
+	if vim.b[terminal.state.buf].jj_log_reversed then
+		return { left = list[1], right = list[#list] }
+	end
+	return { left = list[#list], right = list[1] }
+end
+
 --- Handle diffing a log line
 function M.handle_log_diff()
 	local revsets = extract_revsets_from_terminal_buffer()
@@ -495,9 +529,7 @@ function M.handle_log_diff()
 	if not is_multiple then
 		diff.show_revision({ rev = revsets })
 	else
-		-- Get the first and the last revset to diff
-		local list = vim.split(revsets, "%s+", { trimempty = true })
-		diff.diff_revisions({ left = list[1], right = list[#list] })
+		diff.diff_revisions(selected_range(revsets))
 	end
 end
 
@@ -515,9 +547,7 @@ function M.handle_log_history()
 	local is_multiple = revsets:find(" ") ~= nil
 
 	if is_multiple then
-		-- Get the first and the last revset to diff
-		local list = vim.split(revsets, "%s+", { trimempty = true })
-		diff.diff_history_revisions({ left = list[1], right = list[#list] })
+		diff.diff_history_revisions(selected_range(revsets))
 	end
 end
 
