@@ -479,6 +479,14 @@ function M.handle_log_new(flag, ignore_immut)
 	end, string.format(cfg.err, revsets))
 end
 
+--- Get the two ends of a selection of several revisions in the log buffer.
+--- @param revsets string Space separated revsets, in the order the log shows them
+--- @return jj.diff.revisions_opts
+local function selected_range(revsets)
+	local list = vim.split(revsets, "%s+", { trimempty = true })
+	return { left = list[1], right = list[#list] }
+end
+
 --- Handle diffing a log line
 function M.handle_log_diff()
 	local revsets = extract_revsets_from_terminal_buffer()
@@ -495,9 +503,7 @@ function M.handle_log_diff()
 	if not is_multiple then
 		diff.show_revision({ rev = revsets })
 	else
-		-- Get the first and the last revset to diff
-		local list = vim.split(revsets, "%s+", { trimempty = true })
-		diff.diff_revisions({ left = list[1], right = list[#list] })
+		diff.diff_revisions(selected_range(revsets))
 	end
 end
 
@@ -515,9 +521,7 @@ function M.handle_log_history()
 	local is_multiple = revsets:find(" ") ~= nil
 
 	if is_multiple then
-		-- Get the first and the last revset to diff
-		local list = vim.split(revsets, "%s+", { trimempty = true })
-		diff.diff_history_revisions({ left = list[1], right = list[#list] })
+		diff.diff_history_revisions(selected_range(revsets))
 	end
 end
 
