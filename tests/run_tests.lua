@@ -1495,6 +1495,32 @@ window_test("native diff uses the captured origin after floating status closes",
 	end
 end)
 
+run_test(":J diff with a range opens the diff without a notification", function()
+	local terminal = require("jj.ui.terminal")
+	local saved_jj = package.loaded.jj
+	local saved_ensure = utils.ensure_jj
+	local saved_notify = utils.notify
+	local saved_floating = terminal.run_floating
+	local commands, notifications = {}, {}
+	local ok, err = pcall(function()
+		package.loaded.jj = { config = { diff = { backend = "native" } } }
+		utils.ensure_jj = function() return true end
+		utils.notify = function(message) table.insert(notifications, message) end
+		terminal.run_floating = function(cmd) table.insert(commands, cmd) end
+		require("jj.diff.native")
+		require("jj.cmd").j({ "diff", "base..target" })
+		assert_table_equals({ { "jj", "diff", "-f", "base", "-t", "target", "--quiet", "--no-pager" } }, commands)
+		assert_table_equals({}, notifications)
+	end)
+	package.loaded.jj = saved_jj
+	utils.ensure_jj = saved_ensure
+	utils.notify = saved_notify
+	terminal.run_floating = saved_floating
+	if not ok then
+		error(err)
+	end
+end)
+
 -- Run in a separate Neovim: this failure requires the jj view to be the
 -- last window in the entire editor, not just the last window in a test tab.
 for _, cleanup in ipairs({ "close", "delete", "wipe" }) do
