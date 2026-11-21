@@ -1440,6 +1440,40 @@ for _, backend in ipairs({ "codediff", "diffview" }) do
 	end)
 end
 
+-- Diffview's adapters read a history range from different flags.
+for _, case in ipairs({
+	{ name = "the Jujutsu adapter", vcs = { get_adapter = function() return nil, { config_key = "jj" } end }, flag = "--revisions" },
+	{ name = "the Git adapter", vcs = { get_adapter = function() return nil, { config_key = "git" } end }, flag = "--range" },
+	{ name = "no adapter", vcs = { get_adapter = function() return "not a repo", nil end }, flag = "--range" },
+	{ name = "a failing adapter lookup", vcs = { get_adapter = function() error("lookup failed") end }, flag = "--range" },
+	{ name = "a Diffview without get_adapter", vcs = {}, flag = "--range" },
+}) do
+	run_test("diffview: history passes the range in " .. case.flag .. " with " .. case.name, function()
+		local saved_vcs = package.loaded["diffview.vcs"]
+		local saved_dependency = utils.has_dependency
+		local saved_commit = utils.get_commit_id
+		local history_args
+		local ok, err = pcall(function()
+			package.loaded["diffview.vcs"] = case.vcs
+			utils.has_dependency = function() return true end
+			utils.get_commit_id = function(rev) return rev end
+			vim.api.nvim_create_user_command("DiffviewFileHistory", function(command)
+				history_args = command.args
+			end, { nargs = "*" })
+			require("jj.diff.diffview")
+			require("jj.diff").diff_history_revisions({ left = "a", right = "b", backend = "diffview" })
+			assert_equals(case.flag, history_args:match("^(%-%-%a+)="))
+		end)
+		pcall(vim.api.nvim_del_user_command, "DiffviewFileHistory")
+		package.loaded["diffview.vcs"] = saved_vcs
+		utils.has_dependency = saved_dependency
+		utils.get_commit_id = saved_commit
+		if not ok then
+			error(err)
+		end
+	end)
+end
+
 window_test("native diff uses the captured origin after floating status closes", function()
 	local terminal = require("jj.ui.terminal")
 	local file = require("jj.file")

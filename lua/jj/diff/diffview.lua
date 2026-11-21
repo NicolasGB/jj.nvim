@@ -24,6 +24,24 @@ local function diff_two_changes(left, right)
 	vim.cmd(string.format("DiffviewOpen %s..%s", commit_id_right, commit_id_left))
 end
 
+--- Get the flag that `DiffviewFileHistory` reads a range of revisions from.
+--- The Git adapter reads `--range`. The Jujutsu adapter of diffview-plus.nvim
+--- ignores `--range` and reads a revset from `--revisions`.
+--- @return string
+local function history_range_flag()
+	-- Ask Diffview for the adapter of the current directory, as `DiffviewFileHistory` does.
+	-- sindrets/diffview.nvim has no `get_adapter` and no Jujutsu adapter.
+	local ok, adapter = pcall(function()
+		local _, selected = require("diffview.vcs").get_adapter({ cmd_ctx = { path_args = {} } })
+		return selected
+	end)
+	if ok and adapter and adapter.config_key == "jj" then
+		return "--revisions"
+	end
+
+	return "--range"
+end
+
 local function diff_two_changes_with_history(left, right)
 	local commit_id_left = utils.get_commit_id(left)
 	if commit_id_left == nil then
@@ -35,8 +53,7 @@ local function diff_two_changes_with_history(left, right)
 		return
 	end
 
-	-- test
-	vim.cmd(string.format("DiffviewFileHistory --range=%s..%s", commit_id_right, commit_id_left))
+	vim.cmd(string.format("DiffviewFileHistory %s=%s..%s", history_range_flag(), commit_id_right, commit_id_left))
 end
 
 -- Register the diffview backend
