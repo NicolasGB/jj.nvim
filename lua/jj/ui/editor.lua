@@ -72,8 +72,29 @@ function M.setup(user_opts)
 	end
 end
 
+local EDITOR_BUFFER_NAME = "jj:///DESCRIBE_EDITMSG"
+
+--- Make sure the buffer has a name, otherwise `:w` fails with E32 before `BufWriteCmd` fires.
+--- `nvim_buf_set_name` fails when another buffer already holds the name (e.g. an editor
+--- still open from a previous describe), and floating buffers are created unnamed.
+---@param buf number
+---@param name string
+local function ensure_buffer_name(buf, name)
+	if vim.api.nvim_buf_get_name(buf) ~= "" then
+		return
+	end
+
+	-- The name is taken when another editor is still open: use a suffixed one
+	for n = 1, 100 do
+		local candidate = n == 1 and name or string.format("%s (%d)", name, n)
+		if pcall(vim.api.nvim_buf_set_name, buf, candidate) then
+			return
+		end
+	end
+end
+
 ---@param initial_text string[] Lines to initialize the buffer with
----@param on_write fun(buf: string[])? Optional callback called with user text on buffer write
+---@param on_write fun(buf: string[], bang: boolean)? Optional callback called with user text on buffer write; `bang` is true for `:w!`
 ---@param on_unload? fun(buf: string[])? Optional callback  with user text called when the buffer is closed
 ---@param keymaps? jj.core.buffer.keymap[] Optional keymaps for the buffer
 function M.open_editor(initial_text, on_write, on_unload, keymaps)
@@ -108,6 +129,7 @@ function M.open_editor(initial_text, on_write, on_unload, keymaps)
 
 	-- Create buffer
 	local buf = M.create_buffer()
+	ensure_buffer_name(buf, EDITOR_BUFFER_NAME)
 	-- Set keymaps before setting content to avoid triggering them during setup
 	buffer.set_keymaps(buf, keymaps or {})
 
@@ -148,7 +170,7 @@ function M.open_editor(initial_text, on_write, on_unload, keymaps)
 			vim.bo[buf].modified = false
 			-- Call the on_write callback if provided
 			if on_write then
-				on_write(buf_lines)
+				on_write(buf_lines, vim.v.cmdbang == 1)
 			end
 		end,
 	})
@@ -195,7 +217,7 @@ function M.create_buffer()
 		local full_size = M.opts.window.type == "hsplit" and vim.o.lines or vim.o.columns
 
 		return buffer.create({
-			name = "jj:///DESCRIBE_EDITMSG",
+			name = EDITOR_BUFFER_NAME,
 			filetype = "jjdescription",
 			buftype = "acwrite",
 			bufhidden = "wipe",
