@@ -18,7 +18,8 @@ local default_describe_opts = {
 --- @param description string The description text
 --- @param revset? string The revision to describe
 --- @param sync? boolean Whether to execute command synchronously
-local function execute_describe(description, revset, sync)
+--- @param ignore_immut? boolean Pass --ignore-immutable to jj when true
+local function execute_describe(description, revset, sync, ignore_immut)
 	local cmd = {
 		"jj",
 		"describe",
@@ -28,11 +29,16 @@ local function execute_describe(description, revset, sync)
 		table.insert(cmd, revset)
 	end
 	table.insert(cmd, "--stdin")
+	if ignore_immut then
+		table.insert(cmd, "--ignore-immutable")
+	end
 
 	-- Use --stdin to properly handle multi-line and special characters
 	if sync then
-		runner.execute(cmd, "Failed to describe", description)
-		utils.notify("Description set.", vim.log.levels.INFO)
+		local _, ok = runner.execute(cmd, "Failed to describe", description)
+		if ok then
+			utils.notify("Description set.", vim.log.levels.INFO)
+		end
 		return
 	end
 
@@ -90,12 +96,12 @@ function M.describe(description, revset, opts, on_close)
 		-- Close the terminal buffer before opening editor
 		terminal.close_terminal_buffer()
 
-		editor.open_editor(text, function(buf_lines)
+		editor.open_editor(text, function(buf_lines, bang)
 			local trimmed_description = utils.extract_description_from_describe(buf_lines)
 			if not trimmed_description then
 				trimmed_description = ""
 			end
-			execute_describe(trimmed_description, revset, true)
+			execute_describe(trimmed_description, revset, true, bang)
 			-- Once editing is done, reopen the log if we came from there
 		end, function()
 			-- If an on close callback is provided, call it
