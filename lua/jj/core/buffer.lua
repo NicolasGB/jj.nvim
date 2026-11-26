@@ -22,6 +22,7 @@ local M = {}
 --- @field opts? table Additional keymap options
 
 --- @class jj.core.buffer.float_opts
+--- @field name? string Buffer name
 --- @field width? number Window width (default: 80% of columns)
 --- @field height? number Window height (default: 80% of lines)
 --- @field row? number Window row position (default: centered)
@@ -226,6 +227,11 @@ function M.create_float(opts)
 				vim.wo[win][option] = value
 			end
 		end
+	end
+
+	-- Set filename if provided
+	if opts.name then
+		pcall(vim.api.nvim_buf_set_name, buf, opts.name)
 	end
 
 	-- Set keymaps if provided

@@ -192,6 +192,7 @@ end
 function M.create_buffer()
 	if M.opts.window.type == "floating" then
 		local buf, _ = buffer.create_float({
+			name = "jj:///DESCRIBE_EDITMSG",
 			title = "JJ editor",
 			title_pos = "center",
 			filetype = "jjdescription",
