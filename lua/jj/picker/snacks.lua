@@ -126,8 +126,15 @@ local function format_jj_log(item)
 	local ret = {} ---@type snacks.picker.Highlight[]
 
 	local rev = item.rev or "unknown"
-	ret[#ret + 1] = { a(rev, 12, { truncate = true }), "SnacksPickerGitBreaking" }
+	ret[#ret + 1] = { a(rev, 12, { truncate = true }), "Constant" }
 	ret[#ret + 1] = { " " }
+
+	-- Bookmarks column: only present for the repo log picker (file history items
+	-- leave `bookmarks` unset). Rendered even when empty so rows stay aligned.
+	if item.bookmarks ~= nil then
+		ret[#ret + 1] = { a(item.bookmarks, 20, { truncate = true }), "SnacksPickerGitBranch" }
+		ret[#ret + 1] = { " " }
+	end
 
 	local author = item.author or "(no author)"
 	ret[#ret + 1] = { a(author, 16, { truncate = true }), "Identifier" }
@@ -144,6 +151,52 @@ end
 ---@param opts  jj.picker.config
 ---@param log_lines jj.picker.log_line[]
 function M.file_log_history(opts, log_lines)
+	if not opts.snacks then
+		return utils.notify("Snacks picker is `disabled`", vim.log.levels.INFO)
+	end
+
+	local snacks = require("snacks")
+	local snacks_opts = get_snacks_opts(opts)
+
+	local merged_opts = vim.tbl_deep_extend("force", snacks_opts, {
+		source = "jj",
+		items = log_lines,
+		title = "JJ Log",
+		format = format_jj_log,
+		confirm = function(picker, item)
+			picker:close()
+
+			if not item or not item.rev then
+				return
+			end
+
+			local _, ok = runner.execute(
+				{ "jj", "edit", item.rev, "--ignore-immutable" },
+				string.format("could not edit revision '%s'", item.rev)
+			)
+
+			if ok then
+				utils.reload_changed_file_buffers()
+				utils.notify(string.format("Editing revision `%s`", item.rev), vim.log.levels.INFO)
+			end
+		end,
+		preview = function(ctx)
+			if ctx.item and ctx.item.preview_cmd then
+				snacks.picker.preview.cmd(ctx.item.preview_cmd, ctx, { ft = "git" })
+			end
+		end,
+	})
+
+	snacks.picker.pick(merged_opts)
+end
+
+--- Displays the repository log in a snacks picker.
+---
+--- Selecting a revision edits it with `jj edit <rev> --ignore-immutable`, and
+--- each entry previews `jj show` for that revision.
+---@param opts  jj.picker.config
+---@param log_lines jj.picker.log_line[]
+function M.log(opts, log_lines)
 	if not opts.snacks then
 		return utils.notify("Snacks picker is `disabled`", vim.log.levels.INFO)
 	end
