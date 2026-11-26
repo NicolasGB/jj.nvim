@@ -600,6 +600,12 @@ revision via `jj diffedit`. Immutable revisions show an error on write.
     -- Set to nil to use Neovim's own default.
     scrollback = 50000,
 
+    -- Set JJ_PAGER=cat for jj terminals so jj does not page output (jj ignores $PAGER; it reads `ui.pager`)
+    -- "auto" (default): only when `ui.pager` is a plain pager (:builtin, less, more, most, cat, or unset),
+    --                   so formatting pagers such as delta, diff-so-fancy or bat keep working
+    -- true: always set JJ_PAGER=cat, false: never set it
+    pager_override = "auto",
+
     -- Configure terminal window
     window = {
        type = "hsplit",           -- Type of window the terminal is displayed in (hsplit/vsplit/floating/tab)

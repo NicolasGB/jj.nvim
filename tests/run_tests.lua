@@ -1942,6 +1942,67 @@ for _, entry in ipairs({
 	end
 end
 
+print("\n=== Running terminal pager detection tests ===\n")
+
+do
+	local terminal = require("jj.ui.terminal")
+	-- Inputs are the forms `jj config get ui.pager` prints, trailing newline included.
+	local cases = {
+		{ nil, true, "nil (unset)" },
+		{ "", true, "empty string" },
+		{ ":builtin\n", true, ":builtin" },
+		{ "less -FRX\n", true, "less with args" },
+		{ "/usr/bin/less\n", true, "absolute path to less" },
+		{ "LESS.EXE\n", true, "Windows less.exe, upper case" },
+		{ "more\n", true, "more" },
+		{ "most\n", true, "most" },
+		{ "cat\n", true, "cat" },
+		{ '["less","-FRX"]\n', true, "array form with less" },
+		{ '{command=["less","-R"],env={A="1"}}\n', true, "table form with less" },
+		{ "delta\n", false, "delta" },
+		{ "delta --paging=always\n", false, "delta with args" },
+		{ '["delta","--paging=never"]\n', false, "array form with delta" },
+		{ '{command=["bat","-p"],env={}}\n', false, "table form with bat" },
+		{ "diff-so-fancy | less\n", false, "pipeline starting with a formatter" },
+	}
+	for _, case in ipairs(cases) do
+		local input, expected, label = case[1], case[2], case[3]
+		run_test("is_plain_pager: " .. label, function()
+			assert_equals(expected, terminal.is_plain_pager(input), vim.inspect(input))
+		end)
+	end
+
+	local window = { split_size = 0.5, floating_width = 0.8, floating_height = 0.8 }
+
+	local function setup_with(value)
+		local saved_notify = utils.notify
+		local warnings = {}
+		utils.notify = function(msg, level)
+			table.insert(warnings, { msg = msg, level = level })
+		end
+		local ok, err = pcall(terminal.setup, { pager_override = value, window = vim.deepcopy(window) })
+		utils.notify = saved_notify
+		if not ok then
+			error(err)
+		end
+		return warnings
+	end
+
+	run_test("terminal.setup: warns on an unknown pager_override value", function()
+		local warnings = setup_with("always")
+		assert_equals(1, #warnings)
+		assert_equals(vim.log.levels.WARN, warnings[1].level)
+		assert_equals(true, warnings[1].msg:find("terminal.pager_override", 1, true) ~= nil, warnings[1].msg)
+	end)
+
+	for _, value in ipairs({ "auto", true, false }) do
+		run_test("terminal.setup: accepts pager_override = " .. vim.inspect(value), function()
+			assert_equals(0, #setup_with(value))
+		end)
+	end
+	setup_with("auto")
+end
+
 -- Print summary
 print(string.format("\n=== Test Summary ==="))
 print(string.format("Passed: %d", tests_passed))
