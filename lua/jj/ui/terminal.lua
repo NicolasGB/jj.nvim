@@ -5,6 +5,7 @@ local M = {}
 --- @class jj.ui.terminal.opts
 --- @field cursor_render_delay? integer The delay in ms when cursor rerendering the terminal state (default: 10ms). If you're loosing the column of the cursor try adding more delay. I currently did not find a better way to do so due to async handling of the ouptut in the terminal
 --- @field scrollback? integer Maximum number of lines retained in terminal buffers. When nil, use Neovim's default.
+--- @field pager_override? "auto"|boolean Whether to set JJ_PAGER=cat for jj terminals so jj does not page output. "auto" (default) only does so when `ui.pager` is a plain pager (:builtin, less, more, most, cat or unset); true always does; false never does (use when you want jj's own pager untouched)
 --- @field window? jj.terminal.window Options for the window used
 ---
 --- @class jj.terminal.window
@@ -18,6 +19,78 @@ local buffer = require("jj.core.buffer")
 
 --- @type jj.ui.terminal.opts
 local opts = {}
+
+local PLAIN_PAGERS = { less = true, more = true, most = true, cat = true }
+
+--- Whether a `ui.pager` value is a plain pager (no formatting), based on the executable basename of its first word.
+--- @param pager string|nil
+--- @return boolean
+function M.is_plain_pager(pager)
+	if pager == nil then
+		return true
+	end
+	pager = vim.trim(pager)
+	if pager == "" or pager == ":builtin" then
+		return true
+	end
+	-- Table forms printed by `jj config get` as TOML, e.g. `["less", "-FRX"]` or `{ command = [...] }`
+	local first = pager:match('^%[%s*["\']([^"\']+)["\']') or pager:match('command%s*=%s*%[%s*["\']([^"\']+)["\']')
+	first = first or pager:match("^[\"']?(%S+)")
+	if not first then
+		return true
+	end
+	first = first:gsub("[\"',]+$", "")
+	local base = first:match("([^/\\]+)$") or first
+	base = base:lower():gsub("%.exe$", "")
+	return PLAIN_PAGERS[base] == true
+end
+
+--- @type boolean|nil
+local plain_pager_cache = nil
+
+--- Detect (once, cached) whether the user's jj `ui.pager` is a plain pager.
+--- Failure or unset is treated as plain, since jj's default is :builtin/less.
+--- @return boolean
+local function detect_plain_pager()
+	if plain_pager_cache == nil then
+		local ok, res = pcall(function()
+			return vim.system({ "jj", "config", "get", "ui.pager" }, { text = true }):wait()
+		end)
+		if ok and res and res.code == 0 then
+			plain_pager_cache = M.is_plain_pager(res.stdout)
+		else
+			plain_pager_cache = true
+		end
+	end
+	return plain_pager_cache
+end
+
+--- Build the env for jj terminal jobs.
+--- jj ignores $PAGER (it reads ui.pager, overridable only by JJ_PAGER), so JJ_PAGER=cat is
+--- set when appropriate; formatting pagers (delta, bat, ...) are left alone and silenced via DELTA_PAGER etc.
+--- @param extra? table<string,string> Extra env vars
+--- @return table<string,string>
+local function build_env(extra)
+	local env = {
+		TERM = "xterm-256color",
+		PAGER = "cat",
+		DELTA_PAGER = "cat",
+		COLORTERM = "truecolor",
+	}
+	local override = opts.pager_override
+	if override == nil then
+		override = "auto"
+	end
+	local set_jj_pager = override == true or (override == "auto" and detect_plain_pager())
+	-- `cat` does not exist on Windows unless installed
+	if set_jj_pager and vim.fn.has("win32") == 1 and vim.fn.executable("cat") ~= 1 then
+		set_jj_pager = false
+	end
+	if set_jj_pager then
+		env.JJ_PAGER = "cat"
+	end
+	return vim.tbl_extend("force", env, extra or {})
+end
 
 --- @class jj.ui.terminal.state
 local state = {
@@ -130,6 +203,18 @@ function M.setup(user_opts)
 	opts.window.split_size = clamp_ratio(opts.window.split_size, "terminal.window.split_size")
 	opts.window.floating_width = clamp_ratio(opts.window.floating_width, "terminal.window.floating_width")
 	opts.window.floating_height = clamp_ratio(opts.window.floating_height, "terminal.window.floating_height")
+
+	local override = opts.pager_override
+	if override ~= nil and override ~= "auto" and type(override) ~= "boolean" then
+		utils.notify(
+			string.format(
+				'Value for field `terminal.pager_override` must be `"auto"`, `true` or `false`, got `%s`. Defaulted to `"auto"`',
+				vim.inspect(override)
+			),
+			vim.log.levels.WARN
+		)
+		opts.pager_override = "auto"
+	end
 end
 
 --- Help for terminal buffer
@@ -427,12 +512,7 @@ function M.run_floating(cmd, keymaps, float_opts)
 		jid = vim.fn.jobstart(cmd, {
 			term = true,
 			cwd = vim.fn.getcwd(),
-			env = {
-				TERM = "xterm-256color",
-				PAGER = "cat",
-				DELTA_PAGER = "cat",
-				COLORTERM = "truecolor",
-			},
+			env = build_env(),
 			on_exit = function(_, exit_code)
 				vim.schedule(function()
 					if float_opts.on_exit then
@@ -469,13 +549,7 @@ function M.run_floating(cmd, keymaps, float_opts)
 			pty = true,
 			width = vim.api.nvim_win_get_width(win),
 			height = vim.api.nvim_win_get_height(win),
-			env = {
-				TERM = "xterm-256color",
-				PAGER = "cat",
-				DELTA_PAGER = "cat",
-				COLORTERM = "truecolor",
-				DFT_BACKGROUND = "light",
-			},
+			env = build_env({ DFT_BACKGROUND = "light" }),
 			on_stdout = function(_, data)
 				if not state.floating_buf or not vim.api.nvim_buf_is_valid(state.floating_buf) then
 					return
@@ -639,13 +713,7 @@ function M.run(cmd, keymaps)
 		pty = true,
 		width = vim.api.nvim_win_get_width(win),
 		height = vim.api.nvim_win_get_height(win),
-		env = {
-			TERM = "xterm-256color",
-			PAGER = "cat",
-			DELTA_PAGER = "cat",
-			COLORTERM = "truecolor",
-			DFT_BACKGROUND = "light",
-		},
+		env = build_env({ DFT_BACKGROUND = "light" }),
 		on_stdout = function(_, data)
 			if not state.buf or not vim.api.nvim_buf_is_valid(state.buf) or not state.chan then
 				return
@@ -828,12 +896,7 @@ function M.run_tooltip(cmd, tool_opts)
 		pty = true,
 		width = vim.api.nvim_win_get_width(state.tooltip_win),
 		height = vim.api.nvim_win_get_height(state.tooltip_win),
-		env = {
-			TERM = "xterm-256color",
-			PAGER = "cat",
-			DELTA_PAGER = "cat",
-			COLORTERM = "truecolor",
-		},
+		env = build_env(),
 		on_stdout = function(_, data)
 			if not state.tooltip_buf or not vim.api.nvim_buf_is_valid(state.tooltip_buf) then
 				return
